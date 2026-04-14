@@ -563,7 +563,7 @@ export function TodosView() {
         onOpenChange={setDeleteConfirmOpen}
         title="Delete Todo?"
         description="Are you sure you want to delete this todo? This action cannot be undone."
-        variant="destructive"
+        actionType="delete"
         confirmText="Delete"
         cancelText="Cancel"
         onConfirm={handleDeleteConfirm}
@@ -574,7 +574,7 @@ export function TodosView() {
         onOpenChange={setDeleteProjectConfirmOpen}
         title="Delete Project?"
         description="Are you sure you want to delete this project? Todos in this project will not be deleted, but will no longer be linked to it."
-        variant="warning"
+        actionType="warning"
         confirmText="Delete Project"
         cancelText="Cancel"
         onConfirm={handleDeleteProjectConfirm}

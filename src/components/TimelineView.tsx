@@ -274,7 +274,12 @@ export function TimelineView() {
         <div className="flex items-center gap-3">
           <Button
             variant="outline"
-            onClick={() => setCurrentDate(new Date(currentDate.setDate(currentDate.getDate() - 1)))}
+            onClick={() => {
+              const newDate = new Date(currentDate);
+              newDate.setDate(newDate.getDate() - 1);
+              setCurrentDate(newDate);
+            }}
+            className="hover:scale-105 active:scale-95 transition-transform"
           >
             Previous
           </Button>
@@ -285,7 +290,12 @@ export function TimelineView() {
 
           <Button
             variant="outline"
-            onClick={() => setCurrentDate(new Date(currentDate.setDate(currentDate.getDate() + 1)))}
+            onClick={() => {
+              const newDate = new Date(currentDate);
+              newDate.setDate(newDate.getDate() + 1);
+              setCurrentDate(newDate);
+            }}
+            className="hover:scale-105 active:scale-95 transition-transform"
           >
             Next
           </Button>
@@ -294,6 +304,7 @@ export function TimelineView() {
             <Button
               variant="ghost"
               onClick={() => setCurrentDate(new Date())}
+              className="hover:scale-105 active:scale-95 transition-transform"
             >
               Today
             </Button>
@@ -651,7 +662,7 @@ export function TimelineView() {
         onOpenChange={setDeleteConfirmOpen}
         title="Delete Time Block?"
         description="Are you sure you want to delete this time block? This action cannot be undone."
-        variant="destructive"
+        actionType="delete"
         confirmText="Delete"
         cancelText="Cancel"
         onConfirm={handleDeleteConfirm}

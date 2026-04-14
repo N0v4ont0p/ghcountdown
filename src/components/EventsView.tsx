@@ -433,7 +433,7 @@ export function EventsView() {
         onOpenChange={setDeleteConfirmOpen}
         title="Delete Event?"
         description="Are you sure you want to delete this event? This action cannot be undone."
-        variant="destructive"
+        actionType="delete"
         confirmText="Delete"
         cancelText="Cancel"
         onConfirm={handleDeleteConfirm}
