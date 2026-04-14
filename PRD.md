@@ -47,6 +47,13 @@ This is a full-featured productivity suite with multiple interconnected views (H
 - Progression: Select todo → Start timer → Timer runs in background → Stop (or app closes) → Entry saved with duration → View in summaries → Export for analysis
 - Success criteria: Timer survives app closure (recovers on restart), entries persist accurately, export formats correctly
 
+**Statistics Dashboard**
+- Functionality: Comprehensive analytics showing productivity patterns, time insights, streaks, hourly activity, and personalized insights based on tracked data
+- Purpose: Provide actionable insights into work patterns, celebrate achievements, identify peak productivity hours, and maintain motivation through streak tracking
+- Trigger: Navigate to Statistics view from sidebar
+- Progression: Open Statistics → View key metrics (total focus time, completed tasks, streaks, avg session) → Explore weekly/monthly charts → Review hourly activity patterns → Read personalized insights → Compare daily performance
+- Success criteria: Charts animate smoothly, insights update based on real data, week/month toggle works correctly, visualizations accurately represent time distribution
+
 **Command Palette (⌘K)**
 - Functionality: Global quick-access for navigation and actions (new event, new todo, jump to view)
 - Purpose: Power users can accomplish tasks without mouse, maintaining flow state

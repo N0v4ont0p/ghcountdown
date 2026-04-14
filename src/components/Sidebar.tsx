@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { House, CalendarBlank, ListChecks, Clock, Gear, CalendarCheck } from '@phosphor-icons/react';
+import { House, CalendarBlank, ListChecks, Clock, Gear, CalendarCheck, ChartBar } from '@phosphor-icons/react';
 import { cn } from '@/lib/utils';
 
 interface SidebarProps {
@@ -13,6 +13,7 @@ const navItems = [
   { id: 'todos', label: 'Todos', icon: ListChecks },
   { id: 'timeline', label: 'Timeline', icon: Clock },
   { id: 'weekly', label: 'Weekly', icon: CalendarCheck },
+  { id: 'statistics', label: 'Statistics', icon: ChartBar },
   { id: 'settings', label: 'Settings', icon: Gear },
 ];
 
