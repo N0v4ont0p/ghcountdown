@@ -10,6 +10,11 @@ export async function getTimeBlocksByDate(date: string): Promise<TimeBlock[]> {
   return getAllByIndex<TimeBlock>(STORES.TIME_BLOCKS, 'date', date);
 }
 
+export async function getTimeBlocksByDateRange(startDate: string, endDate: string): Promise<TimeBlock[]> {
+  const allBlocks = await getAllTimeBlocks();
+  return allBlocks.filter(block => block.date >= startDate && block.date <= endDate);
+}
+
 export async function getTimeBlocksByTodo(todoId: string): Promise<TimeBlock[]> {
   return getAllByIndex<TimeBlock>(STORES.TIME_BLOCKS, 'todoId', todoId);
 }

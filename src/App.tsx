@@ -6,6 +6,7 @@ import { CountdownHero } from '@/components/CountdownHero';
 import { EventsView } from '@/components/EventsView';
 import { TodosView } from '@/components/TodosView';
 import { TimelineView } from '@/components/TimelineView';
+import { WeeklyCalendarView } from '@/components/WeeklyCalendarView';
 import { initDB } from '@/db/core';
 import { seedDatabase } from '@/db/seed';
 import { getNextImportantEvent, getAllEvents } from '@/db/repositories/eventsRepo';
@@ -249,6 +250,18 @@ function App() {
               transition={{ duration: 0.3 }}
             >
               <TimelineView />
+            </motion.div>
+          )}
+
+          {currentView === 'weekly' && (
+            <motion.div
+              key="weekly"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              transition={{ duration: 0.3 }}
+            >
+              <WeeklyCalendarView />
             </motion.div>
           )}
 

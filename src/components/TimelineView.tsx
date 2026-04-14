@@ -322,16 +322,14 @@ export function TimelineView() {
 
               {isToday && (
                 <motion.div
-                  className="absolute left-0 right-0 z-20 pointer-events-none"
+                  className="absolute left-20 right-0 z-20 pointer-events-none"
                   style={{ top: getCurrentTimePosition() }}
                   animate={{ top: getCurrentTimePosition() }}
                   transition={{ type: 'tween', duration: 0.5 }}
                 >
-                  <div className="flex items-center">
-                    <div className="w-20 flex justify-center">
-                      <div className="w-3 h-3 rounded-full bg-primary shadow-lg shadow-primary/50"></div>
-                    </div>
-                    <div className="flex-1 h-0.5 bg-primary shadow-sm"></div>
+                  <div className="flex items-center relative">
+                    <div className="absolute left-0 -ml-2 w-3 h-3 rounded-full bg-red-500 shadow-lg shadow-red-500/50"></div>
+                    <div className="ml-1 flex-1 h-0.5 bg-red-500/70"></div>
                   </div>
                 </motion.div>
               )}
