@@ -16,12 +16,14 @@ import { getSettings, updateSettings } from '@/db/repositories/settingsRepo';
 import { Event, Todo, Settings } from '@/db/schema';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Plus, CalendarBlank, Sun, Moon, Monitor } from '@phosphor-icons/react';
+import { Plus, CalendarBlank, Sun, Moon, Monitor, DownloadSimple, UploadSimple } from '@phosphor-icons/react';
 import { format } from 'date-fns';
 import { Badge } from '@/components/ui/badge';
 import { useTheme } from '@/hooks/use-theme';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
+import { exportAllData, downloadJSON, exportTimeEntriesCSV, exportEventsCSV, exportTodosCSV, importAllData, ExportData } from '@/db/export';
+import { toast } from 'sonner';
 
 function App() {
   const [currentView, setCurrentView] = useState('home');
@@ -83,6 +85,71 @@ function App() {
     
     const allTodos = await getAllTodos();
     setTodos(allTodos.filter(t => t.status !== 'done'));
+  }
+
+  async function handleExportJSON() {
+    try {
+      const data = await exportAllData();
+      downloadJSON(data, `ghcountdown-backup-${new Date().toISOString().split('T')[0]}.json`);
+      toast.success('Data exported successfully!');
+    } catch (error) {
+      console.error('Export failed:', error);
+      toast.error('Failed to export data');
+    }
+  }
+
+  async function handleExportTimeCSV() {
+    try {
+      await exportTimeEntriesCSV();
+      toast.success('Time entries exported!');
+    } catch (error) {
+      console.error('Export failed:', error);
+      toast.error('Failed to export time entries');
+    }
+  }
+
+  async function handleExportEventsCSV() {
+    try {
+      await exportEventsCSV();
+      toast.success('Events exported!');
+    } catch (error) {
+      console.error('Export failed:', error);
+      toast.error('Failed to export events');
+    }
+  }
+
+  async function handleExportTodosCSV() {
+    try {
+      await exportTodosCSV();
+      toast.success('Todos exported!');
+    } catch (error) {
+      console.error('Export failed:', error);
+      toast.error('Failed to export todos');
+    }
+  }
+
+  async function handleImportJSON() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json';
+    
+    input.onchange = async (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+
+      try {
+        const text = await file.text();
+        const data: ExportData = JSON.parse(text);
+        await importAllData(data);
+        toast.success('Data imported successfully! Refreshing...');
+        setTimeout(() => window.location.reload(), 1500);
+      } catch (error) {
+        console.error('Import failed:', error);
+        toast.error('Failed to import data. Please check the file format.');
+      }
+    };
+
+    input.click();
   }
 
   if (isLoading) {
@@ -352,9 +419,63 @@ function App() {
                     <p className="text-sm text-muted-foreground mb-3">
                       All data is stored locally in your browser
                     </p>
-                    <div className="flex gap-2">
-                      <Button variant="outline" size="sm">Export JSON</Button>
-                      <Button variant="outline" size="sm">Export CSV</Button>
+                    <div className="space-y-4">
+                      <div>
+                        <p className="text-xs font-medium mb-2">Export Data</p>
+                        <div className="flex flex-wrap gap-2">
+                          <Button 
+                            variant="outline" 
+                            size="sm"
+                            onClick={handleExportJSON}
+                            className="button-interactive"
+                          >
+                            <DownloadSimple size={16} className="mr-1" />
+                            Full Backup (JSON)
+                          </Button>
+                          <Button 
+                            variant="outline" 
+                            size="sm"
+                            onClick={handleExportEventsCSV}
+                            className="button-interactive"
+                          >
+                            <DownloadSimple size={16} className="mr-1" />
+                            Events CSV
+                          </Button>
+                          <Button 
+                            variant="outline" 
+                            size="sm"
+                            onClick={handleExportTodosCSV}
+                            className="button-interactive"
+                          >
+                            <DownloadSimple size={16} className="mr-1" />
+                            Todos CSV
+                          </Button>
+                          <Button 
+                            variant="outline" 
+                            size="sm"
+                            onClick={handleExportTimeCSV}
+                            className="button-interactive"
+                          >
+                            <DownloadSimple size={16} className="mr-1" />
+                            Time Entries CSV
+                          </Button>
+                        </div>
+                      </div>
+                      <div>
+                        <p className="text-xs font-medium mb-2">Import Data</p>
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          onClick={handleImportJSON}
+                          className="button-interactive"
+                        >
+                          <UploadSimple size={16} className="mr-1" />
+                          Import from Backup
+                        </Button>
+                        <p className="text-xs text-muted-foreground mt-2">
+                          Import will add data to existing records
+                        </p>
+                      </div>
                     </div>
                   </div>
                 </Card>
