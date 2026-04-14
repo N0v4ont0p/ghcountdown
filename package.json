@@ -3,6 +3,7 @@
     "private": true,
     "version": "0.0.0",
     "type": "module",
+    "main": "electron/main.js",
     "scripts": {
         "dev": "vite",
         "kill": "fuser -k 5000/tcp",
@@ -11,7 +12,29 @@
         "optimize": "vite optimize",
         "preview": "vite preview --port 4173 --host",
         "start": "npm run preview",
-        "serve": "npm run preview"
+        "serve": "npm run preview",
+        "electron:dev": "NODE_ENV=development electron .",
+        "electron:build:web": "ELECTRON_BUILD=1 tsc -b --noCheck && ELECTRON_BUILD=1 vite build",
+        "electron:build": "npm run electron:build:web && electron-builder",
+        "electron:build:mac": "npm run electron:build:web && electron-builder --mac"
+    },
+    "build": {
+        "appId": "com.ghcountdown.app",
+        "productName": "GHCountdown",
+        "directories": {
+            "output": "dist-electron"
+        },
+        "files": [
+            "dist/**/*",
+            "electron/**/*"
+        ],
+        "mac": {
+            "category": "public.app-category.productivity",
+            "target": [
+                { "target": "dmg", "arch": ["x64", "arm64"] },
+                { "target": "zip", "arch": ["x64", "arm64"] }
+            ]
+        }
     },
     "dependencies": {
         "@github/spark": ">=0.43.1 <1",
@@ -89,7 +112,9 @@
         "tailwindcss": "^4.1.11",
         "typescript": "~5.7.2",
         "typescript-eslint": "^8.38.0",
-        "vite": "^7.2.6"
+        "vite": "^7.2.6",
+        "electron": "^41.2.0",
+        "electron-builder": "^26.8.1"
     },
     "workspaces": {
         "packages": [
