@@ -1,4 +1,3 @@
-import { ReactNode } from 'react';
 import { House, CalendarBlank, ListChecks, Clock, Gear } from '@phosphor-icons/react';
 import { cn } from '@/lib/utils';
 
