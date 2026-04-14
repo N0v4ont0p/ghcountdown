@@ -35,7 +35,7 @@ export function TodosView() {
     status: 'inbox' as 'inbox' | 'today' | 'done',
     dueAt: '',
     priority: 3 as 1 | 2 | 3 | 4 | 5,
-    projectId: '',
+    projectId: 'none',
   });
 
   const [projectFormData, setProjectFormData] = useState({
@@ -62,7 +62,7 @@ export function TodosView() {
       status: currentTab === 'projects' ? 'inbox' : currentTab,
       dueAt: '',
       priority: 3,
-      projectId: selectedProjectId || '',
+      projectId: selectedProjectId || 'none',
     });
   }
 
@@ -80,7 +80,7 @@ export function TodosView() {
         status: formData.status,
         dueAt: formData.dueAt || null,
         priority: formData.priority,
-        projectId: formData.projectId || null,
+        projectId: formData.projectId !== 'none' ? formData.projectId : null,
         eventId: null,
       });
       
@@ -418,7 +418,7 @@ export function TodosView() {
                         <SelectValue placeholder="None" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="">None</SelectItem>
+                        <SelectItem value="none">None</SelectItem>
                         {projects.map((project) => (
                           <SelectItem key={project.id} value={project.id}>
                             {project.name}

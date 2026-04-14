@@ -26,7 +26,7 @@ export function TimeTrackingView() {
   const [entryToDelete, setEntryToDelete] = useState<string | null>(null);
 
   const [formData, setFormData] = useState({
-    todoId: '',
+    todoId: 'none',
     note: '',
   });
 
@@ -71,7 +71,7 @@ export function TimeTrackingView() {
 
     try {
       await createTimeEntry({
-        todoId: formData.todoId || null,
+        todoId: formData.todoId !== 'none' ? formData.todoId : null,
         projectId: null,
         timeBlockId: null,
         startAt: new Date().toISOString(),
@@ -81,7 +81,7 @@ export function TimeTrackingView() {
       
       toast.success('Timer started!');
       setIsDialogOpen(false);
-      setFormData({ todoId: '', note: '' });
+      setFormData({ todoId: 'none', note: '' });
       loadData();
     } catch (error) {
       toast.error('Failed to start timer');
@@ -232,7 +232,7 @@ export function TimeTrackingView() {
                         <SelectValue placeholder="None" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="">None</SelectItem>
+                        <SelectItem value="none">None</SelectItem>
                         {todos.map((todo) => (
                           <SelectItem key={todo.id} value={todo.id}>
                             {todo.title}

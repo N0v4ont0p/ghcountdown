@@ -42,8 +42,8 @@ export function TimelineView() {
     title: '',
     startTime: '09:00',
     endTime: '10:00',
-    todoId: '',
-    projectId: '',
+    todoId: 'none',
+    projectId: 'none',
     color: 'oklch(0.60 0.19 250)',
     autoTrack: true,
   });
@@ -132,8 +132,8 @@ export function TimelineView() {
       title: '',
       startTime: '09:00',
       endTime: '10:00',
-      todoId: '',
-      projectId: '',
+      todoId: 'none',
+      projectId: 'none',
       color: 'oklch(0.60 0.19 250)',
       autoTrack: true,
     });
@@ -146,8 +146,8 @@ export function TimelineView() {
       title: block.title,
       startTime: block.startTime,
       endTime: block.endTime,
-      todoId: block.todoId || '',
-      projectId: block.projectId || '',
+      todoId: block.todoId || 'none',
+      projectId: block.projectId || 'none',
       color: block.color,
       autoTrack: block.autoTrack,
     });
@@ -175,8 +175,8 @@ export function TimelineView() {
           title: formData.title,
           startTime: formData.startTime,
           endTime: formData.endTime,
-          todoId: formData.todoId || null,
-          projectId: formData.projectId || null,
+          todoId: formData.todoId !== 'none' ? formData.todoId : null,
+          projectId: formData.projectId !== 'none' ? formData.projectId : null,
           color: formData.color,
           autoTrack: formData.autoTrack,
         });
@@ -187,8 +187,8 @@ export function TimelineView() {
           date: dateStr,
           startTime: formData.startTime,
           endTime: formData.endTime,
-          todoId: formData.todoId || null,
-          projectId: formData.projectId || null,
+          todoId: formData.todoId !== 'none' ? formData.todoId : null,
+          projectId: formData.projectId !== 'none' ? formData.projectId : null,
           color: formData.color,
           autoTrack: formData.autoTrack,
         });
@@ -572,7 +572,7 @@ export function TimelineView() {
                   <SelectValue placeholder="None" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">None</SelectItem>
+                  <SelectItem value="none">None</SelectItem>
                   {todos.map((todo) => (
                     <SelectItem key={todo.id} value={todo.id}>
                       {todo.title}
@@ -592,7 +592,7 @@ export function TimelineView() {
                   <SelectValue placeholder="None" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">None</SelectItem>
+                  <SelectItem value="none">None</SelectItem>
                   {projects.map((project) => (
                     <SelectItem key={project.id} value={project.id}>
                       {project.name}
