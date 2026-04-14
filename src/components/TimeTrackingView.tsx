@@ -70,6 +70,7 @@ export function TimeTrackingView() {
       await createTimeEntry({
         todoId: formData.todoId || null,
         projectId: null,
+        timeBlockId: null,
         startAt: new Date().toISOString(),
         endAt: null,
         note: formData.note,

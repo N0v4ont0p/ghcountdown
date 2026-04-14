@@ -40,6 +40,12 @@ export async function initDB(): Promise<IDBDatabase> {
         timeStore.createIndex('startAt', 'startAt', { unique: false });
       }
 
+      if (!db.objectStoreNames.contains(STORES.TIME_BLOCKS)) {
+        const blocksStore = db.createObjectStore(STORES.TIME_BLOCKS, { keyPath: 'id' });
+        blocksStore.createIndex('date', 'date', { unique: false });
+        blocksStore.createIndex('todoId', 'todoId', { unique: false });
+      }
+
       if (!db.objectStoreNames.contains(STORES.SETTINGS)) {
         db.createObjectStore(STORES.SETTINGS, { keyPath: 'id' });
       }

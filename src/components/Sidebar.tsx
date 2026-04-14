@@ -11,7 +11,7 @@ const navItems = [
   { id: 'home', label: 'Home', icon: House },
   { id: 'events', label: 'Events', icon: CalendarBlank },
   { id: 'todos', label: 'Todos', icon: ListChecks },
-  { id: 'time', label: 'Time Tracking', icon: Clock },
+  { id: 'timeline', label: 'Timeline', icon: Clock },
   { id: 'settings', label: 'Settings', icon: Gear },
 ];
 

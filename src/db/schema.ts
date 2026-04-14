@@ -37,9 +37,24 @@ export interface TimeEntry {
   id: string;
   todoId: string | null;
   projectId: string | null;
+  timeBlockId: string | null;
   startAt: string;
   endAt: string | null;
   note: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TimeBlock {
+  id: string;
+  title: string;
+  date: string;
+  startTime: string;
+  endTime: string;
+  todoId: string | null;
+  projectId: string | null;
+  color: string;
+  autoTrack: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -58,5 +73,6 @@ export const STORES = {
   PROJECTS: 'projects',
   TODOS: 'todos',
   TIME_ENTRIES: 'timeEntries',
+  TIME_BLOCKS: 'timeBlocks',
   SETTINGS: 'settings',
 } as const;
