@@ -6,6 +6,32 @@
 
 ## 🖥 For Mac Users
 
+You have **two ways** to run GHCountdown on Mac:
+
+---
+
+### Option A — 🖥 Electron Desktop App (true `.app`, no server needed)
+
+This builds a native macOS `.app` file you can drag to your Applications folder and launch like any other app. It runs fully offline with no terminal or server required.
+
+**Prerequisites:** Node.js (https://nodejs.org/) and Xcode Command Line Tools (`xcode-select --install`)
+
+```bash
+# Install dependencies
+npm install
+
+# Build the .app (outputs to dist-electron/)
+npm run electron:build:mac
+```
+
+After the build finishes, open `dist-electron/` — you'll find a `.dmg` installer and a `.zip` archive. Open the `.dmg`, drag **GHCountdown** to Applications, and you're done. 🎉
+
+> **Intel + Apple Silicon:** The build produces separate `x64` and `arm64` binaries so it works natively on both chip types.
+
+---
+
+### Option B — 🌐 Browser / Local Server (original method)
+
 ### Step 1: Download
 Download this entire folder to your Mac (e.g., to `Downloads` or `Documents`)
 

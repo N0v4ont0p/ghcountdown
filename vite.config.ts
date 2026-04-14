@@ -8,8 +8,13 @@ import { resolve } from 'path'
 
 const projectRoot = process.env.PROJECT_ROOT || import.meta.dirname
 
+// When building for Electron, assets must use relative paths so they resolve
+// correctly over the file:// protocol.  Set ELECTRON_BUILD=1 to enable this.
+const isElectronBuild = process.env.ELECTRON_BUILD === '1';
+
 // https://vite.dev/config/
 export default defineConfig({
+  base: isElectronBuild ? './' : '/',
   plugins: [
     react(),
     tailwindcss(),
