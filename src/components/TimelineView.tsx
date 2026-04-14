@@ -14,6 +14,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { Plus, Play, Stop, Trash, Pencil, Clock, CalendarBlank } from '@phosphor-icons/react';
 import { format, startOfDay, endOfDay, parse, differenceInMinutes } from 'date-fns';
 import { toast } from 'sonner';
@@ -34,6 +35,8 @@ export function TimelineView() {
   const [currentTime, setCurrentTime] = useState(new Date());
   const timelineRef = useRef<HTMLDivElement>(null);
   const [dragStart, setDragStart] = useState<{ hour: number; minute: number } | null>(null);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [blockToDelete, setBlockToDelete] = useState<string | null>(null);
 
   const [formData, setFormData] = useState({
     title: '',
@@ -201,9 +204,15 @@ export function TimelineView() {
   }
 
   async function handleDelete(id: string) {
-    if (confirm('Delete this time block?')) {
-      await deleteTimeBlock(id);
+    setBlockToDelete(id);
+    setDeleteConfirmOpen(true);
+  }
+
+  async function handleDeleteConfirm() {
+    if (blockToDelete) {
+      await deleteTimeBlock(blockToDelete);
       toast.success('Time block deleted');
+      setBlockToDelete(null);
       loadData();
     }
   }
@@ -392,7 +401,7 @@ export function TimelineView() {
                               size="icon"
                               variant="ghost"
                               onClick={() => handleManualTimer(block)}
-                              className="h-6 w-6"
+                              className="h-6 w-6 hover:scale-110 active:scale-95 transition-transform"
                             >
                               {isRunning ? <Stop size={12} /> : <Play size={12} />}
                             </Button>
@@ -400,7 +409,7 @@ export function TimelineView() {
                               size="icon"
                               variant="ghost"
                               onClick={() => handleDelete(block.id)}
-                              className="h-6 w-6 text-destructive"
+                              className="h-6 w-6 text-destructive hover:scale-110 active:scale-95 transition-transform"
                             >
                               <Trash size={12} />
                             </Button>
@@ -636,6 +645,17 @@ export function TimelineView() {
           </form>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={deleteConfirmOpen}
+        onOpenChange={setDeleteConfirmOpen}
+        title="Delete Time Block?"
+        description="Are you sure you want to delete this time block? This action cannot be undone."
+        variant="destructive"
+        confirmText="Delete"
+        cancelText="Cancel"
+        onConfirm={handleDeleteConfirm}
+      />
     </div>
   );
 }

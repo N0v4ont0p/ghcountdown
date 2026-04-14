@@ -12,6 +12,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { Plus, Trash, Folder, CheckCircle, Tray, CalendarCheck } from '@phosphor-icons/react';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
@@ -24,6 +25,10 @@ export function TodosView() {
   const [isProjectDialogOpen, setIsProjectDialogOpen] = useState(false);
   const [currentTab, setCurrentTab] = useState<'inbox' | 'today' | 'projects'>('inbox');
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [todoToDelete, setTodoToDelete] = useState<string | null>(null);
+  const [deleteProjectConfirmOpen, setDeleteProjectConfirmOpen] = useState(false);
+  const [projectToDelete, setProjectToDelete] = useState<string | null>(null);
 
   const [formData, setFormData] = useState({
     title: '',
@@ -104,9 +109,31 @@ export function TodosView() {
   }
 
   async function handleDelete(id: string) {
-    await deleteTodo(id);
-    toast.success('Todo deleted');
-    loadData();
+    setTodoToDelete(id);
+    setDeleteConfirmOpen(true);
+  }
+
+  async function handleDeleteConfirm() {
+    if (todoToDelete) {
+      await deleteTodo(todoToDelete);
+      toast.success('Todo deleted');
+      setTodoToDelete(null);
+      loadData();
+    }
+  }
+
+  async function handleDeleteProject(id: string) {
+    setProjectToDelete(id);
+    setDeleteProjectConfirmOpen(true);
+  }
+
+  async function handleDeleteProjectConfirm() {
+    if (projectToDelete) {
+      await deleteProject(projectToDelete);
+      toast.success('Project deleted');
+      setProjectToDelete(null);
+      loadData();
+    }
   }
 
   async function handleProjectSubmit(e: React.FormEvent) {
@@ -125,14 +152,6 @@ export function TodosView() {
       loadData();
     } catch (error) {
       toast.error('Failed to create project');
-    }
-  }
-
-  async function handleDeleteProject(id: string) {
-    if (confirm('Delete this project? Todos will not be deleted.')) {
-      await deleteProject(id);
-      toast.success('Project deleted');
-      loadData();
     }
   }
 
@@ -205,7 +224,7 @@ export function TodosView() {
                   size="sm"
                   variant="ghost"
                   onClick={() => handleMoveToToday(todo)}
-                  className="h-7 px-2 text-xs"
+                  className="h-7 px-2 text-xs hover:scale-105 active:scale-95 transition-transform"
                 >
                   → Today
                 </Button>
@@ -214,7 +233,7 @@ export function TodosView() {
                 size="icon"
                 variant="ghost"
                 onClick={() => handleDelete(todo.id)}
-                className="h-7 w-7 text-destructive hover:text-destructive"
+                className="h-7 w-7 text-destructive hover:text-destructive hover:scale-110 active:scale-95 transition-transform"
               >
                 <Trash size={14} />
               </Button>
@@ -495,7 +514,7 @@ export function TodosView() {
                         size="icon"
                         variant="ghost"
                         onClick={() => handleDeleteProject(project.id)}
-                        className="h-8 w-8 text-destructive hover:text-destructive"
+                        className="h-8 w-8 text-destructive hover:text-destructive hover:scale-110 active:scale-95 transition-transform"
                       >
                         <Trash size={16} />
                       </Button>
@@ -538,6 +557,28 @@ export function TodosView() {
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={deleteConfirmOpen}
+        onOpenChange={setDeleteConfirmOpen}
+        title="Delete Todo?"
+        description="Are you sure you want to delete this todo? This action cannot be undone."
+        variant="destructive"
+        confirmText="Delete"
+        cancelText="Cancel"
+        onConfirm={handleDeleteConfirm}
+      />
+
+      <ConfirmDialog
+        open={deleteProjectConfirmOpen}
+        onOpenChange={setDeleteProjectConfirmOpen}
+        title="Delete Project?"
+        description="Are you sure you want to delete this project? Todos in this project will not be deleted, but will no longer be linked to it."
+        variant="warning"
+        confirmText="Delete Project"
+        cancelText="Cancel"
+        onConfirm={handleDeleteProjectConfirm}
+      />
     </div>
   );
 }

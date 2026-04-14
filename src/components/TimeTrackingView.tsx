@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { Play, Stop, Clock, Trash } from '@phosphor-icons/react';
 import { format, startOfDay, endOfDay, startOfWeek, endOfWeek, differenceInSeconds } from 'date-fns';
 import { toast } from 'sonner';
@@ -21,6 +22,8 @@ export function TimeTrackingView() {
   const [runningTimer, setRunningTimer] = useState<TimeEntry | null>(null);
   const [elapsedTime, setElapsedTime] = useState(0);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [entryToDelete, setEntryToDelete] = useState<string | null>(null);
 
   const [formData, setFormData] = useState({
     todoId: '',
@@ -101,9 +104,15 @@ export function TimeTrackingView() {
   }
 
   async function handleDelete(id: string) {
-    if (confirm('Delete this time entry?')) {
-      await deleteTimeEntry(id);
+    setEntryToDelete(id);
+    setDeleteConfirmOpen(true);
+  }
+
+  async function handleDeleteConfirm() {
+    if (entryToDelete) {
+      await deleteTimeEntry(entryToDelete);
       toast.success('Time entry deleted');
+      setEntryToDelete(null);
       loadData();
     }
   }
@@ -324,7 +333,7 @@ export function TimeTrackingView() {
                             size="icon"
                             variant="ghost"
                             onClick={() => handleDelete(entry.id)}
-                            className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity text-destructive hover:text-destructive shrink-0"
+                            className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-all text-destructive hover:text-destructive shrink-0 hover:scale-110 active:scale-95"
                           >
                             <Trash size={16} />
                           </Button>
@@ -338,6 +347,17 @@ export function TimeTrackingView() {
           </div>
         )}
       </div>
+
+      <ConfirmDialog
+        open={deleteConfirmOpen}
+        onOpenChange={setDeleteConfirmOpen}
+        title="Delete Time Entry?"
+        description="Are you sure you want to delete this time entry? This action cannot be undone."
+        variant="destructive"
+        confirmText="Delete"
+        cancelText="Cancel"
+        onConfirm={handleDeleteConfirm}
+      />
     </div>
   );
 }
