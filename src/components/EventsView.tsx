@@ -11,6 +11,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { Plus, CalendarBlank, Tag, Trash, Pencil, X } from '@phosphor-icons/react';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
@@ -22,6 +23,8 @@ export function EventsView() {
   const [editingEvent, setEditingEvent] = useState<Event | null>(null);
   const [filterPriority, setFilterPriority] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [eventToDelete, setEventToDelete] = useState<string | null>(null);
 
   const [formData, setFormData] = useState({
     title: '',
@@ -110,10 +113,16 @@ export function EventsView() {
     }
   }
 
-  async function handleDelete(id: string) {
-    if (confirm('Delete this event?')) {
-      await deleteEvent(id);
+  function handleDeleteClick(id: string) {
+    setEventToDelete(id);
+    setDeleteConfirmOpen(true);
+  }
+
+  async function handleDeleteConfirm() {
+    if (eventToDelete) {
+      await deleteEvent(eventToDelete);
       toast.success('Event deleted');
+      setEventToDelete(null);
       loadEvents();
     }
   }
@@ -358,8 +367,8 @@ export function EventsView() {
                             <Button
                               size="icon"
                               variant="ghost"
-                              onClick={() => handleDelete(event.id)}
-                              className="h-8 w-8 text-destructive hover:text-destructive"
+                              onClick={() => handleDeleteClick(event.id)}
+                              className="h-8 w-8 text-destructive hover:text-destructive hover:scale-110 active:scale-95 transition-transform"
                             >
                               <Trash size={16} />
                             </Button>
@@ -403,8 +412,8 @@ export function EventsView() {
                           <Button
                             size="icon"
                             variant="ghost"
-                            onClick={() => handleDelete(event.id)}
-                            className="h-8 w-8 text-destructive hover:text-destructive shrink-0"
+                            onClick={() => handleDeleteClick(event.id)}
+                            className="h-8 w-8 text-destructive hover:text-destructive shrink-0 hover:scale-110 active:scale-95 transition-transform"
                           >
                             <Trash size={16} />
                           </Button>
@@ -418,6 +427,17 @@ export function EventsView() {
           )}
         </div>
       )}
+
+      <ConfirmDialog
+        open={deleteConfirmOpen}
+        onOpenChange={setDeleteConfirmOpen}
+        title="Delete Event?"
+        description="Are you sure you want to delete this event? This action cannot be undone."
+        variant="destructive"
+        confirmText="Delete"
+        cancelText="Cancel"
+        onConfirm={handleDeleteConfirm}
+      />
     </div>
   );
 }
