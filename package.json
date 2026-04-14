@@ -120,5 +120,10 @@
         "packages": [
             "packages/*"
         ]
+    },
+    "overrides": {
+        "@electron/asar": "^4.2.0",
+        "global-agent": "^4.1.3",
+        "node-gyp": "^12.0.0"
     }
 }
