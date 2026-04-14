@@ -128,12 +128,12 @@ export function EventsView() {
   const upcomingEvents = filteredEvents.filter(e => new Date(e.startsAt) > new Date());
   const pastEvents = filteredEvents.filter(e => new Date(e.startsAt) <= new Date());
 
-  const priorityColors = {
-    5: 'bg-red-500',
-    4: 'bg-orange-500',
-    3: 'bg-blue-500',
-    2: 'bg-green-500',
-    1: 'bg-gray-400',
+  const priorityColors: Record<1 | 2 | 3 | 4 | 5, string> = {
+    5: 'border-l-[var(--priority-5)]',
+    4: 'border-l-[var(--priority-4)]',
+    3: 'border-l-[var(--priority-3)]',
+    2: 'border-l-[var(--priority-2)]',
+    1: 'border-l-[var(--priority-1)]',
   };
 
   return (

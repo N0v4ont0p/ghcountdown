@@ -10,13 +10,16 @@ import { initDB } from '@/db/core';
 import { seedDatabase } from '@/db/seed';
 import { getNextImportantEvent, getAllEvents } from '@/db/repositories/eventsRepo';
 import { getAllTodos } from '@/db/repositories/todosRepo';
-import { getSettings } from '@/db/repositories/settingsRepo';
+import { getSettings, updateSettings } from '@/db/repositories/settingsRepo';
 import { Event, Todo, Settings } from '@/db/schema';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Plus, CalendarBlank } from '@phosphor-icons/react';
+import { Plus, CalendarBlank, Sun, Moon, Monitor } from '@phosphor-icons/react';
 import { format } from 'date-fns';
 import { Badge } from '@/components/ui/badge';
+import { useTheme } from '@/hooks/use-theme';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Label } from '@/components/ui/label';
 
 function App() {
   const [currentView, setCurrentView] = useState('home');
@@ -25,6 +28,7 @@ function App() {
   const [todos, setTodos] = useState<Todo[]>([]);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const { theme, setTheme, resolvedTheme } = useTheme();
 
   useEffect(() => {
     async function initialize() {
@@ -261,8 +265,50 @@ function App() {
                 <h2 className="text-3xl font-semibold mb-2">Settings</h2>
                 <p className="text-muted-foreground">Customize your GHCountdown experience</p>
               </div>
-              <Card className="p-6">
-                <div className="space-y-4">
+              
+              <div className="space-y-4">
+                <Card className="p-6">
+                  <div className="space-y-4">
+                    <div>
+                      <Label htmlFor="theme-select" className="text-base font-semibold mb-3 block">
+                        Theme
+                      </Label>
+                      <p className="text-sm text-muted-foreground mb-3">
+                        Choose your preferred color scheme
+                      </p>
+                      <Select value={theme} onValueChange={(value: any) => setTheme(value)}>
+                        <SelectTrigger id="theme-select" className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="light">
+                            <div className="flex items-center gap-2">
+                              <Sun size={16} />
+                              Light
+                            </div>
+                          </SelectItem>
+                          <SelectItem value="dark">
+                            <div className="flex items-center gap-2">
+                              <Moon size={16} />
+                              Dark
+                            </div>
+                          </SelectItem>
+                          <SelectItem value="system">
+                            <div className="flex items-center gap-2">
+                              <Monitor size={16} />
+                              System
+                            </div>
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground mt-2">
+                        Currently using: <strong>{resolvedTheme}</strong> mode
+                      </p>
+                    </div>
+                  </div>
+                </Card>
+
+                <Card className="p-6">
                   <div>
                     <h3 className="font-semibold mb-2">Important Event Priority</h3>
                     <p className="text-sm text-muted-foreground mb-2">
@@ -272,8 +318,10 @@ function App() {
                       Current threshold: <strong>Priority {settings?.importantPriorityThreshold}</strong>
                     </p>
                   </div>
+                </Card>
                   
-                  <div className="pt-4 border-t">
+                <Card className="p-6">
+                  <div>
                     <h3 className="font-semibold mb-2">Data Management</h3>
                     <p className="text-sm text-muted-foreground mb-3">
                       All data is stored locally in your browser
@@ -283,8 +331,8 @@ function App() {
                       <Button variant="outline" size="sm">Export CSV</Button>
                     </div>
                   </div>
-                </div>
-              </Card>
+                </Card>
+              </div>
             </motion.div>
           )}
         </AnimatePresence>

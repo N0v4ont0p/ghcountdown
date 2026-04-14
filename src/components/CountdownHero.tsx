@@ -81,11 +81,11 @@ export function CountdownHero({ event }: CountdownHeroProps) {
   }
 
   const priorityColors = {
-    5: 'from-red-500 to-orange-500',
-    4: 'from-orange-500 to-yellow-500',
-    3: 'from-blue-500 to-cyan-500',
-    2: 'from-green-500 to-emerald-500',
-    1: 'from-gray-400 to-gray-500',
+    5: 'from-[var(--priority-5)] to-[var(--priority-5)]',
+    4: 'from-[var(--priority-4)] to-[var(--priority-4)]',
+    3: 'from-[var(--priority-3)] to-[var(--priority-3)]',
+    2: 'from-[var(--priority-2)] to-[var(--priority-2)]',
+    1: 'from-[var(--priority-1)] to-[var(--priority-1)]',
   };
 
   return (
