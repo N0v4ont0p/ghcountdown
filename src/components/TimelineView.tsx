@@ -332,7 +332,7 @@ export function TimelineView() {
                   style={{ top: hour * TIMELINE_HOUR_HEIGHT, height: TIMELINE_HOUR_HEIGHT }}
                 >
                   <div className="flex items-start gap-4 px-4 py-2">
-                    <div className="w-16 text-sm text-muted-foreground font-medium">
+                    <div className="w-20 text-sm text-muted-foreground font-medium z-20 bg-background/80 backdrop-blur-sm rounded px-2 py-0.5">
                       {format(new Date().setHours(hour, 0, 0, 0), 'h:mm a')}
                     </div>
                     <div className="flex-1 h-full border-l border-border/50 relative"></div>
@@ -342,14 +342,14 @@ export function TimelineView() {
 
               {isToday && (
                 <motion.div
-                  className="absolute left-20 right-0 z-20 pointer-events-none"
+                  className="absolute left-24 right-4 z-30 pointer-events-none"
                   style={{ top: getCurrentTimePosition() }}
                   animate={{ top: getCurrentTimePosition() }}
                   transition={{ type: 'tween', duration: 0.5 }}
                 >
                   <div className="flex items-center relative">
-                    <div className="absolute left-0 -ml-2 w-3 h-3 rounded-full bg-red-500 shadow-lg shadow-red-500/50"></div>
-                    <div className="ml-1 flex-1 h-0.5 bg-red-500/70"></div>
+                    <div className="absolute -left-1.5 w-4 h-4 rounded-full bg-red-500 shadow-lg shadow-red-500/50 border-2 border-background"></div>
+                    <div className="flex-1 h-0.5 bg-red-500/80 shadow-sm"></div>
                   </div>
                 </motion.div>
               )}
