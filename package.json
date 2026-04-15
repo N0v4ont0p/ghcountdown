@@ -23,6 +23,7 @@
     "build": {
         "appId": "com.ghcountdown.app",
         "productName": "GHCountdown",
+        "icon": "build/icon.png",
         "directories": {
             "output": "dist-electron"
         },
@@ -32,6 +33,7 @@
         ],
         "mac": {
             "category": "public.app-category.productivity",
+            "icon": "build/icon.png",
             "identity": null,
             "target": [
                 { "target": "dmg", "arch": ["x64", "arm64"] },

@@ -1,45 +1,58 @@
 import { useEffect, useState } from 'react';
-import { useKV } from '@github/spark/hooks';
 
 type Theme = 'light' | 'dark' | 'system';
 
+const STORAGE_KEY = 'ghcountdown-theme';
+
+function readStoredTheme(): Theme {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored === 'light' || stored === 'dark' || stored === 'system') {
+      return stored;
+    }
+  } catch {
+    // localStorage unavailable (e.g. sandboxed context)
+  }
+  return 'system';
+}
+
 export function useTheme() {
-  const [theme, setThemeKV] = useKV<Theme>('app-theme', 'system');
+  const [theme, setThemeState] = useState<Theme>(readStoredTheme);
   const [resolvedTheme, setResolvedTheme] = useState<'light' | 'dark'>('light');
+
+  function setTheme(newTheme: Theme) {
+    try {
+      localStorage.setItem(STORAGE_KEY, newTheme);
+    } catch {
+      // ignore
+    }
+    setThemeState(newTheme);
+  }
 
   useEffect(() => {
     const root = window.document.documentElement;
-    
-    const updateTheme = () => {
-      let actualTheme: 'light' | 'dark' = 'light';
-      
-      const currentTheme = theme || 'system';
-      
-      if (currentTheme === 'system') {
-        actualTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-      } else {
-        actualTheme = currentTheme;
-      }
-      
+
+    const applyTheme = () => {
+      const actual: 'light' | 'dark' =
+        theme === 'system'
+          ? window.matchMedia('(prefers-color-scheme: dark)').matches
+            ? 'dark'
+            : 'light'
+          : theme;
+
       root.classList.remove('light', 'dark');
-      root.classList.add(actualTheme);
-      setResolvedTheme(actualTheme);
+      root.classList.add(actual);
+      setResolvedTheme(actual);
     };
 
-    updateTheme();
+    applyTheme();
 
-    const currentTheme = theme || 'system';
-    if (currentTheme === 'system') {
-      const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-      const handler = () => updateTheme();
-      mediaQuery.addEventListener('change', handler);
-      return () => mediaQuery.removeEventListener('change', handler);
+    if (theme === 'system') {
+      const mq = window.matchMedia('(prefers-color-scheme: dark)');
+      mq.addEventListener('change', applyTheme);
+      return () => mq.removeEventListener('change', applyTheme);
     }
   }, [theme]);
 
-  return {
-    theme: theme || 'system',
-    setTheme: setThemeKV,
-    resolvedTheme,
-  };
+  return { theme, setTheme, resolvedTheme };
 }
