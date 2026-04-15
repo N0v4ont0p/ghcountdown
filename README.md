@@ -1,12 +1,19 @@
 # 🎯 GHCountdown - Countdown-First Productivity
 
-**A beautiful, local-first productivity app for Mac, Windows, and Linux**
+**A local-first productivity app for Mac, Windows, and Linux**
 
 ---
 
 ## ✨ What is GHCountdown?
 
 GHCountdown is a **stunning, offline-first productivity powerhouse** that runs entirely on your machine. No cloud, no accounts, no internet required—just you and your data, locally stored and always private.
+
+## ✅ Current Status
+
+- ✅ Core app is production-ready in browser/local-server mode
+- ✅ Electron desktop packaging is implemented
+- ✅ macOS packaging outputs installable artifacts via Electron Builder
+- ✅ Local-first data storage and backup/restore are available
 
 ### Key Features
 
@@ -24,6 +31,25 @@ GHCountdown is a **stunning, offline-first productivity powerhouse** that runs e
 ## 🚀 Quick Start
 
 ### For Mac Users (Primary Platform)
+
+#### Option A — Electron Desktop App (`.app` via `.dmg`)
+
+```bash
+npm install
+
+# M1/M2/M3/M4 Mac (Apple Silicon — arm64, recommended for most users):
+npm run electron:build:mac:arm64
+
+# Intel Mac (x64):
+npm run electron:build:mac:x64
+
+# Universal build (both archs, slower — downloads ~300 MB on first run):
+npm run electron:build:mac
+```
+
+Build output is written to `dist-electron/` (`.dmg` and `.zip` for the selected arch). Open the `.dmg` and drag **GHCountdown** into Applications.
+
+#### Option B — Browser / Local Server
 
 1. **Download** this folder to your Mac
 2. **Make launcher executable:**
@@ -63,12 +89,14 @@ GHCountdown is a **stunning, offline-first productivity powerhouse** that runs e
 - **Node.js 18+** ([Download here](https://nodejs.org/))
 - Any modern browser (Chrome, Firefox, Safari, Edge)
 - **No internet required** after installation
+- For macOS Electron builds: **Xcode Command Line Tools** (`xcode-select --install`)
 
 ---
 
 ## 📖 Documentation
 
 - **[QUICKSTART.md](QUICKSTART.md)** - Get running in 3 steps
+- **[DOWNLOAD-AND-RUN.md](DOWNLOAD-AND-RUN.md)** - End-user setup + Electron app packaging
 - **[DEPLOYMENT.md](DEPLOYMENT.md)** - Full deployment guide with shortcuts, startup configs, and troubleshooting
 - **[PRD.md](PRD.md)** - Complete product requirements and design philosophy
 
@@ -151,7 +179,6 @@ First launch takes 2-3 minutes to set up, then instant thereafter!
 ## 🚧 Roadmap
 
 Future enhancements:
-- [ ] Electron desktop packaging (true .app file)
 - [ ] Import from calendar files (.ics)
 - [ ] Custom recurring event patterns
 - [ ] Themes marketplace

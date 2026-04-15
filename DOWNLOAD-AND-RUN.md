@@ -20,13 +20,19 @@ This builds a native macOS `.app` file you can drag to your Applications folder 
 # Install dependencies
 npm install
 
-# Build the .app (outputs to dist-electron/)
+# Apple Silicon (M1/M2/M3/M4 or newer) — arm64, fastest local build:
+npm run electron:build:mac:arm64
+
+# Intel Mac — x64:
+npm run electron:build:mac:x64
+
+# Universal build (both archs, downloads ~300 MB on first run):
 npm run electron:build:mac
 ```
 
 After the build finishes, open `dist-electron/` — you'll find a `.dmg` installer and a `.zip` archive. Open the `.dmg`, drag **GHCountdown** to Applications, and you're done. 🎉
 
-> **Intel + Apple Silicon:** The build produces separate `x64` and `arm64` binaries so it works natively on both chip types.
+> **First run note:** electron-builder downloads the Electron binary on first use. The arch-specific scripts (`arm64`/`x64`) only download one binary (~90 MB), whereas the universal `electron:build:mac` script downloads both (~300 MB) and will appear to hang on slow connections.
 
 ---
 
