@@ -3,7 +3,7 @@
     "private": true,
     "version": "0.0.0",
     "type": "module",
-    "main": "electron/main.js",
+    "main": "electron/main.cjs",
     "scripts": {
         "dev": "vite",
         "kill": "fuser -k 5000/tcp",
@@ -16,7 +16,9 @@
         "electron:dev": "NODE_ENV=development electron .",
         "electron:build:web": "ELECTRON_BUILD=1 tsc -b --noCheck && ELECTRON_BUILD=1 vite build",
         "electron:build": "npm run electron:build:web && electron-builder",
-        "electron:build:mac": "npm run electron:build:web && electron-builder --mac"
+        "electron:build:mac": "npm run electron:build:web && electron-builder --mac",
+        "electron:build:mac:arm64": "npm run electron:build:web && electron-builder --mac --arm64",
+        "electron:build:mac:x64": "npm run electron:build:web && electron-builder --mac --x64"
     },
     "build": {
         "appId": "com.ghcountdown.app",

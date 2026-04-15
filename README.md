@@ -36,10 +36,18 @@ GHCountdown is a **stunning, offline-first productivity powerhouse** that runs e
 
 ```bash
 npm install
+
+# M1/M2/M3/M4 Mac (Apple Silicon — arm64, recommended for most users):
+npm run electron:build:mac:arm64
+
+# Intel Mac (x64):
+npm run electron:build:mac:x64
+
+# Universal build (both archs, slower — downloads ~300 MB on first run):
 npm run electron:build:mac
 ```
 
-Build output is written to `dist-electron/` (including `.dmg` and `.zip` for `x64` and `arm64`). Open the `.dmg` and drag **GHCountdown** into Applications.
+Build output is written to `dist-electron/` (`.dmg` and `.zip` for the selected arch). Open the `.dmg` and drag **GHCountdown** into Applications.
 
 #### Option B — Browser / Local Server
 
