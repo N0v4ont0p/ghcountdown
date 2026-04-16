@@ -29,9 +29,34 @@ interface AIContext {
   recentBlockTitles: string[];
 }
 
-const HUGGING_FACE_API_KEY = import.meta.env.VITE_HUGGINGFACE_API_KEY;
-const HUGGING_FACE_MODEL = import.meta.env.VITE_HUGGINGFACE_MODEL || 'google/gemma-4-26b-it';
+const ENV_HUGGING_FACE_API_KEY = import.meta.env.VITE_HUGGINGFACE_API_KEY;
+export const DEFAULT_HUGGING_FACE_MODEL = 'google/gemma-4-26b-it';
+const ENV_HUGGING_FACE_MODEL = import.meta.env.VITE_HUGGINGFACE_MODEL || DEFAULT_HUGGING_FACE_MODEL;
 const CHAT_COMPLETIONS_URL = 'https://api-inference.huggingface.co/v1/chat/completions';
+
+export interface AIConfiguration {
+  apiKey: string;
+  model: string;
+}
+
+let runtimeApiKey = ENV_HUGGING_FACE_API_KEY || '';
+let runtimeModel = ENV_HUGGING_FACE_MODEL || DEFAULT_HUGGING_FACE_MODEL;
+
+export function getAIConfiguration(): AIConfiguration {
+  return {
+    apiKey: runtimeApiKey,
+    model: runtimeModel,
+  };
+}
+
+export function updateAIConfiguration(config: Partial<AIConfiguration>) {
+  if ('apiKey' in config) {
+    runtimeApiKey = config.apiKey?.trim() || '';
+  }
+  if ('model' in config) {
+    runtimeModel = config.model?.trim() || DEFAULT_HUGGING_FACE_MODEL;
+  }
+}
 
 function toIsoDate(date: Date) {
   return date.toISOString().split('T')[0];
@@ -156,12 +181,14 @@ function normalizeAIResponse(raw: any): AIAssistantResult {
 }
 
 export function isAIConfigured() {
-  return Boolean(HUGGING_FACE_API_KEY);
+  return Boolean(getAIConfiguration().apiKey);
 }
 
 export async function generateActionPlan(prompt: string, context: AIContext): Promise<AIAssistantResult> {
-  if (!HUGGING_FACE_API_KEY) {
-    throw new Error('AI is not configured. Add VITE_HUGGINGFACE_API_KEY in your local .env file.');
+  const config = getAIConfiguration();
+
+  if (!config.apiKey) {
+    throw new Error('AI is not configured. Add your Hugging Face API key in-app or via VITE_HUGGINGFACE_API_KEY.');
   }
 
   const systemPrompt = [
@@ -204,10 +231,10 @@ export async function generateActionPlan(prompt: string, context: AIContext): Pr
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${HUGGING_FACE_API_KEY}`,
+      Authorization: `Bearer ${config.apiKey}`,
     },
     body: JSON.stringify({
-      model: HUGGING_FACE_MODEL,
+      model: config.model,
       temperature: 0.25,
       max_tokens: 1000,
       messages: [

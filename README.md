@@ -59,12 +59,14 @@ npm run electron:dev   # Open Electron pointing at the dev server
 cp .env.example .env
 ```
 
-Then set your local key in `.env`:
+Then optionally set your local key/model in `.env`:
 
 ```env
 VITE_HUGGINGFACE_API_KEY=your_huggingface_api_key_here
 VITE_HUGGINGFACE_MODEL=google/gemma-4-26b-it
 ```
+
+Or, open **AI Action Assistant** in the app and set your Hugging Face key/model for the current app session.
 
 > Keep `.env` local only. It is gitignored and should never be committed.
 

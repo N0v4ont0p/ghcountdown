@@ -3,20 +3,37 @@ import { Sparkle, Lightning, WarningCircle, CheckCircle, WifiSlash } from '@phos
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import { getAllTodos, createTodo } from '@/db/repositories/todosRepo';
 import { getAllEvents, createEvent } from '@/db/repositories/eventsRepo';
 import { getAllTimeBlocks, createTimeBlock } from '@/db/repositories/timeBlocksRepo';
-import { AIAssistantResult, AISuggestion, generateActionPlan, isAIConfigured } from '@/lib/aiPlanner';
+import {
+  AIAssistantResult,
+  AISuggestion,
+  DEFAULT_HUGGING_FACE_MODEL,
+  generateActionPlan,
+  getAIConfiguration,
+  isAIConfigured,
+  updateAIConfiguration,
+} from '@/lib/aiPlanner';
 
 export function AIAssistantView() {
   const [prompt, setPrompt] = useState('');
+  const [apiKey, setApiKey] = useState('');
+  const [model, setModel] = useState(DEFAULT_HUGGING_FACE_MODEL);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isApplyingAll, setIsApplyingAll] = useState(false);
   const [result, setResult] = useState<AIAssistantResult | null>(null);
   const [appliedIds, setAppliedIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    const config = getAIConfiguration();
+    setApiKey(config.apiKey);
+    setModel(config.model);
+  }, []);
 
   useEffect(() => {
     const goOnline = () => setIsOnline(true);
@@ -35,6 +52,20 @@ export function AIAssistantView() {
     [result]
   );
 
+  function handleSaveAIConfig() {
+    const trimmedApiKey = apiKey.trim();
+    const trimmedModel = model.trim();
+
+    updateAIConfiguration({
+      apiKey: trimmedApiKey,
+      model: trimmedModel || DEFAULT_HUGGING_FACE_MODEL,
+    });
+
+    setApiKey(trimmedApiKey);
+    setModel(trimmedModel || DEFAULT_HUGGING_FACE_MODEL);
+    toast.success(trimmedApiKey ? 'AI credentials updated for this session.' : 'Saved model. Add an API key to enable AI.');
+  }
+
   async function handleGenerate() {
     if (!prompt.trim()) {
       toast.error('Describe your schedule or goals first.');
@@ -47,7 +78,7 @@ export function AIAssistantView() {
     }
 
     if (!isAIConfigured()) {
-      toast.error('Missing AI key. Set VITE_HUGGINGFACE_API_KEY in your local .env file.');
+      toast.error('Missing AI key. Add your Hugging Face key below or via VITE_HUGGINGFACE_API_KEY.');
       return;
     }
 
@@ -164,10 +195,37 @@ export function AIAssistantView() {
         <Card className="p-4 border-yellow-500/40">
           <div className="flex items-center gap-2 text-sm">
             <WarningCircle size={18} className="text-yellow-500" />
-            <p>Set VITE_HUGGINGFACE_API_KEY in your local .env file to enable AI generation.</p>
+            <p>Add your Hugging Face API key below for this app session, or set VITE_HUGGINGFACE_API_KEY.</p>
           </div>
         </Card>
       )}
+
+      <Card className="p-5 space-y-3">
+        <h3 className="font-semibold">AI Provider Configuration</h3>
+        <p className="text-sm text-muted-foreground">
+          Set your Hugging Face key for this app session and choose the model to use.
+        </p>
+        <div className="grid gap-3 md:grid-cols-2">
+          <Input
+            type="password"
+            value={apiKey}
+            onChange={(event) => setApiKey(event.target.value)}
+            placeholder="hf_xxx..."
+            autoComplete="off"
+          />
+          <Input
+            value={model}
+            onChange={(event) => setModel(event.target.value)}
+            placeholder={DEFAULT_HUGGING_FACE_MODEL}
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          <Button type="button" variant="outline" onClick={handleSaveAIConfig}>
+            Save AI Settings
+          </Button>
+          {isAIConfigured() && <Badge variant="secondary">AI key configured</Badge>}
+        </div>
+      </Card>
 
       <Card className="p-5 space-y-4">
         <Textarea
