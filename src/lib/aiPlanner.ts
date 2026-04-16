@@ -365,7 +365,7 @@ async function parseErrorDetail(response: Response): Promise<string> {
 }
 
 function buildModelCandidates(requestedModel: string) {
-  return [requestedModel.trim() || DEFAULT_HUGGING_FACE_MODEL];
+  return [requestedModel?.trim() || DEFAULT_HUGGING_FACE_MODEL];
 }
 
 function formatAttemptError(status: number | null, endpoint: string, model: string, detail?: string) {
