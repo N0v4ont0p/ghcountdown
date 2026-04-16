@@ -1,5 +1,39 @@
-@import 'tailwindcss';
-@import "tw-animate-css";
+/* ─── Electron / macOS app-level layout ─── */
+
+/* Lock the viewport so there's no page-level scroll (content scrolls inside panels) */
+html,
+body,
+#root {
+  height: 100%;
+  overflow: hidden;
+}
+
+/* Hide all OS scrollbars — the content still scrolls, just silently */
+* {
+  scrollbar-width: none;        /* Firefox */
+  -ms-overflow-style: none;     /* IE/Edge */
+}
+*::-webkit-scrollbar {
+  display: none;                /* Chrome / Safari / Electron */
+}
+
+/* macOS window-drag regions */
+/* Apply this class to any area that should drag the window */
+.titlebar-drag {
+  -webkit-app-region: drag;
+}
+/* Interactive elements inside a drag region must opt out */
+.no-drag,
+button,
+a,
+input,
+select,
+textarea,
+[role="button"],
+[role="menuitem"],
+[role="option"] {
+  -webkit-app-region: no-drag;
+}
 
 @layer base {
   * {

@@ -1,212 +1,134 @@
-# 🎯 GHCountdown - Countdown-First Productivity
+<div align="center">
 
-**A local-first productivity app for Mac, Windows, and Linux**
+<img src="src/assets/logo.svg" alt="GHCountdown" width="96" height="96" />
 
----
+# GHCountdown
 
-## ✨ What is GHCountdown?
+**Countdown-first productivity. Local. Native. Fast.**
 
-GHCountdown is a **stunning, offline-first productivity powerhouse** that runs entirely on your machine. No cloud, no accounts, no internet required—just you and your data, locally stored and always private.
+A native macOS desktop app built with Electron + React that keeps all your events, todos, time tracking, and planning data private — stored on-device, no cloud required.
 
-## ✅ Current Status
+[![Electron](https://img.shields.io/badge/Electron-41-47848F?logo=electron&logoColor=white)](https://electronjs.org)
+[![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)](https://react.dev)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-- ✅ Core app is production-ready in browser/local-server mode
-- ✅ Electron desktop packaging is implemented
-- ✅ macOS packaging outputs installable artifacts via Electron Builder
-- ✅ Local-first data storage and backup/restore are available
-
-### Key Features
-
-🎯 **Countdown Hero** - Large, animated countdown to your next important event  
-📅 **Event Management** - Full calendar with priorities, tags, and notes  
-✅ **Smart Todos** - Inbox, Today, and project-based task system  
-⏰ **Timeline View** - Visual in-day planning with drag-and-drop blocks  
-📊 **Weekly Calendar** - Week-at-a-glance with all your commitments  
-⏱ **Time Tracking** - Auto-tracking and manual timers for deep work  
-📈 **Statistics** - Beautiful productivity insights and charts  
-🌓 **Gorgeous Themes** - Polished light and dark modes
+</div>
 
 ---
 
-## 🚀 Quick Start
+## Features
 
-### For Mac Users (Primary Platform)
+| Feature | Description |
+|---|---|
+| ⏳ **Countdown Hero** | Full-screen animated countdown to your next important event |
+| 📅 **Events** | Create deadlines and milestones with priorities, tags, and notes |
+| ✅ **Todos** | Inbox → Today workflow with project grouping |
+| 🕐 **Timeline** | Visual hour-by-hour day planner with drag-and-drop blocks |
+| 📆 **Weekly Calendar** | Week-at-a-glance view with recurring schedule presets |
+| ⏱ **Time Tracking** | One-tap timer linked to any task, with daily/weekly totals |
+| 📊 **Statistics** | Productivity charts and time breakdown |
+| 🎨 **Themes** | Light, dark, and system-matched — persisted across launches |
 
-#### Option A — Electron Desktop App (`.app` via `.dmg`)
+---
+
+## Getting started
+
+### Requirements
+
+- **macOS 12+** (primary target — arm64 & x64 builds)
+- Node.js 20+
+- npm 9+
+
+### Install & run in dev mode
 
 ```bash
+git clone https://github.com/N0v4ont0p/ghcountdown
+cd ghcountdown
 npm install
 
-# M1/M2/M3/M4 Mac (Apple Silicon — arm64, recommended for most users):
+# Start the Vite dev server + Electron together
+npm run dev            # Vite on http://localhost:5173
+npm run electron:dev   # Open Electron pointing at the dev server
+```
+
+### Build the macOS app
+
+```bash
+# Build for both Intel and Apple Silicon
+npm run electron:build:mac
+
+# Build for Apple Silicon only (faster)
 npm run electron:build:mac:arm64
 
-# Intel Mac (x64):
+# Build for Intel only
 npm run electron:build:mac:x64
-
-# Universal build (both archs, slower — downloads ~300 MB on first run):
-npm run electron:build:mac
 ```
 
-Build output is written to `dist-electron/` (`.dmg` and `.zip` for the selected arch). Open the `.dmg` and drag **GHCountdown** into Applications.
+Artifacts land in `dist-electron/`:
+- `GHCountdown-*.dmg` — drag-to-install disk image
+- `GHCountdown-*-mac.zip` — zipped `.app` bundle
 
-#### Option B — Browser / Local Server
-
-1. **Download** this folder to your Mac
-2. **Make launcher executable:**
-   ```bash
-   chmod +x start-mac.sh
-   ```
-3. **Run it:**
-   ```bash
-   ./start-mac.sh
-   ```
-   Or double-click `start-mac.sh` in Finder
-
-4. **Done!** GHCountdown opens in your browser
-
-### For Windows Users
-
-1. **Download** this folder
-2. **Double-click** `start-windows.bat`
-3. **Done!** App launches automatically
-
-### For Linux Users
-
-1. **Download** this folder
-2. **Make launcher executable:**
-   ```bash
-   chmod +x start-linux.sh
-   ```
-3. **Run it:**
-   ```bash
-   ./start-linux.sh
-   ```
+Open the `.dmg`, drag **GHCountdown** into **Applications**, and launch.
 
 ---
 
-## 📋 Requirements
+## Architecture
 
-- **Node.js 18+** ([Download here](https://nodejs.org/))
-- Any modern browser (Chrome, Firefox, Safari, Edge)
-- **No internet required** after installation
-- For macOS Electron builds: **Xcode Command Line Tools** (`xcode-select --install`)
-
----
-
-## 📖 Documentation
-
-- **[QUICKSTART.md](QUICKSTART.md)** - Get running in 3 steps
-- **[DOWNLOAD-AND-RUN.md](DOWNLOAD-AND-RUN.md)** - End-user setup + Electron app packaging
-- **[DEPLOYMENT.md](DEPLOYMENT.md)** - Full deployment guide with shortcuts, startup configs, and troubleshooting
-- **[PRD.md](PRD.md)** - Complete product requirements and design philosophy
-
----
-
-## 💾 Data Storage
-
-All your data lives in **IndexedDB** in your browser:
-- ✅ 100% local, 100% private
-- ✅ No cloud sync, no external services
-- ✅ Export/import from Settings for backups
-- ✅ Portable across machines
-
----
-
-## ⌨️ Keyboard Shortcuts
-
-- `⌘K` / `Ctrl+K` - Command palette
-- `N` - New event
-- `T` - New todo  
-- `Space` - Start/stop timer
-
----
-
-## 🎨 Built With
-
-- **React 19** + TypeScript
-- **Tailwind CSS** + Framer Motion
-- **IndexedDB** for local storage
-- **Vite** for blazing-fast builds
-- **shadcn/ui** components
-- **Recharts** for beautiful visualizations
-
----
-
-## 🔒 Privacy & Security
-
-- ✅ **Zero telemetry** - No tracking, no analytics
-- ✅ **Fully offline** - Works without internet
-- ✅ **Local-only** - Your data never leaves your machine
-- ✅ **Open source** - Audit the code yourself
-
----
-
-## 🐛 Troubleshooting
-
-### Port already in use?
-```bash
-# Kill the process (Mac/Linux)
-lsof -ti:4173 | xargs kill
-
-# Or change the port in package.json:
-"preview": "vite preview --port 8080"
+```
+ghcountdown/
+├── electron/
+│   ├── main.cjs          # Electron main process (window, vibrancy, traffic lights)
+│   └── preload.cjs       # Isolated preload (no Node APIs exposed to renderer)
+├── src/
+│   ├── App.tsx            # Root layout: sidebar + routed main panel
+│   ├── components/
+│   │   ├── Sidebar.tsx         # Navigation sidebar with drag region
+│   │   ├── CountdownHero.tsx   # Animated countdown display
+│   │   ├── EventsView.tsx      # Event CRUD
+│   │   ├── TodosView.tsx       # Todos + projects
+│   │   ├── TimelineView.tsx    # Day planner
+│   │   ├── WeeklyCalendarView.tsx
+│   │   ├── TimeTrackingView.tsx
+│   │   └── StatisticsView.tsx
+│   ├── db/
+│   │   ├── core.ts         # IndexedDB init (PocketBase-like local store)
+│   │   ├── schema.ts       # TypeScript types for all entities
+│   │   ├── seed.ts         # Demo data on first launch
+│   │   ├── export.ts       # JSON + CSV export/import
+│   │   └── repositories/   # Per-entity CRUD helpers
+│   ├── hooks/
+│   │   └── use-theme.ts    # Light/dark/system — persisted in localStorage
+│   └── assets/
+│       └── logo.svg        # App icon (cyan clock)
+└── build/
+    └── icon.png            # 1024×1024 icon used by electron-builder → .icns
 ```
 
-### Dependencies not installing?
-```bash
-rm -rf node_modules package-lock.json
-npm install
-```
-
-### More help?
-See **[DEPLOYMENT.md](DEPLOYMENT.md)** for comprehensive troubleshooting.
+**Storage** — all data lives in the browser's **IndexedDB** inside the Electron renderer process. No SQLite, no external database, no network calls.
 
 ---
 
-## 📦 What Gets Downloaded
+## Data & privacy
 
-When you download this app, you get:
-- Source code (TypeScript/React)
-- Build configuration (Vite)
-- Launch scripts (Mac/Windows/Linux)
-- Complete documentation
-- **No executable binaries** - builds fresh on your machine for security
-
-First launch takes 2-3 minutes to set up, then instant thereafter!
+- Everything is stored in `IndexedDB` on the local machine only.
+- No telemetry, no analytics, no accounts.
+- **Export** a full JSON backup or individual CSVs at any time from Settings → Data Management.
+- **Import** a JSON backup to restore or migrate data.
 
 ---
 
-## 🚧 Roadmap
+## macOS specifics
 
-Future enhancements:
-- [ ] Import from calendar files (.ics)
-- [ ] Custom recurring event patterns
-- [ ] Themes marketplace
-- [ ] Mobile companion view
-
----
-
-## 🤝 Contributing
-
-This is a local-first app built with privacy in mind. Feel free to:
-- Fork and customize for your needs
-- Submit issues or feature requests
-- Share your themes and presets
+- `titleBarStyle: 'hiddenInset'` — traffic-light buttons inset into the sidebar drag region.
+- `vibrancy: 'sidebar'` — frosted-glass sidebar that adapts to desktop wallpaper.
+- `-webkit-app-region: drag` — the top strip of both the sidebar and main panel is a native drag handle.
+- All scrollbars are hidden (`scrollbar-width: none`) for a clean, native feel.
+- Theme preference persisted in `localStorage` across app restarts.
 
 ---
 
-## 📄 License
+## License
 
-The Spark Template files and resources from GitHub are licensed under the terms of the MIT license, Copyright GitHub, Inc.
+[MIT](LICENSE)
 
----
-
-## 🎉 Enjoy!
-
-**GHCountdown** is designed to be your **personal productivity companion**—fast, beautiful, and completely under your control.
-
-No subscriptions. No accounts. No cloud. Just pure productivity. ⚡
-
----
-
-**Made with ❤️ for makers who value privacy and local-first software**

@@ -1,9 +1,10 @@
 'use strict';
 
-const { app, BrowserWindow, shell } = require('electron');
+const { app, BrowserWindow, shell, nativeTheme } = require('electron');
 const path = require('path');
 
 const isDev = process.env.NODE_ENV === 'development';
+const isMac = process.platform === 'darwin';
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -12,7 +13,16 @@ function createWindow() {
     minWidth: 900,
     minHeight: 600,
     titleBarStyle: 'hiddenInset',
+    // Position traffic lights so they sit inside the sidebar drag region
+    trafficLightPosition: { x: 16, y: 18 },
     title: 'GHCountdown',
+    // Transparent background prevents white flash on launch
+    // Vibrancy and transparency are macOS-only
+    ...(isMac ? {
+      backgroundColor: '#00000000',
+      vibrancy: 'sidebar',
+      visualEffectState: 'active',
+    } : {}),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
