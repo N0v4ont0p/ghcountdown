@@ -33,21 +33,10 @@ const ENV_HUGGING_FACE_API_KEY = import.meta.env.VITE_HUGGINGFACE_API_KEY;
 export const DEFAULT_HUGGING_FACE_MODEL = 'google/gemma-4-26B-A4B';
 const ENV_HUGGING_FACE_MODEL = import.meta.env.VITE_HUGGINGFACE_MODEL || DEFAULT_HUGGING_FACE_MODEL;
 
-function encodeModelPath(model: string) {
-  return model.split('/').map(encodeURIComponent).join('/');
-}
-
 const CHAT_COMPLETIONS_ENDPOINTS = [
   {
     buildUrl: () => 'https://router.huggingface.co/v1/chat/completions',
   },
-  {
-    buildUrl: (model: string) => `https://api-inference.huggingface.co/models/${encodeModelPath(model)}/v1/chat/completions`,
-  },
-];
-const FALLBACK_HUGGING_FACE_MODELS = [
-  'google/gemma-4-26b-it',
-  'mistralai/Mistral-7B-Instruct-v0.3',
 ];
 const AUTH_FAILURE_CODES = new Set([401, 403]);
 export type AIMode = 'plan' | 'agent';
@@ -376,7 +365,7 @@ async function parseErrorDetail(response: Response): Promise<string> {
 }
 
 function buildModelCandidates(requestedModel: string) {
-  return Array.from(new Set([requestedModel, DEFAULT_HUGGING_FACE_MODEL, ...FALLBACK_HUGGING_FACE_MODELS]));
+  return [requestedModel.trim() || DEFAULT_HUGGING_FACE_MODEL];
 }
 
 function formatAttemptError(status: number | null, endpoint: string, model: string, detail?: string) {
