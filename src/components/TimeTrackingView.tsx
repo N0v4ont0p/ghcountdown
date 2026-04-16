@@ -109,11 +109,15 @@ export function TimeTrackingView() {
   }
 
   async function handleDeleteConfirm() {
-    if (entryToDelete) {
+    if (!entryToDelete) return;
+    try {
       await deleteTimeEntry(entryToDelete);
       toast.success('Time entry deleted');
+      await loadData();
+    } catch (error) {
+      toast.error('Failed to delete time entry');
+    } finally {
       setEntryToDelete(null);
-      loadData();
     }
   }
 
@@ -350,9 +354,13 @@ export function TimeTrackingView() {
 
       <ConfirmDialog
         open={deleteConfirmOpen}
-        onOpenChange={setDeleteConfirmOpen}
+        onOpenChange={(open) => {
+          setDeleteConfirmOpen(open);
+          if (!open) setEntryToDelete(null);
+        }}
         title="Delete Time Entry?"
         description="Are you sure you want to delete this time entry? This action cannot be undone."
+        actionType="delete"
         variant="destructive"
         confirmText="Delete"
         cancelText="Cancel"

@@ -119,11 +119,15 @@ export function EventsView() {
   }
 
   async function handleDeleteConfirm() {
-    if (eventToDelete) {
+    if (!eventToDelete) return;
+    try {
       await deleteEvent(eventToDelete);
       toast.success('Event deleted');
+      await loadEvents();
+    } catch (error) {
+      toast.error('Failed to delete event');
+    } finally {
       setEventToDelete(null);
-      loadEvents();
     }
   }
 
@@ -430,7 +434,10 @@ export function EventsView() {
 
       <ConfirmDialog
         open={deleteConfirmOpen}
-        onOpenChange={setDeleteConfirmOpen}
+        onOpenChange={(open) => {
+          setDeleteConfirmOpen(open);
+          if (!open) setEventToDelete(null);
+        }}
         title="Delete Event?"
         description="Are you sure you want to delete this event? This action cannot be undone."
         actionType="delete"

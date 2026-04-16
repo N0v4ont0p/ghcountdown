@@ -11,19 +11,23 @@ import { StatisticsView } from '@/components/StatisticsView';
 import { TimeTrackingView } from '@/components/TimeTrackingView';
 import { initDB } from '@/db/core';
 import { seedDatabase } from '@/db/seed';
-import { getNextImportantEvent, getAllEvents } from '@/db/repositories/eventsRepo';
-import { getAllTodos } from '@/db/repositories/todosRepo';
+import { deleteAllEvents, getNextImportantEvent, getAllEvents } from '@/db/repositories/eventsRepo';
+import { deleteAllTodos, getAllTodos } from '@/db/repositories/todosRepo';
 import { getSettings, updateSettings } from '@/db/repositories/settingsRepo';
+import { deleteAllProjects } from '@/db/repositories/projectsRepo';
+import { deleteAllTimeEntries } from '@/db/repositories/timeRepo';
+import { deleteAllTimeBlocks } from '@/db/repositories/timeBlocksRepo';
 import { Event, Todo, Settings } from '@/db/schema';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Plus, CalendarBlank, Sun, Moon, Monitor, DownloadSimple, UploadSimple } from '@phosphor-icons/react';
+import { Plus, CalendarBlank, Sun, Moon, Monitor, DownloadSimple, UploadSimple, Trash } from '@phosphor-icons/react';
 import { format } from 'date-fns';
 import { Badge } from '@/components/ui/badge';
 import { useTheme } from '@/hooks/use-theme';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { exportAllData, downloadJSON, exportTimeEntriesCSV, exportEventsCSV, exportTodosCSV, importAllData, ExportData } from '@/db/export';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { toast } from 'sonner';
 
 function App() {
@@ -33,6 +37,8 @@ function App() {
   const [todos, setTodos] = useState<Todo[]>([]);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false);
+  const [bulkDeleteTarget, setBulkDeleteTarget] = useState<'events' | 'todos' | 'projects' | 'timeEntries' | 'timeBlocks' | 'all' | null>(null);
   const { theme, setTheme, resolvedTheme } = useTheme();
 
   useEffect(() => {
@@ -151,6 +157,80 @@ function App() {
     };
 
     input.click();
+  }
+
+  const bulkDeleteMeta = {
+    events: {
+      title: 'Delete all events?',
+      description: 'This will permanently delete every event.',
+      successMessage: 'All events deleted',
+    },
+    todos: {
+      title: 'Delete all todos?',
+      description: 'This will permanently delete every todo.',
+      successMessage: 'All todos deleted',
+    },
+    projects: {
+      title: 'Delete all projects?',
+      description: 'This will permanently delete every project.',
+      successMessage: 'All projects deleted',
+    },
+    timeEntries: {
+      title: 'Delete all time entries?',
+      description: 'This will permanently delete every tracked time entry.',
+      successMessage: 'All time entries deleted',
+    },
+    timeBlocks: {
+      title: 'Delete all time blocks?',
+      description: 'This will permanently delete every timeline time block.',
+      successMessage: 'All time blocks deleted',
+    },
+    all: {
+      title: 'Delete all app data?',
+      description: 'This will delete events, todos, projects, time entries, and time blocks. Settings are kept.',
+      successMessage: 'All app data deleted',
+    },
+  } as const;
+
+  async function handleBulkDeleteConfirm() {
+    if (!bulkDeleteTarget) return;
+
+    try {
+      switch (bulkDeleteTarget) {
+        case 'events':
+          await deleteAllEvents();
+          break;
+        case 'todos':
+          await deleteAllTodos();
+          break;
+        case 'projects':
+          await deleteAllProjects();
+          break;
+        case 'timeEntries':
+          await deleteAllTimeEntries();
+          break;
+        case 'timeBlocks':
+          await deleteAllTimeBlocks();
+          break;
+        case 'all':
+          await Promise.all([
+            deleteAllEvents(),
+            deleteAllTodos(),
+            deleteAllProjects(),
+            deleteAllTimeEntries(),
+            deleteAllTimeBlocks(),
+          ]);
+          break;
+      }
+
+      await loadHomeData();
+      toast.success(bulkDeleteMeta[bulkDeleteTarget].successMessage);
+    } catch (error) {
+      toast.error('Failed to delete data');
+      throw error;
+    } finally {
+      setBulkDeleteTarget(null);
+    }
   }
 
   if (isLoading) {
@@ -512,6 +592,86 @@ function App() {
                             Import will add data to existing records
                           </p>
                         </div>
+                        <div>
+                          <p className="text-xs font-medium mb-2">Delete Data</p>
+                          <div className="flex flex-wrap gap-2">
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              onClick={() => {
+                                setBulkDeleteTarget('timeBlocks');
+                                setBulkDeleteConfirmOpen(true);
+                              }}
+                              className="button-interactive"
+                            >
+                              <Trash size={16} className="mr-1" />
+                              Clear Time Blocks
+                            </Button>
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              onClick={() => {
+                                setBulkDeleteTarget('timeEntries');
+                                setBulkDeleteConfirmOpen(true);
+                              }}
+                              className="button-interactive"
+                            >
+                              <Trash size={16} className="mr-1" />
+                              Clear Time Entries
+                            </Button>
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              onClick={() => {
+                                setBulkDeleteTarget('todos');
+                                setBulkDeleteConfirmOpen(true);
+                              }}
+                              className="button-interactive"
+                            >
+                              <Trash size={16} className="mr-1" />
+                              Clear Todos
+                            </Button>
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              onClick={() => {
+                                setBulkDeleteTarget('events');
+                                setBulkDeleteConfirmOpen(true);
+                              }}
+                              className="button-interactive"
+                            >
+                              <Trash size={16} className="mr-1" />
+                              Clear Events
+                            </Button>
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              onClick={() => {
+                                setBulkDeleteTarget('projects');
+                                setBulkDeleteConfirmOpen(true);
+                              }}
+                              className="button-interactive"
+                            >
+                              <Trash size={16} className="mr-1" />
+                              Clear Projects
+                            </Button>
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              onClick={() => {
+                                setBulkDeleteTarget('all');
+                                setBulkDeleteConfirmOpen(true);
+                              }}
+                              className="button-interactive"
+                            >
+                              <Trash size={16} className="mr-1" />
+                              Clear Everything
+                            </Button>
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-2">
+                            Deletions are permanent and cannot be undone.
+                          </p>
+                        </div>
                       </div>
                     </div>
                   </Card>
@@ -522,6 +682,20 @@ function App() {
         </main>
       </div>
 
+      <ConfirmDialog
+        open={bulkDeleteConfirmOpen}
+        onOpenChange={(open) => {
+          setBulkDeleteConfirmOpen(open);
+          if (!open) setBulkDeleteTarget(null);
+        }}
+        title={bulkDeleteTarget ? bulkDeleteMeta[bulkDeleteTarget].title : 'Delete data?'}
+        description={bulkDeleteTarget ? bulkDeleteMeta[bulkDeleteTarget].description : 'This action cannot be undone.'}
+        actionType="delete"
+        variant="destructive"
+        confirmText="Delete"
+        cancelText="Cancel"
+        onConfirm={handleBulkDeleteConfirm}
+      />
       <Toaster />
     </div>
   );

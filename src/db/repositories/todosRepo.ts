@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import { Todo, STORES } from '../schema';
-import { getAll, getByKey, put, remove, getAllByIndex } from '../core';
+import { clearStore, getAll, getByKey, put, remove, getAllByIndex } from '../core';
 
 export async function getAllTodos(): Promise<Todo[]> {
   return getAll<Todo>(STORES.TODOS);
@@ -53,4 +53,8 @@ export async function deleteTodo(id: string): Promise<boolean> {
   if (!existing) return false;
   await remove(STORES.TODOS, id);
   return true;
+}
+
+export async function deleteAllTodos(): Promise<void> {
+  await clearStore(STORES.TODOS);
 }

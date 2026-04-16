@@ -130,6 +130,10 @@ export async function remove(storeName: string, key: string): Promise<void> {
   return transaction(storeName, 'readwrite', (store) => store.delete(key));
 }
 
+export async function clearStore(storeName: string): Promise<void> {
+  return transaction(storeName, 'readwrite', (store) => store.clear());
+}
+
 export async function getAllByIndex<T>(
   storeName: string,
   indexName: string,
