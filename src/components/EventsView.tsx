@@ -17,6 +17,8 @@ import { format } from 'date-fns';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 
+const ALL_DAY_EVENT_HOUR = 12;
+
 function toLocalDateInputValue(isoString: string) {
   const date = new Date(isoString);
   const year = date.getFullYear();
@@ -41,12 +43,30 @@ function toEventStartIso(startsAt: string, allDay: boolean): string | null {
   if (allDay) {
     const datePart = startsAt.split('T')[0];
     const [year, month, day] = datePart.split('-').map(Number);
-    const normalizedDate = new Date(year, month - 1, day, 12, 0, 0, 0);
+    const normalizedDate = new Date(year, month - 1, day, ALL_DAY_EVENT_HOUR, 0, 0, 0);
     return Number.isNaN(normalizedDate.getTime()) ? null : normalizedDate.toISOString();
   }
 
-  const normalizedDateTime = new Date(startsAt.includes('T') ? startsAt : `${startsAt}T12:00`);
+  const normalizedDateTime = new Date(
+    startsAt.includes('T') ? startsAt : `${startsAt}T${String(ALL_DAY_EVENT_HOUR).padStart(2, '0')}:00`
+  );
   return Number.isNaN(normalizedDateTime.getTime()) ? null : normalizedDateTime.toISOString();
+}
+
+function normalizeStartsAtForAllDayToggle(previousStartsAt: string, checked: boolean) {
+  if (checked) {
+    return previousStartsAt.split('T')[0];
+  }
+
+  if (previousStartsAt.includes('T')) {
+    return previousStartsAt;
+  }
+
+  if (!previousStartsAt) {
+    return '';
+  }
+
+  return `${previousStartsAt}T${String(ALL_DAY_EVENT_HOUR).padStart(2, '0')}:00`;
 }
 
 export function EventsView() {
@@ -283,11 +303,7 @@ export function EventsView() {
                   checked={formData.allDay}
                   onCheckedChange={(checked) => {
                     setFormData((previous) => {
-                      const normalizedStartsAt = checked
-                        ? previous.startsAt.split('T')[0]
-                        : previous.startsAt.includes('T')
-                          ? previous.startsAt
-                          : (previous.startsAt ? `${previous.startsAt}T12:00` : '');
+                      const normalizedStartsAt = normalizeStartsAtForAllDayToggle(previous.startsAt, checked);
                       return { ...previous, allDay: checked, startsAt: normalizedStartsAt };
                     });
                   }}
