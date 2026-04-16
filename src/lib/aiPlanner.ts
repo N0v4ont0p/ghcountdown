@@ -29,9 +29,57 @@ interface AIContext {
   recentBlockTitles: string[];
 }
 
-const HUGGING_FACE_API_KEY = import.meta.env.VITE_HUGGINGFACE_API_KEY;
-const HUGGING_FACE_MODEL = import.meta.env.VITE_HUGGINGFACE_MODEL || 'google/gemma-4-26b-it';
+const ENV_HUGGING_FACE_API_KEY = import.meta.env.VITE_HUGGINGFACE_API_KEY;
+const DEFAULT_HUGGING_FACE_MODEL = 'google/gemma-4-26b-it';
+const ENV_HUGGING_FACE_MODEL = import.meta.env.VITE_HUGGINGFACE_MODEL || DEFAULT_HUGGING_FACE_MODEL;
+const AI_KEY_STORAGE_KEY = 'ghcountdown.huggingfaceApiKey';
+const AI_MODEL_STORAGE_KEY = 'ghcountdown.huggingfaceModel';
 const CHAT_COMPLETIONS_URL = 'https://api-inference.huggingface.co/v1/chat/completions';
+
+export interface AIConfiguration {
+  apiKey: string;
+  model: string;
+}
+
+function getStoredValue(key: string): string | null {
+  try {
+    if (typeof window === 'undefined') return null;
+    const value = window.localStorage.getItem(key);
+    return value && value.trim().length > 0 ? value.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+function setStoredValue(key: string, value: string | undefined) {
+  try {
+    if (typeof window === 'undefined') return;
+    const normalized = value?.trim();
+    if (normalized) {
+      window.localStorage.setItem(key, normalized);
+    } else {
+      window.localStorage.removeItem(key);
+    }
+  } catch {
+    // localStorage unavailable
+  }
+}
+
+export function getAIConfiguration(): AIConfiguration {
+  return {
+    apiKey: getStoredValue(AI_KEY_STORAGE_KEY) || ENV_HUGGING_FACE_API_KEY || '',
+    model: getStoredValue(AI_MODEL_STORAGE_KEY) || ENV_HUGGING_FACE_MODEL || DEFAULT_HUGGING_FACE_MODEL,
+  };
+}
+
+export function updateAIConfiguration(config: Partial<AIConfiguration>) {
+  if (Object.prototype.hasOwnProperty.call(config, 'apiKey')) {
+    setStoredValue(AI_KEY_STORAGE_KEY, config.apiKey);
+  }
+  if (Object.prototype.hasOwnProperty.call(config, 'model')) {
+    setStoredValue(AI_MODEL_STORAGE_KEY, config.model);
+  }
+}
 
 function toIsoDate(date: Date) {
   return date.toISOString().split('T')[0];
@@ -156,12 +204,14 @@ function normalizeAIResponse(raw: any): AIAssistantResult {
 }
 
 export function isAIConfigured() {
-  return Boolean(HUGGING_FACE_API_KEY);
+  return Boolean(getAIConfiguration().apiKey);
 }
 
 export async function generateActionPlan(prompt: string, context: AIContext): Promise<AIAssistantResult> {
-  if (!HUGGING_FACE_API_KEY) {
-    throw new Error('AI is not configured. Add VITE_HUGGINGFACE_API_KEY in your local .env file.');
+  const config = getAIConfiguration();
+
+  if (!config.apiKey) {
+    throw new Error('AI is not configured. Add your Hugging Face API key in-app or via VITE_HUGGINGFACE_API_KEY.');
   }
 
   const systemPrompt = [
@@ -204,10 +254,10 @@ export async function generateActionPlan(prompt: string, context: AIContext): Pr
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${HUGGING_FACE_API_KEY}`,
+      Authorization: `Bearer ${config.apiKey}`,
     },
     body: JSON.stringify({
-      model: HUGGING_FACE_MODEL,
+      model: config.model,
       temperature: 0.25,
       max_tokens: 1000,
       messages: [
