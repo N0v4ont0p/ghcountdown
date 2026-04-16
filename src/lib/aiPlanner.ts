@@ -32,12 +32,22 @@ interface AIContext {
 const ENV_HUGGING_FACE_API_KEY = import.meta.env.VITE_HUGGINGFACE_API_KEY;
 export const DEFAULT_HUGGING_FACE_MODEL = 'google/gemma-4-26B-A4B';
 const ENV_HUGGING_FACE_MODEL = import.meta.env.VITE_HUGGINGFACE_MODEL || DEFAULT_HUGGING_FACE_MODEL;
-const CHAT_COMPLETIONS_URLS = [
-  'https://router.huggingface.co/v1/chat/completions',
-  'https://api-inference.huggingface.co/v1/chat/completions',
+
+function encodeModelPath(model: string) {
+  return model.split('/').map(encodeURIComponent).join('/');
+}
+
+const CHAT_COMPLETIONS_ENDPOINTS = [
+  {
+    buildUrl: () => 'https://router.huggingface.co/v1/chat/completions',
+  },
+  {
+    buildUrl: (model: string) => `https://api-inference.huggingface.co/models/${encodeModelPath(model)}/v1/chat/completions`,
+  },
 ];
 const FALLBACK_HUGGING_FACE_MODELS = [
   'google/gemma-4-26b-it',
+  'mistralai/Mistral-7B-Instruct-v0.3',
 ];
 const AUTH_FAILURE_CODES = new Set([401, 403]);
 export type AIMode = 'plan' | 'agent';
@@ -382,15 +392,16 @@ async function requestWithFallback(params: {
   userPrompt: string;
 }) {
   const modelCandidates = buildModelCandidates(params.model);
-  const totalAttempts = CHAT_COMPLETIONS_URLS.length * modelCandidates.length;
+  const totalAttempts = CHAT_COMPLETIONS_ENDPOINTS.length * modelCandidates.length;
   let attempts = 0;
   let finalError = 'AI request failed.';
 
-  for (const endpoint of CHAT_COMPLETIONS_URLS) {
+  for (const endpoint of CHAT_COMPLETIONS_ENDPOINTS) {
     for (const model of modelCandidates) {
       attempts += 1;
+      const endpointUrl = endpoint.buildUrl(model);
       try {
-        const response = await fetch(endpoint, {
+        const response = await fetch(endpointUrl, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -412,7 +423,7 @@ async function requestWithFallback(params: {
         }
 
         const detail = await parseErrorDetail(response);
-        finalError = formatAttemptError(response.status, endpoint, model, detail);
+        finalError = formatAttemptError(response.status, endpointUrl, model, detail);
 
         if (AUTH_FAILURE_CODES.has(response.status)) {
           throw new Error('Authentication failed. Check your Hugging Face key and permissions.');
@@ -422,7 +433,7 @@ async function requestWithFallback(params: {
           throw error;
         }
         const detail = error instanceof Error ? error.message : '';
-        finalError = formatAttemptError(null, endpoint, model, detail);
+        finalError = formatAttemptError(null, endpointUrl, model, detail);
       }
     }
   }

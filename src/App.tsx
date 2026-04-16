@@ -707,7 +707,7 @@ function App() {
       </Button>
 
       <Dialog open={isAIPopupOpen} onOpenChange={setIsAIPopupOpen}>
-        <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-2xl max-h-[88vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>AI Assistant</DialogTitle>
           </DialogHeader>

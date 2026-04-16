@@ -1,11 +1,16 @@
-import { useMemo, useState, useEffect } from 'react';
-import { Sparkle, Lightning, WarningCircle, CheckCircle, WifiSlash } from '@phosphor-icons/react';
+import { useMemo, useState, useEffect, useRef } from 'react';
+import {
+  Sparkle, Lightning, WarningCircle, CheckCircle, WifiSlash,
+  SlidersHorizontal, PaperPlaneTilt, CalendarPlus, CheckSquare,
+  Timer, ArrowsCounterClockwise,
+} from '@phosphor-icons/react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 import { getAllTodos, createTodo } from '@/db/repositories/todosRepo';
 import { getAllEvents, createEvent } from '@/db/repositories/eventsRepo';
@@ -20,7 +25,6 @@ import {
   PresetModel,
   generateActionPlan,
   getAIConfiguration,
-  isAIConfigured,
   isPresetModel,
   updateAIConfiguration,
 } from '@/lib/aiPlanner';
@@ -60,8 +64,11 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
   const [isApplyingAll, setIsApplyingAll] = useState(false);
   const [result, setResult] = useState<AIAssistantResult | null>(null);
   const [appliedIds, setAppliedIds] = useState<string[]>([]);
+  const [isCompactSettingsOpen, setIsCompactSettingsOpen] = useState(false);
+  const resultRef = useRef<HTMLDivElement | null>(null);
 
   const isCustomModel = model === CUSTOM_MODEL_ID;
+  const hasApiKey = apiKey.trim().length > 0;
 
   useEffect(() => {
     const config = getAIConfiguration();
@@ -90,7 +97,13 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
     window.localStorage.setItem(AI_MODE_STORAGE_KEY, mode);
   }, [mode]);
 
-  const aiReady = isOnline && isAIConfigured();
+  useEffect(() => {
+    if (compact && result && resultRef.current) {
+      resultRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [compact, result]);
+
+  const aiReady = isOnline && hasApiKey;
   const confidencePercent = useMemo(
     () => (result ? Math.round(result.confidence * 100) : 0),
     [result]
@@ -148,9 +161,12 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
       toast.error('Enter a custom model ID first.');
       return;
     }
-    updateAIConfiguration({ model: resolvedModel ?? DEFAULT_HUGGING_FACE_MODEL });
+    updateAIConfiguration({
+      apiKey: apiKey.trim(),
+      model: resolvedModel ?? DEFAULT_HUGGING_FACE_MODEL,
+    });
 
-    if (!isAIConfigured()) {
+    if (!apiKey.trim()) {
       toast.error('Missing AI key. Add your Hugging Face key below or via VITE_HUGGINGFACE_API_KEY.');
       return;
     }
@@ -243,19 +259,240 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
     }
   }
 
-  return (
-    <div className={`space-y-6 ${compact ? 'max-w-none' : 'max-w-5xl mx-auto'}`}>
-      {!compact && (
-        <div>
-          <h2 className="text-3xl font-semibold mb-2 flex items-center gap-2">
-            <Sparkle size={28} weight="fill" />
-            AI Action Assistant
-          </h2>
-          <p className="text-muted-foreground">
-            Turn natural language into summaries, urgency signals, and one-click actions across todos, events, and timeline blocks.
-          </p>
+  // ── compact (popup) mode ─────────────────────────────────────────────────
+  if (compact) {
+    const suggestionTypeIcon = (type: AISuggestion['type']) => {
+      if (type === 'event') return <CalendarPlus size={14} className="shrink-0 text-blue-500" />;
+      if (type === 'timeBlock') return <Timer size={14} className="shrink-0 text-purple-500" />;
+      return <CheckSquare size={14} className="shrink-0 text-green-500" />;
+    };
+
+    return (
+      <div className="flex flex-col gap-3">
+        {/* ── status bar ── */}
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5">
+            <span className={`inline-block w-2 h-2 rounded-full ${aiReady ? 'bg-green-500' : 'bg-yellow-500'}`} />
+            <span className="text-xs text-muted-foreground">
+              {!isOnline ? 'Offline' : aiReady ? `AI ready · ${mode} mode` : 'Setup needed'}
+            </span>
+          </div>
+          <Button type="button" variant="ghost" size="sm" className="h-7 px-2 gap-1.5" onClick={() => setIsCompactSettingsOpen(true)}>
+            <SlidersHorizontal size={13} />
+            <span className="text-xs">Settings</span>
+          </Button>
         </div>
-      )}
+
+        {/* ── banners ── */}
+        {!isOnline && (
+          <div className="flex items-center gap-1.5 text-xs text-destructive">
+            <WifiSlash size={14} />
+            No internet — AI unavailable.
+          </div>
+        )}
+        {!hasApiKey && isOnline && (
+          <div className="flex items-center gap-1.5 text-xs text-yellow-600">
+            <WarningCircle size={14} />
+            Add your Hugging Face API key in Settings.
+          </div>
+        )}
+
+        {/* ── result / assistant message ── */}
+        {result && (
+          <div ref={resultRef} className="rounded-xl bg-muted/60 p-3 space-y-3">
+            {/* summary + meta */}
+            <p className="text-sm leading-relaxed">{result.summary}</p>
+            <div className="flex flex-wrap gap-1.5">
+              <Badge variant="secondary" className="text-xs capitalize">{result.severity}</Badge>
+              <Badge variant="outline" className="text-xs">{confidencePercent}% confidence</Badge>
+              {result.urgencyHours !== null && (
+                <Badge variant="outline" className="text-xs">Urgent in {result.urgencyHours}h</Badge>
+              )}
+            </div>
+
+            {/* suggestion chips */}
+            {result.suggestions.length > 0 && (
+              <div className="space-y-1.5">
+                {result.suggestions.map((suggestion) => {
+                  const applied = appliedIds.includes(suggestion.id);
+                  return (
+                    <div
+                      key={suggestion.id}
+                      className={`flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm transition-colors ${applied ? 'opacity-50 bg-background' : 'bg-background hover:bg-accent'}`}
+                    >
+                      {suggestionTypeIcon(suggestion.type)}
+                      <span className="flex-1 truncate">{suggestion.title}</span>
+                      {suggestion.type === 'timeBlock' && suggestion.startTime && (
+                        <span className="text-xs text-muted-foreground shrink-0">{suggestion.startTime}</span>
+                      )}
+                      <button
+                        type="button"
+                        aria-label={applied ? 'Applied' : 'Add'}
+                        disabled={applied}
+                        onClick={() => applySuggestion(suggestion)}
+                        className="shrink-0 rounded-md p-0.5 hover:bg-accent disabled:cursor-not-allowed"
+                      >
+                        {applied
+                          ? <CheckCircle size={16} className="text-green-500" />
+                          : <span className="text-muted-foreground hover:text-foreground text-base leading-none">+</span>
+                        }
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* apply all + clear */}
+            {result.suggestions.length > 1 && (
+              <div className="flex items-center gap-3 pt-0.5">
+                <button
+                  type="button"
+                  onClick={handleApplyAll}
+                  disabled={isApplyingAll || appliedIds.length === result.suggestions.length}
+                  className="text-xs text-primary hover:underline disabled:opacity-40 disabled:no-underline"
+                >
+                  {isApplyingAll ? 'Applying…' : 'Apply all'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setResult(null); setAppliedIds([]); }}
+                  className="text-xs text-muted-foreground hover:underline"
+                >
+                  Clear
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── chat input ── */}
+        <div className="relative">
+          <Textarea
+            value={prompt}
+            onChange={(event) => setPrompt(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+                event.preventDefault();
+                void handleGenerate();
+              }
+            }}
+            placeholder={
+              mode === 'agent'
+                ? 'Talk naturally — e.g. "I feel behind today, help me recover…"'
+                : "Describe your day or goals and I'll build a plan…"
+            }
+            className="min-h-20 pr-12 resize-none text-sm"
+            disabled={isGenerating}
+          />
+          <Button
+            type="button"
+            size="icon"
+            onClick={handleGenerate}
+            disabled={isGenerating || !aiReady || !prompt.trim()}
+            className="absolute bottom-2 right-2 h-8 w-8"
+            aria-label="Generate plan"
+          >
+            {isGenerating
+              ? <ArrowsCounterClockwise size={15} className="animate-spin" />
+              : <PaperPlaneTilt size={15} />
+            }
+          </Button>
+        </div>
+        <p className="text-xs text-muted-foreground text-right -mt-1">Ctrl + Enter to send</p>
+
+        {/* ── compact settings dialog ── */}
+        <Dialog open={isCompactSettingsOpen} onOpenChange={setIsCompactSettingsOpen}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>AI Settings</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 pt-1">
+              <div className="space-y-1.5">
+                <p className="text-xs font-medium text-muted-foreground">Hugging Face API key</p>
+                <Input
+                  type="password"
+                  value={apiKey}
+                  onChange={(event) => setApiKey(event.target.value)}
+                  placeholder="hf_xxx…"
+                  autoComplete="off"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <p className="text-xs font-medium text-muted-foreground">Model</p>
+                <Select value={toSelectValue(model)} onValueChange={handleModelSelectChange}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a model…" />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-72">
+                    {PRESET_MODELS.map((preset) => (
+                      <SelectItem key={preset.id} value={preset.id}>
+                        <span className="flex items-center gap-2">
+                          {preset.label}
+                          <span className={`text-xs font-medium ${TIER_LABELS[preset.tier].color}`}>
+                            {TIER_LABELS[preset.tier].label}
+                          </span>
+                        </span>
+                      </SelectItem>
+                    ))}
+                    <SelectItem value={CUSTOM_MODEL_ID}>Custom model…</SelectItem>
+                  </SelectContent>
+                </Select>
+                {isCustomModel && (
+                  <Input
+                    value={customModelInput}
+                    onChange={(event) => setCustomModelInput(event.target.value)}
+                    placeholder="e.g. org/model-name"
+                    className="mt-1"
+                  />
+                )}
+              </div>
+              <div className="space-y-1.5">
+                <p className="text-xs font-medium text-muted-foreground">Response style</p>
+                <div className="flex gap-2">
+                  <Button type="button" size="sm" variant={mode === 'plan' ? 'default' : 'outline'} onClick={() => setMode('plan')}>
+                    Plan
+                  </Button>
+                  <Button type="button" size="sm" variant={mode === 'agent' ? 'default' : 'outline'} onClick={() => setMode('agent')}>
+                    Agent
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {mode === 'agent' ? 'Coaching tone with practical steps.' : 'Concise, execution-focused output.'}
+                </p>
+              </div>
+              <div className="flex items-center justify-between gap-2 pt-1">
+                <Button
+                  type="button"
+                  onClick={() => {
+                    handleSaveAIConfig();
+                    setIsCompactSettingsOpen(false);
+                  }}
+                >
+                  Save
+                </Button>
+                {hasApiKey && <span className="text-xs text-muted-foreground">Key configured ✓</span>}
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      </div>
+    );
+  }
+
+
+  // ── full (tab) mode ──────────────────────────────────────────────────────
+  return (
+    <div className="max-w-5xl mx-auto space-y-6">
+      <div>
+        <h2 className="text-3xl font-semibold mb-2 flex items-center gap-2">
+          <Sparkle size={28} weight="fill" />
+          AI Action Assistant
+        </h2>
+        <p className="text-muted-foreground">
+          Turn natural language into summaries, urgency signals, and one-click actions across todos, events, and timeline blocks.
+        </p>
+      </div>
 
       {!isOnline && (
         <Card className="p-4 border-destructive/40">
@@ -266,7 +503,7 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
         </Card>
       )}
 
-      {!isAIConfigured() && (
+      {!hasApiKey && (
         <Card className="p-4 border-yellow-500/40">
           <div className="flex items-center gap-2 text-sm">
             <WarningCircle size={18} className="text-yellow-500" />
@@ -337,7 +574,7 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
           <Button type="button" variant="outline" onClick={handleSaveAIConfig}>
             Save AI Settings
           </Button>
-          {isAIConfigured() && <Badge variant="secondary">AI key configured</Badge>}
+          {hasApiKey && <Badge variant="secondary">AI key configured</Badge>}
         </div>
       </Card>
 
@@ -374,7 +611,7 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
           onChange={(event) => setPrompt(event.target.value)}
           placeholder={
             mode === 'agent'
-              ? 'Talk naturally: “I feel behind today. I have classes 9-12, gym at 6, and a Friday project deadline. Help me recover with realistic steps.”'
+              ? 'Talk naturally: "I feel behind today. I have classes 9-12, gym at 6, and a Friday project deadline. Help me recover with realistic steps."'
               : 'Example: I have classes 9-12, gym at 6 PM, and a project deadline Friday. Build me a realistic day plan and create what should be added.'
           }
           className="min-h-36"
