@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, DragEvent } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { TimeBlock, Todo, Event, Project } from '@/db/schema';
-import { getAllTimeBlocks, createTimeBlock, updateTimeBlock, deleteTimeBlock, getTimeBlocksByDateRange } from '@/db/repositories/timeBlocksRepo';
+import { createTimeBlock, updateTimeBlock, deleteTimeBlock, getTimeBlocksByDateRange } from '@/db/repositories/timeBlocksRepo';
 import { getAllTodos } from '@/db/repositories/todosRepo';
 import { getAllEvents } from '@/db/repositories/eventsRepo';
 import { getAllProjects } from '@/db/repositories/projectsRepo';
@@ -14,14 +14,16 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Plus, CaretLeft, CaretRight, FloppyDisk, Copy, CalendarBlank, Sparkle } from '@phosphor-icons/react';
-import { format, startOfWeek, addDays, addWeeks, parse, isToday, isSameDay } from 'date-fns';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { Plus, CaretLeft, CaretRight, Copy, CalendarBlank, Sparkle, Trash } from '@phosphor-icons/react';
+import { format, startOfWeek, addDays, addWeeks, isToday, isSameDay } from 'date-fns';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 
 const HOURS = Array.from({ length: 19 }, (_, i) => i + 5);
 const HOUR_HEIGHT = 60;
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const NONE_OPTION_VALUE = 'none';
 
 interface RecurringPreset {
   id: string;
@@ -95,6 +97,7 @@ export function WeeklyCalendarView() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isPresetDialogOpen, setIsPresetDialogOpen] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [editingBlock, setEditingBlock] = useState<TimeBlock | null>(null);
   const [draggedBlock, setDraggedBlock] = useState<TimeBlock | null>(null);
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -102,6 +105,7 @@ export function WeeklyCalendarView() {
 
   const [formData, setFormData] = useState({
     title: '',
+    date: format(new Date(), 'yyyy-MM-dd'),
     startTime: '09:00',
     endTime: '10:00',
     todoId: '',
@@ -111,6 +115,7 @@ export function WeeklyCalendarView() {
   });
 
   const weekDays = Array.from({ length: 7 }, (_, i) => addDays(currentWeekStart, i));
+  const defaultDateForCurrentWeek = format(weekDays.find((day) => isToday(day)) ?? weekDays[0], 'yyyy-MM-dd');
 
   useEffect(() => {
     loadData();
@@ -138,6 +143,7 @@ export function WeeklyCalendarView() {
   function resetForm() {
     setFormData({
       title: '',
+      date: defaultDateForCurrentWeek,
       startTime: '09:00',
       endTime: '10:00',
       todoId: '',
@@ -186,7 +192,7 @@ export function WeeklyCalendarView() {
       return;
     }
 
-    const dateStr = format(weekDays[new Date().getDay()], 'yyyy-MM-dd');
+    const dateStr = formData.date;
 
     try {
       if (editingBlock) {
@@ -219,6 +225,21 @@ export function WeeklyCalendarView() {
       loadData();
     } catch (error) {
       toast.error('Failed to save time block');
+    }
+  }
+
+  async function handleDeleteConfirm() {
+    if (!editingBlock) return;
+
+    try {
+      await deleteTimeBlock(editingBlock.id);
+      toast.success('Time block deleted!');
+      setIsDialogOpen(false);
+      setDeleteConfirmOpen(false);
+      resetForm();
+      loadData();
+    } catch (error) {
+      toast.error('Failed to delete time block');
     }
   }
 
@@ -341,7 +362,13 @@ export function WeeklyCalendarView() {
             Presets
           </Button>
 
-          <Button onClick={() => setIsDialogOpen(true)} className="gap-2">
+          <Button
+            onClick={() => {
+              resetForm();
+              setIsDialogOpen(true);
+            }}
+            className="gap-2"
+          >
             <Plus size={16} weight="bold" />
             Add Block
           </Button>
@@ -418,6 +445,7 @@ export function WeeklyCalendarView() {
                         onClick={() => {
                           setFormData({
                             ...formData,
+                            date: format(weekDays[dayIndex], 'yyyy-MM-dd'),
                             startTime: `${String(hour).padStart(2, '0')}:00`,
                             endTime: `${String(hour + 1).padStart(2, '0')}:00`,
                           });
@@ -467,6 +495,7 @@ export function WeeklyCalendarView() {
                               setEditingBlock(block);
                               setFormData({
                                 title: block.title,
+                                date: block.date,
                                 startTime: block.startTime,
                                 endTime: block.endTime,
                                 todoId: block.todoId || '',
@@ -553,6 +582,17 @@ export function WeeklyCalendarView() {
               />
             </div>
 
+            <div>
+              <Label htmlFor="date">Date *</Label>
+              <Input
+                id="date"
+                type="date"
+                value={formData.date}
+                onChange={(e) => setFormData({ ...formData, date: e.target.value })}
+                required
+              />
+            </div>
+
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label htmlFor="startTime">Start Time *</Label>
@@ -580,14 +620,14 @@ export function WeeklyCalendarView() {
             <div>
               <Label htmlFor="todo">Link to Todo (optional)</Label>
               <Select
-                value={formData.todoId}
-                onValueChange={(val) => setFormData({ ...formData, todoId: val })}
+                value={formData.todoId || NONE_OPTION_VALUE}
+                onValueChange={(val) => setFormData({ ...formData, todoId: val === NONE_OPTION_VALUE ? '' : val })}
               >
                 <SelectTrigger id="todo">
                   <SelectValue placeholder="None" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">None</SelectItem>
+                  <SelectItem value={NONE_OPTION_VALUE}>None</SelectItem>
                   {todos.map((todo) => (
                     <SelectItem key={todo.id} value={todo.id}>
                       {todo.title}
@@ -600,14 +640,14 @@ export function WeeklyCalendarView() {
             <div>
               <Label htmlFor="project">Project (optional)</Label>
               <Select
-                value={formData.projectId}
-                onValueChange={(val) => setFormData({ ...formData, projectId: val })}
+                value={formData.projectId || NONE_OPTION_VALUE}
+                onValueChange={(val) => setFormData({ ...formData, projectId: val === NONE_OPTION_VALUE ? '' : val })}
               >
                 <SelectTrigger id="project">
                   <SelectValue placeholder="None" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">None</SelectItem>
+                  <SelectItem value={NONE_OPTION_VALUE}>None</SelectItem>
                   {projects.map((project) => (
                     <SelectItem key={project.id} value={project.id}>
                       {project.name}
@@ -653,7 +693,23 @@ export function WeeklyCalendarView() {
               </Label>
             </div>
 
-            <div className="flex justify-end gap-2 pt-4">
+            <div className={cn(
+              "flex items-center gap-2 pt-4",
+              editingBlock ? "justify-between" : "justify-end"
+            )}>
+              {editingBlock ? (
+                <Button
+                  type="button"
+                  variant="destructive"
+                  onClick={() => setDeleteConfirmOpen(true)}
+                  className="gap-2"
+                >
+                  <Trash size={14} />
+                  Delete
+                </Button>
+              ) : null}
+
+              <div className="flex gap-2">
               <Button
                 type="button"
                 variant="outline"
@@ -667,6 +723,7 @@ export function WeeklyCalendarView() {
               <Button type="submit">
                 {editingBlock ? 'Update Block' : 'Create Block'}
               </Button>
+              </div>
             </div>
           </form>
         </DialogContent>
@@ -729,6 +786,17 @@ export function WeeklyCalendarView() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={deleteConfirmOpen}
+        onOpenChange={setDeleteConfirmOpen}
+        title="Delete Time Block?"
+        description="Are you sure you want to delete this time block? This action cannot be undone."
+        actionType="delete"
+        confirmText="Delete"
+        cancelText="Cancel"
+        onConfirm={handleDeleteConfirm}
+      />
     </div>
   );
 }

@@ -27,7 +27,7 @@ interface ConfirmDialogProps {
   variant?: 'default' | 'destructive' | 'warning' | 'info';
   confirmText?: string;
   cancelText?: string;
-  onConfirm: () => void;
+  onConfirm: () => void | Promise<void>;
   onCancel?: () => void;
 }
 
@@ -62,10 +62,15 @@ export function ConfirmDialog({
 
   const handleConfirm = async () => {
     setIsConfirming(true);
-    await new Promise(resolve => setTimeout(resolve, 300));
-    onConfirm();
-    onOpenChange(false);
-    setIsConfirming(false);
+    try {
+      await new Promise(resolve => setTimeout(resolve, 300));
+      await onConfirm();
+      onOpenChange(false);
+    } catch (error) {
+      console.error('Confirm action failed:', error);
+    } finally {
+      setIsConfirming(false);
+    }
   };
 
   const handleCancel = () => {
