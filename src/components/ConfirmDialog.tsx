@@ -10,9 +10,9 @@ import {
   Archive,
   ClockCounterClockwise,
   XCircle,
-  FloppyDisk,
-  Icon
+  FloppyDisk
 } from '@phosphor-icons/react';
+import type { Icon } from '@phosphor-icons/react';
 import { cn } from '@/lib/utils';
 import { useState } from 'react';
 

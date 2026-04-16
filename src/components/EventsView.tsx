@@ -17,6 +17,38 @@ import { format } from 'date-fns';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 
+function toLocalDateInputValue(isoString: string) {
+  const date = new Date(isoString);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function toLocalDateTimeInputValue(isoString: string) {
+  const date = new Date(isoString);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  return `${year}-${month}-${day}T${hours}:${minutes}`;
+}
+
+function toEventStartIso(startsAt: string, allDay: boolean): string | null {
+  if (!startsAt) return null;
+
+  if (allDay) {
+    const datePart = startsAt.split('T')[0];
+    const [year, month, day] = datePart.split('-').map(Number);
+    const normalizedDate = new Date(year, month - 1, day, 12, 0, 0, 0);
+    return Number.isNaN(normalizedDate.getTime()) ? null : normalizedDate.toISOString();
+  }
+
+  const normalizedDateTime = new Date(startsAt.includes('T') ? startsAt : `${startsAt}T12:00`);
+  return Number.isNaN(normalizedDateTime.getTime()) ? null : normalizedDateTime.toISOString();
+}
+
 export function EventsView() {
   const [events, setEvents] = useState<Event[]>([]);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -60,7 +92,7 @@ export function EventsView() {
     setEditingEvent(event);
     setFormData({
       title: event.title,
-      startsAt: event.startsAt.slice(0, 16),
+      startsAt: event.allDay ? toLocalDateInputValue(event.startsAt) : toLocalDateTimeInputValue(event.startsAt),
       allDay: event.allDay,
       priority: event.priority,
       tags: event.tags.join(', '),
@@ -81,12 +113,18 @@ export function EventsView() {
       .split(',')
       .map(t => t.trim())
       .filter(Boolean);
+    const startsAtIso = toEventStartIso(formData.startsAt, formData.allDay);
+
+    if (!startsAtIso) {
+      toast.error('Invalid date/time selected');
+      return;
+    }
 
     try {
       if (editingEvent) {
         await updateEvent(editingEvent.id, {
           title: formData.title,
-          startsAt: new Date(formData.startsAt).toISOString(),
+          startsAt: startsAtIso,
           allDay: formData.allDay,
           priority: formData.priority,
           tags,
@@ -96,7 +134,7 @@ export function EventsView() {
       } else {
         await createEvent({
           title: formData.title,
-          startsAt: new Date(formData.startsAt).toISOString(),
+          startsAt: startsAtIso,
           allDay: formData.allDay,
           priority: formData.priority,
           tags,
@@ -209,10 +247,10 @@ export function EventsView() {
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label htmlFor="startsAt">Date & Time *</Label>
+                  <Label htmlFor="startsAt">{formData.allDay ? 'Date *' : 'Date & Time *'}</Label>
                   <Input
                     id="startsAt"
-                    type="datetime-local"
+                    type={formData.allDay ? 'date' : 'datetime-local'}
                     value={formData.startsAt}
                     onChange={(e) => setFormData({ ...formData, startsAt: e.target.value })}
                     required
@@ -243,7 +281,16 @@ export function EventsView() {
                 <Switch
                   id="allDay"
                   checked={formData.allDay}
-                  onCheckedChange={(checked) => setFormData({ ...formData, allDay: checked })}
+                  onCheckedChange={(checked) => {
+                    setFormData((previous) => {
+                      const normalizedStartsAt = checked
+                        ? previous.startsAt.split('T')[0]
+                        : previous.startsAt.includes('T')
+                          ? previous.startsAt
+                          : (previous.startsAt ? `${previous.startsAt}T12:00` : '');
+                      return { ...previous, allDay: checked, startsAt: normalizedStartsAt };
+                    });
+                  }}
                 />
                 <Label htmlFor="allDay">All-day event</Label>
               </div>
