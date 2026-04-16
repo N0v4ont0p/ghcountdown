@@ -10,6 +10,7 @@ import { getAllTodos, createTodo } from '@/db/repositories/todosRepo';
 import { getAllEvents, createEvent } from '@/db/repositories/eventsRepo';
 import { getAllTimeBlocks, createTimeBlock } from '@/db/repositories/timeBlocksRepo';
 import {
+  AIMode,
   AIAssistantResult,
   AISuggestion,
   DEFAULT_HUGGING_FACE_MODEL,
@@ -19,10 +20,23 @@ import {
   updateAIConfiguration,
 } from '@/lib/aiPlanner';
 
-export function AIAssistantView() {
+const AI_MODE_STORAGE_KEY = 'ghcountdown.ai.defaultMode';
+
+interface AIAssistantViewProps {
+  compact?: boolean;
+}
+
+function readSavedMode(): AIMode {
+  if (typeof window === 'undefined') return 'plan';
+  const saved = window.localStorage.getItem(AI_MODE_STORAGE_KEY);
+  return saved === 'agent' ? 'agent' : 'plan';
+}
+
+export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
   const [prompt, setPrompt] = useState('');
   const [apiKey, setApiKey] = useState('');
   const [model, setModel] = useState(DEFAULT_HUGGING_FACE_MODEL);
+  const [mode, setMode] = useState<AIMode>(readSavedMode());
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isApplyingAll, setIsApplyingAll] = useState(false);
@@ -33,6 +47,7 @@ export function AIAssistantView() {
     const config = getAIConfiguration();
     setApiKey(config.apiKey);
     setModel(config.model);
+    setMode(readSavedMode());
   }, []);
 
   useEffect(() => {
@@ -45,6 +60,10 @@ export function AIAssistantView() {
       window.removeEventListener('offline', goOffline);
     };
   }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem(AI_MODE_STORAGE_KEY, mode);
+  }, [mode]);
 
   const aiReady = isOnline && isAIConfigured();
   const confidencePercent = useMemo(
@@ -104,7 +123,7 @@ export function AIAssistantView() {
         todoTitles: todos.slice(0, 20).map((todo) => todo.title),
         upcomingEventTitles: nextEvents.map((event) => event.title),
         recentBlockTitles: recentBlocks.map((block) => block.title),
-      });
+      }, { mode });
 
       setResult(plan);
       setAppliedIds([]);
@@ -171,16 +190,18 @@ export function AIAssistantView() {
   }
 
   return (
-    <div className="max-w-5xl mx-auto space-y-6">
-      <div>
-        <h2 className="text-3xl font-semibold mb-2 flex items-center gap-2">
-          <Sparkle size={28} weight="fill" />
-          AI Action Assistant
-        </h2>
-        <p className="text-muted-foreground">
-          Turn natural language into summaries, urgency signals, and one-click actions across todos, events, and timeline blocks.
-        </p>
-      </div>
+    <div className={`space-y-6 ${compact ? 'max-w-none' : 'max-w-5xl mx-auto'}`}>
+      {!compact && (
+        <div>
+          <h2 className="text-3xl font-semibold mb-2 flex items-center gap-2">
+            <Sparkle size={28} weight="fill" />
+            AI Action Assistant
+          </h2>
+          <p className="text-muted-foreground">
+            Turn natural language into summaries, urgency signals, and one-click actions across todos, events, and timeline blocks.
+          </p>
+        </div>
+      )}
 
       {!isOnline && (
         <Card className="p-4 border-destructive/40">
@@ -228,10 +249,41 @@ export function AIAssistantView() {
       </Card>
 
       <Card className="p-5 space-y-4">
+        <div className="space-y-2">
+          <p className="text-sm font-medium">Mode</p>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant={mode === 'plan' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setMode('plan')}
+            >
+              Plan mode
+            </Button>
+            <Button
+              type="button"
+              variant={mode === 'agent' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setMode('agent')}
+            >
+              Agent mode
+            </Button>
+            <Badge variant="secondary">Default saved automatically</Badge>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {mode === 'agent'
+              ? 'Agent mode responds with a more natural coaching tone while still producing actionable items.'
+              : 'Plan mode keeps output concise and execution-focused.'}
+          </p>
+        </div>
         <Textarea
           value={prompt}
           onChange={(event) => setPrompt(event.target.value)}
-          placeholder="Example: I have classes 9-12, gym at 6 PM, and a project deadline Friday. Build me a realistic day plan and create what should be added."
+          placeholder={
+            mode === 'agent'
+              ? 'Talk naturally: “I feel behind today. I have classes 9-12, gym at 6, and a Friday project deadline. Help me recover with realistic steps.”'
+              : 'Example: I have classes 9-12, gym at 6 PM, and a project deadline Friday. Build me a realistic day plan and create what should be added.'
+          }
           className="min-h-36"
         />
         <div className="flex flex-wrap gap-2">

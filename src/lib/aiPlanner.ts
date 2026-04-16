@@ -30,9 +30,18 @@ interface AIContext {
 }
 
 const ENV_HUGGING_FACE_API_KEY = import.meta.env.VITE_HUGGINGFACE_API_KEY;
-export const DEFAULT_HUGGING_FACE_MODEL = 'google/gemma-4-26b-it';
+export const DEFAULT_HUGGING_FACE_MODEL = 'google/gemma-4-26B-A4B';
 const ENV_HUGGING_FACE_MODEL = import.meta.env.VITE_HUGGINGFACE_MODEL || DEFAULT_HUGGING_FACE_MODEL;
-const CHAT_COMPLETIONS_URL = 'https://api-inference.huggingface.co/v1/chat/completions';
+const CHAT_COMPLETIONS_URLS = [
+  'https://router.huggingface.co/v1/chat/completions',
+  'https://api-inference.huggingface.co/v1/chat/completions',
+];
+const FALLBACK_HUGGING_FACE_MODELS = [
+  DEFAULT_HUGGING_FACE_MODEL,
+  'google/gemma-4-26b-it',
+];
+const AUTH_FAILURE_CODES = new Set([401, 403]);
+export type AIMode = 'plan' | 'agent';
 
 export interface AIConfiguration {
   apiKey: string;
@@ -184,15 +193,14 @@ export function isAIConfigured() {
   return Boolean(getAIConfiguration().apiKey);
 }
 
-export async function generateActionPlan(prompt: string, context: AIContext): Promise<AIAssistantResult> {
-  const config = getAIConfiguration();
+function buildSystemPrompt(mode: AIMode) {
+  const modeDirective = mode === 'agent'
+    ? 'Use a natural, supportive tone in "summary" while still being concise and practical.'
+    : 'Keep "summary" brief and operational.';
 
-  if (!config.apiKey) {
-    throw new Error('AI is not configured. Add your Hugging Face API key in-app or via VITE_HUGGINGFACE_API_KEY.');
-  }
-
-  const systemPrompt = [
+  return [
     'You are GHCountdown Action AI.',
+    modeDirective,
     'Return strict JSON only with this shape:',
     '{',
     '  "summary": "short summary",',
@@ -217,8 +225,105 @@ export async function generateActionPlan(prompt: string, context: AIContext): Pr
     '}',
     'Infer priority and urgency. Keep suggestions practical and directly actionable.',
   ].join('\n');
+}
+
+async function parseErrorDetail(response: Response): Promise<string> {
+  try {
+    const body = await response.clone().json();
+    const detail = body?.error?.message || body?.error || body?.message;
+    if (typeof detail === 'string' && detail.trim()) return detail.trim();
+  } catch {
+    // ignore JSON parse failures
+  }
+
+  try {
+    const text = await response.clone().text();
+    if (text.trim()) return text.trim();
+  } catch {
+    // ignore text parse failures
+  }
+
+  return '';
+}
+
+function buildModelCandidates(requestedModel: string) {
+  return Array.from(new Set([requestedModel, ...FALLBACK_HUGGING_FACE_MODELS]));
+}
+
+function formatAttemptError(status: number | null, endpoint: string, model: string, detail?: string) {
+  const statusText = status === null ? 'network failure' : `HTTP ${status}`;
+  const detailText = detail ? `: ${detail}` : '';
+  return `${statusText} at ${endpoint} using model "${model}"${detailText}`;
+}
+
+async function requestWithFallback(params: {
+  apiKey: string;
+  model: string;
+  systemPrompt: string;
+  userPrompt: string;
+}) {
+  const modelCandidates = buildModelCandidates(params.model);
+  let finalError = 'AI request failed.';
+
+  for (const endpoint of CHAT_COMPLETIONS_URLS) {
+    for (const model of modelCandidates) {
+      try {
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${params.apiKey}`,
+          },
+          body: JSON.stringify({
+            model,
+            temperature: 0.25,
+            max_tokens: 1000,
+            messages: [
+              { role: 'system', content: params.systemPrompt },
+              { role: 'user', content: params.userPrompt },
+            ],
+          }),
+        });
+
+        if (response.ok) {
+          return await response.json();
+        }
+
+        const detail = await parseErrorDetail(response);
+        finalError = formatAttemptError(response.status, endpoint, model, detail);
+
+        if (AUTH_FAILURE_CODES.has(response.status)) {
+          throw new Error('Authentication failed. Check your Hugging Face key and permissions.');
+        }
+      } catch (error) {
+        if (error instanceof Error && error.message.startsWith('Authentication failed')) {
+          throw error;
+        }
+        const detail = error instanceof Error ? error.message : '';
+        finalError = formatAttemptError(null, endpoint, model, detail);
+      }
+    }
+  }
+
+  throw new Error(`AI request failed after trying available endpoints/models. Last error: ${finalError}`);
+}
+
+export async function generateActionPlan(
+  prompt: string,
+  context: AIContext,
+  options?: { mode?: AIMode }
+): Promise<AIAssistantResult> {
+  const config = getAIConfiguration();
+  const mode = options?.mode ?? 'plan';
+
+  if (!config.apiKey) {
+    throw new Error('AI is not configured. Add your Hugging Face API key in-app or via VITE_HUGGINGFACE_API_KEY.');
+  }
+
+  const systemPrompt = buildSystemPrompt(mode);
 
   const userPrompt = [
+    `Assistant mode: ${mode}`,
     `Current date-time: ${new Date().toISOString()}`,
     `Existing todos: ${context.todoTitles.join(' | ') || 'none'}`,
     `Upcoming events: ${context.upcomingEventTitles.join(' | ') || 'none'}`,
@@ -227,36 +332,12 @@ export async function generateActionPlan(prompt: string, context: AIContext): Pr
     prompt,
   ].join('\n');
 
-  const response = await fetch(CHAT_COMPLETIONS_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${config.apiKey}`,
-    },
-    body: JSON.stringify({
-      model: config.model,
-      temperature: 0.25,
-      max_tokens: 1000,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt },
-      ],
-    }),
+  const body = await requestWithFallback({
+    apiKey: config.apiKey,
+    model: config.model,
+    systemPrompt,
+    userPrompt,
   });
-
-  if (!response.ok) {
-    let message = `AI request failed (${response.status})`;
-    try {
-      const body = await response.json();
-      const detail = body?.error?.message || body?.error || body?.message;
-      if (detail) message = `${message}: ${detail}`;
-    } catch {
-      // ignore JSON parse failures
-    }
-    throw new Error(message);
-  }
-
-  const body = await response.json();
   const textResponse =
     body?.choices?.[0]?.message?.content ||
     body?.generated_text ||
