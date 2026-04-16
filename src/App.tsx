@@ -21,7 +21,7 @@ import { deleteAllTimeBlocks } from '@/db/repositories/timeBlocksRepo';
 import { Event, Todo, Settings } from '@/db/schema';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Plus, CalendarBlank, Sun, Moon, Monitor, DownloadSimple, UploadSimple, Trash } from '@phosphor-icons/react';
+import { Plus, CalendarBlank, Sun, Moon, Monitor, DownloadSimple, UploadSimple, Trash, Sparkle } from '@phosphor-icons/react';
 import { format } from 'date-fns';
 import { Badge } from '@/components/ui/badge';
 import { useTheme } from '@/hooks/use-theme';
@@ -29,6 +29,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Label } from '@/components/ui/label';
 import { exportAllData, downloadJSON, exportTimeEntriesCSV, exportEventsCSV, exportTodosCSV, importAllData, ExportData } from '@/db/export';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 
 function App() {
@@ -38,6 +39,7 @@ function App() {
   const [todos, setTodos] = useState<Todo[]>([]);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isAIPopupOpen, setIsAIPopupOpen] = useState(false);
   const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false);
   const [bulkDeleteTarget, setBulkDeleteTarget] = useState<'events' | 'todos' | 'projects' | 'timeEntries' | 'timeBlocks' | 'all' | null>(null);
   const { theme, setTheme, resolvedTheme } = useTheme();
@@ -694,6 +696,24 @@ function App() {
           </AnimatePresence>
         </main>
       </div>
+
+      <Button
+        type="button"
+        onClick={() => setIsAIPopupOpen(true)}
+        className="fixed bottom-6 right-6 z-40 rounded-full shadow-lg px-4"
+      >
+        <Sparkle size={16} className="mr-2" />
+        AI Assistant
+      </Button>
+
+      <Dialog open={isAIPopupOpen} onOpenChange={setIsAIPopupOpen}>
+        <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>AI Assistant</DialogTitle>
+          </DialogHeader>
+          <AIAssistantView compact />
+        </DialogContent>
+      </Dialog>
 
       <ConfirmDialog
         open={bulkDeleteConfirmOpen}

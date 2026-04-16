@@ -5,34 +5,74 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
 import { getAllTodos, createTodo } from '@/db/repositories/todosRepo';
 import { getAllEvents, createEvent } from '@/db/repositories/eventsRepo';
 import { getAllTimeBlocks, createTimeBlock } from '@/db/repositories/timeBlocksRepo';
 import {
+  AIMode,
   AIAssistantResult,
   AISuggestion,
+  CUSTOM_MODEL_ID,
   DEFAULT_HUGGING_FACE_MODEL,
+  PRESET_MODELS,
+  PresetModel,
   generateActionPlan,
   getAIConfiguration,
   isAIConfigured,
+  isPresetModel,
   updateAIConfiguration,
 } from '@/lib/aiPlanner';
 
-export function AIAssistantView() {
+const AI_MODE_STORAGE_KEY = 'ghcountdown.ai.defaultMode';
+
+/** Tier badge text and color. */
+const TIER_LABELS: Record<PresetModel['tier'], { label: string; color: string }> = {
+  fast:     { label: 'Fast',     color: 'text-green-500' },
+  balanced: { label: 'Balanced', color: 'text-blue-500' },
+  quality:  { label: 'Quality',  color: 'text-purple-500' },
+};
+
+interface AIAssistantViewProps {
+  compact?: boolean;
+}
+
+function readSavedMode(): AIMode {
+  if (typeof window === 'undefined') return 'plan';
+  const saved = window.localStorage.getItem(AI_MODE_STORAGE_KEY);
+  return saved === 'agent' ? 'agent' : 'plan';
+}
+
+/** Returns the Select value to show for a given model string. */
+function toSelectValue(modelId: string): string {
+  return isPresetModel(modelId) ? modelId : CUSTOM_MODEL_ID;
+}
+
+export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
   const [prompt, setPrompt] = useState('');
   const [apiKey, setApiKey] = useState('');
   const [model, setModel] = useState(DEFAULT_HUGGING_FACE_MODEL);
+  const [customModelInput, setCustomModelInput] = useState('');
+  const [mode, setMode] = useState<AIMode>(readSavedMode());
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isApplyingAll, setIsApplyingAll] = useState(false);
   const [result, setResult] = useState<AIAssistantResult | null>(null);
   const [appliedIds, setAppliedIds] = useState<string[]>([]);
 
+  const isCustomModel = model === CUSTOM_MODEL_ID;
+
   useEffect(() => {
     const config = getAIConfiguration();
     setApiKey(config.apiKey);
-    setModel(config.model);
+    if (!isPresetModel(config.model)) {
+      setModel(CUSTOM_MODEL_ID);
+      setCustomModelInput(config.model);
+    } else {
+      setModel(config.model);
+    }
+    setMode(readSavedMode());
   }, []);
 
   useEffect(() => {
@@ -46,23 +86,48 @@ export function AIAssistantView() {
     };
   }, []);
 
+  useEffect(() => {
+    window.localStorage.setItem(AI_MODE_STORAGE_KEY, mode);
+  }, [mode]);
+
   const aiReady = isOnline && isAIConfigured();
   const confidencePercent = useMemo(
     () => (result ? Math.round(result.confidence * 100) : 0),
     [result]
   );
 
+  function handleModelSelectChange(value: string) {
+    setModel(value);
+    if (value !== CUSTOM_MODEL_ID) {
+      setCustomModelInput('');
+    }
+  }
+
+  /** Returns the resolved model ID to use for the current UI state.
+   *  Returns null when custom mode is selected but the input is empty,
+   *  so callers can decide whether to fall back or warn. */
+  function resolveCurrentModel(): string | null {
+    if (isCustomModel) {
+      const trimmed = customModelInput.trim();
+      return trimmed.length > 0 ? trimmed : null;
+    }
+    return model;
+  }
+
   function handleSaveAIConfig() {
     const trimmedApiKey = apiKey.trim();
-    const trimmedModel = model.trim();
+    const resolvedModel = resolveCurrentModel();
+
+    if (isCustomModel && !resolvedModel) {
+      toast.error('Enter a custom model ID before saving.');
+      return;
+    }
 
     updateAIConfiguration({
       apiKey: trimmedApiKey,
-      model: trimmedModel || DEFAULT_HUGGING_FACE_MODEL,
+      model: resolvedModel ?? DEFAULT_HUGGING_FACE_MODEL,
     });
 
-    setApiKey(trimmedApiKey);
-    setModel(trimmedModel || DEFAULT_HUGGING_FACE_MODEL);
     toast.success(trimmedApiKey ? 'AI credentials updated for this session.' : 'Saved model. Add an API key to enable AI.');
   }
 
@@ -76,6 +141,14 @@ export function AIAssistantView() {
       toast.error('No internet connection. AI features are disabled.');
       return;
     }
+
+    // Sync the currently selected model before generating
+    const resolvedModel = resolveCurrentModel();
+    if (isCustomModel && !resolvedModel) {
+      toast.error('Enter a custom model ID first.');
+      return;
+    }
+    updateAIConfiguration({ model: resolvedModel ?? DEFAULT_HUGGING_FACE_MODEL });
 
     if (!isAIConfigured()) {
       toast.error('Missing AI key. Add your Hugging Face key below or via VITE_HUGGINGFACE_API_KEY.');
@@ -104,7 +177,7 @@ export function AIAssistantView() {
         todoTitles: todos.slice(0, 20).map((todo) => todo.title),
         upcomingEventTitles: nextEvents.map((event) => event.title),
         recentBlockTitles: recentBlocks.map((block) => block.title),
-      });
+      }, { mode });
 
       setResult(plan);
       setAppliedIds([]);
@@ -171,16 +244,18 @@ export function AIAssistantView() {
   }
 
   return (
-    <div className="max-w-5xl mx-auto space-y-6">
-      <div>
-        <h2 className="text-3xl font-semibold mb-2 flex items-center gap-2">
-          <Sparkle size={28} weight="fill" />
-          AI Action Assistant
-        </h2>
-        <p className="text-muted-foreground">
-          Turn natural language into summaries, urgency signals, and one-click actions across todos, events, and timeline blocks.
-        </p>
-      </div>
+    <div className={`space-y-6 ${compact ? 'max-w-none' : 'max-w-5xl mx-auto'}`}>
+      {!compact && (
+        <div>
+          <h2 className="text-3xl font-semibold mb-2 flex items-center gap-2">
+            <Sparkle size={28} weight="fill" />
+            AI Action Assistant
+          </h2>
+          <p className="text-muted-foreground">
+            Turn natural language into summaries, urgency signals, and one-click actions across todos, events, and timeline blocks.
+          </p>
+        </div>
+      )}
 
       {!isOnline && (
         <Card className="p-4 border-destructive/40">
@@ -205,20 +280,59 @@ export function AIAssistantView() {
         <p className="text-sm text-muted-foreground">
           Set your Hugging Face key for this app session and choose the model to use.
         </p>
-        <div className="grid gap-3 md:grid-cols-2">
-          <Input
-            type="password"
-            value={apiKey}
-            onChange={(event) => setApiKey(event.target.value)}
-            placeholder="hf_xxx..."
-            autoComplete="off"
-          />
-          <Input
-            value={model}
-            onChange={(event) => setModel(event.target.value)}
-            placeholder={DEFAULT_HUGGING_FACE_MODEL}
-          />
+        <Input
+          type="password"
+          value={apiKey}
+          onChange={(event) => setApiKey(event.target.value)}
+          placeholder="hf_xxx..."
+          autoComplete="off"
+        />
+
+        <div className="space-y-2">
+          <p className="text-xs font-medium text-muted-foreground">Model</p>
+          <Select value={toSelectValue(model)} onValueChange={handleModelSelectChange}>
+            <SelectTrigger>
+              <SelectValue placeholder="Select a model…" />
+            </SelectTrigger>
+            <SelectContent className="max-h-72">
+              {PRESET_MODELS.map((preset) => (
+                <SelectItem key={preset.id} value={preset.id}>
+                  <div className="flex flex-col gap-0.5 py-0.5">
+                    <span className="flex items-center gap-2">
+                      {preset.label}
+                      <span className={`text-xs font-medium ${TIER_LABELS[preset.tier].color}`}>
+                        {TIER_LABELS[preset.tier].label}
+                      </span>
+                    </span>
+                    <span className="text-xs text-muted-foreground leading-tight">{preset.description}</span>
+                  </div>
+                </SelectItem>
+              ))}
+              <SelectItem value={CUSTOM_MODEL_ID}>
+                <div className="flex flex-col gap-0.5 py-0.5">
+                  <span>Custom model…</span>
+                  <span className="text-xs text-muted-foreground">Enter any Hugging Face model ID manually</span>
+                </div>
+              </SelectItem>
+            </SelectContent>
+          </Select>
+
+          {isCustomModel && (
+            <Input
+              value={customModelInput}
+              onChange={(event) => setCustomModelInput(event.target.value)}
+              placeholder="e.g. org/model-name"
+              className="mt-1"
+            />
+          )}
+
+          {!isCustomModel && model && (
+            <p className="text-xs text-muted-foreground break-all">
+              Model ID: <code>{model}</code>
+            </p>
+          )}
         </div>
+
         <div className="flex items-center gap-2">
           <Button type="button" variant="outline" onClick={handleSaveAIConfig}>
             Save AI Settings
@@ -228,10 +342,41 @@ export function AIAssistantView() {
       </Card>
 
       <Card className="p-5 space-y-4">
+        <div className="space-y-2">
+          <p className="text-sm font-medium">Mode</p>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant={mode === 'plan' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setMode('plan')}
+            >
+              Plan mode
+            </Button>
+            <Button
+              type="button"
+              variant={mode === 'agent' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setMode('agent')}
+            >
+              Agent mode
+            </Button>
+            <Badge variant="secondary">Auto-saved as default</Badge>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {mode === 'agent'
+              ? 'Agent mode responds with a more natural coaching tone while still producing actionable items.'
+              : 'Plan mode keeps output concise and execution-focused.'}
+          </p>
+        </div>
         <Textarea
           value={prompt}
           onChange={(event) => setPrompt(event.target.value)}
-          placeholder="Example: I have classes 9-12, gym at 6 PM, and a project deadline Friday. Build me a realistic day plan and create what should be added."
+          placeholder={
+            mode === 'agent'
+              ? 'Talk naturally: “I feel behind today. I have classes 9-12, gym at 6, and a Friday project deadline. Help me recover with realistic steps.”'
+              : 'Example: I have classes 9-12, gym at 6 PM, and a project deadline Friday. Build me a realistic day plan and create what should be added.'
+          }
           className="min-h-36"
         />
         <div className="flex flex-wrap gap-2">

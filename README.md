@@ -63,7 +63,7 @@ Then optionally set your local key/model in `.env`:
 
 ```env
 VITE_HUGGINGFACE_API_KEY=your_huggingface_api_key_here
-VITE_HUGGINGFACE_MODEL=google/gemma-4-26b-it
+VITE_HUGGINGFACE_MODEL=google/gemma-4-26B-A4B
 ```
 
 Or, open **AI Action Assistant** in the app and set your Hugging Face key/model for the current app session.

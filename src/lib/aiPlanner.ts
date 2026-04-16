@@ -30,9 +30,137 @@ interface AIContext {
 }
 
 const ENV_HUGGING_FACE_API_KEY = import.meta.env.VITE_HUGGINGFACE_API_KEY;
-export const DEFAULT_HUGGING_FACE_MODEL = 'google/gemma-4-26b-it';
+export const DEFAULT_HUGGING_FACE_MODEL = 'google/gemma-4-26B-A4B';
 const ENV_HUGGING_FACE_MODEL = import.meta.env.VITE_HUGGINGFACE_MODEL || DEFAULT_HUGGING_FACE_MODEL;
-const CHAT_COMPLETIONS_URL = 'https://api-inference.huggingface.co/v1/chat/completions';
+const CHAT_COMPLETIONS_URLS = [
+  'https://router.huggingface.co/v1/chat/completions',
+  'https://api-inference.huggingface.co/v1/chat/completions',
+];
+const FALLBACK_HUGGING_FACE_MODELS = [
+  'google/gemma-4-26b-it',
+];
+const AUTH_FAILURE_CODES = new Set([401, 403]);
+export type AIMode = 'plan' | 'agent';
+
+/** A single entry in the curated model list. */
+export interface PresetModel {
+  /** Exact model identifier used in API calls. */
+  id: string;
+  /** Short display label. */
+  label: string;
+  /** Longer description shown in tooltips / sub-labels. */
+  description: string;
+  /** Approximate context window in tokens. */
+  contextTokens?: number;
+  /** Speed/quality tier: fast | balanced | quality */
+  tier: 'fast' | 'balanced' | 'quality';
+}
+
+/**
+ * Curated list of Hugging Face models that work well with the
+ * chat-completions endpoint for structured JSON output.
+ * Listed in recommended-first order.
+ */
+export const PRESET_MODELS: PresetModel[] = [
+  {
+    id: 'google/gemma-4-26B-A4B',
+    label: 'Gemma 4 26B (A4B)',
+    description: 'Google Gemma 4 — 26 B sparse MoE, excellent instruction following & JSON output (recommended)',
+    contextTokens: 131072,
+    tier: 'quality',
+  },
+  {
+    id: 'google/gemma-3-27b-it',
+    label: 'Gemma 3 27B',
+    description: 'Google Gemma 3 — dense 27 B instruction-tuned, strong reasoning & structured output',
+    contextTokens: 131072,
+    tier: 'quality',
+  },
+  {
+    id: 'google/gemma-3-12b-it',
+    label: 'Gemma 3 12B',
+    description: 'Google Gemma 3 — compact 12 B, good balance of speed and quality',
+    contextTokens: 131072,
+    tier: 'balanced',
+  },
+  {
+    id: 'google/gemma-3-4b-it',
+    label: 'Gemma 3 4B',
+    description: 'Google Gemma 3 — lightweight 4 B, fastest Gemma option',
+    contextTokens: 131072,
+    tier: 'fast',
+  },
+  {
+    id: 'mistralai/Mistral-7B-Instruct-v0.3',
+    label: 'Mistral 7B Instruct v0.3',
+    description: 'Mistral 7 B — fast, reliable, very good at following JSON schemas',
+    contextTokens: 32768,
+    tier: 'fast',
+  },
+  {
+    id: 'mistralai/Mixtral-8x7B-Instruct-v0.1',
+    label: 'Mixtral 8×7B Instruct',
+    description: 'Mistral sparse MoE — 8×7 B, strong quality at moderate speed',
+    contextTokens: 32768,
+    tier: 'balanced',
+  },
+  {
+    id: 'mistralai/Mistral-Nemo-Instruct-2407',
+    label: 'Mistral NeMo 12B',
+    description: 'Mistral × NVIDIA — 12 B, 128 k context, excellent structured generation',
+    contextTokens: 128000,
+    tier: 'balanced',
+  },
+  {
+    id: 'meta-llama/Llama-3.3-70B-Instruct',
+    label: 'Llama 3.3 70B Instruct',
+    description: 'Meta Llama 3.3 — 70 B, top-tier reasoning, best for complex plans',
+    contextTokens: 131072,
+    tier: 'quality',
+  },
+  {
+    id: 'meta-llama/Meta-Llama-3.1-8B-Instruct',
+    label: 'Llama 3.1 8B Instruct',
+    description: 'Meta Llama 3.1 — 8 B, snappy responses with solid JSON output',
+    contextTokens: 131072,
+    tier: 'fast',
+  },
+  {
+    id: 'Qwen/Qwen2.5-72B-Instruct',
+    label: 'Qwen 2.5 72B Instruct',
+    description: 'Alibaba Qwen 2.5 — 72 B, excellent multilingual & code/JSON quality',
+    contextTokens: 131072,
+    tier: 'quality',
+  },
+  {
+    id: 'Qwen/Qwen2.5-14B-Instruct',
+    label: 'Qwen 2.5 14B Instruct',
+    description: 'Alibaba Qwen 2.5 — 14 B, fast with great structured output',
+    contextTokens: 131072,
+    tier: 'balanced',
+  },
+  {
+    id: 'microsoft/phi-4',
+    label: 'Phi-4 14B',
+    description: 'Microsoft Phi-4 — 14 B, punches above its weight for reasoning & JSON',
+    contextTokens: 16384,
+    tier: 'balanced',
+  },
+  {
+    id: 'deepseek-ai/DeepSeek-V3-0324',
+    label: 'DeepSeek V3',
+    description: 'DeepSeek V3 — 671 B sparse MoE, top-tier quality for complex prompts',
+    contextTokens: 131072,
+    tier: 'quality',
+  },
+];
+
+export const CUSTOM_MODEL_ID = '__custom__';
+
+/** Returns true if the given model ID appears in the preset list. */
+export function isPresetModel(modelId: string): boolean {
+  return PRESET_MODELS.some((m) => m.id === modelId);
+}
 
 export interface AIConfiguration {
   apiKey: string;
@@ -184,15 +312,14 @@ export function isAIConfigured() {
   return Boolean(getAIConfiguration().apiKey);
 }
 
-export async function generateActionPlan(prompt: string, context: AIContext): Promise<AIAssistantResult> {
-  const config = getAIConfiguration();
+function buildSystemPrompt(mode: AIMode) {
+  const modeDirective = mode === 'agent'
+    ? 'Use a natural, supportive tone in "summary" while still being concise and practical.'
+    : 'Keep "summary" brief and operational.';
 
-  if (!config.apiKey) {
-    throw new Error('AI is not configured. Add your Hugging Face API key in-app or via VITE_HUGGINGFACE_API_KEY.');
-  }
-
-  const systemPrompt = [
+  return [
     'You are GHCountdown Action AI.',
+    modeDirective,
     'Return strict JSON only with this shape:',
     '{',
     '  "summary": "short summary",',
@@ -217,8 +344,108 @@ export async function generateActionPlan(prompt: string, context: AIContext): Pr
     '}',
     'Infer priority and urgency. Keep suggestions practical and directly actionable.',
   ].join('\n');
+}
+
+async function parseErrorDetail(response: Response): Promise<string> {
+  try {
+    const body = await response.clone().json();
+    const detail = body?.error?.message || body?.error || body?.message;
+    if (typeof detail === 'string' && detail.trim()) return detail.trim();
+  } catch {
+    // ignore JSON parse failures
+  }
+
+  try {
+    const text = await response.clone().text();
+    if (text.trim()) return text.trim();
+  } catch {
+    // ignore text parse failures
+  }
+
+  return '';
+}
+
+function buildModelCandidates(requestedModel: string) {
+  return Array.from(new Set([requestedModel, DEFAULT_HUGGING_FACE_MODEL, ...FALLBACK_HUGGING_FACE_MODELS]));
+}
+
+function formatAttemptError(status: number | null, endpoint: string, model: string, detail?: string) {
+  const statusText = status === null ? 'network failure' : `HTTP ${status}`;
+  const detailText = detail ? `: ${detail}` : '';
+  return `${statusText} at ${endpoint} using model "${model}"${detailText}`;
+}
+
+async function requestWithFallback(params: {
+  apiKey: string;
+  model: string;
+  systemPrompt: string;
+  userPrompt: string;
+}) {
+  const modelCandidates = buildModelCandidates(params.model);
+  const totalAttempts = CHAT_COMPLETIONS_URLS.length * modelCandidates.length;
+  let attempts = 0;
+  let finalError = 'AI request failed.';
+
+  for (const endpoint of CHAT_COMPLETIONS_URLS) {
+    for (const model of modelCandidates) {
+      attempts += 1;
+      try {
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${params.apiKey}`,
+          },
+          body: JSON.stringify({
+            model,
+            temperature: 0.25,
+            max_tokens: 1000,
+            messages: [
+              { role: 'system', content: params.systemPrompt },
+              { role: 'user', content: params.userPrompt },
+            ],
+          }),
+        });
+
+        if (response.ok) {
+          return await response.json();
+        }
+
+        const detail = await parseErrorDetail(response);
+        finalError = formatAttemptError(response.status, endpoint, model, detail);
+
+        if (AUTH_FAILURE_CODES.has(response.status)) {
+          throw new Error('Authentication failed. Check your Hugging Face key and permissions.');
+        }
+      } catch (error) {
+        if (error instanceof Error && error.message.startsWith('Authentication failed')) {
+          throw error;
+        }
+        const detail = error instanceof Error ? error.message : '';
+        finalError = formatAttemptError(null, endpoint, model, detail);
+      }
+    }
+  }
+
+  throw new Error(`AI request failed after ${attempts} attempts across available endpoints/models. Last error: ${finalError}`);
+}
+
+export async function generateActionPlan(
+  prompt: string,
+  context: AIContext,
+  options?: { mode?: AIMode }
+): Promise<AIAssistantResult> {
+  const config = getAIConfiguration();
+  const mode = options?.mode ?? 'plan';
+
+  if (!config.apiKey) {
+    throw new Error('AI is not configured. Add your Hugging Face API key in-app or via VITE_HUGGINGFACE_API_KEY.');
+  }
+
+  const systemPrompt = buildSystemPrompt(mode);
 
   const userPrompt = [
+    `Assistant mode: ${mode}`,
     `Current date-time: ${new Date().toISOString()}`,
     `Existing todos: ${context.todoTitles.join(' | ') || 'none'}`,
     `Upcoming events: ${context.upcomingEventTitles.join(' | ') || 'none'}`,
@@ -227,36 +454,12 @@ export async function generateActionPlan(prompt: string, context: AIContext): Pr
     prompt,
   ].join('\n');
 
-  const response = await fetch(CHAT_COMPLETIONS_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${config.apiKey}`,
-    },
-    body: JSON.stringify({
-      model: config.model,
-      temperature: 0.25,
-      max_tokens: 1000,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt },
-      ],
-    }),
+  const body = await requestWithFallback({
+    apiKey: config.apiKey,
+    model: config.model,
+    systemPrompt,
+    userPrompt,
   });
-
-  if (!response.ok) {
-    let message = `AI request failed (${response.status})`;
-    try {
-      const body = await response.json();
-      const detail = body?.error?.message || body?.error || body?.message;
-      if (detail) message = `${message}: ${detail}`;
-    } catch {
-      // ignore JSON parse failures
-    }
-    throw new Error(message);
-  }
-
-  const body = await response.json();
   const textResponse =
     body?.choices?.[0]?.message?.content ||
     body?.generated_text ||
