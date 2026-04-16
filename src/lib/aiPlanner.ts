@@ -30,10 +30,8 @@ interface AIContext {
 }
 
 const ENV_HUGGING_FACE_API_KEY = import.meta.env.VITE_HUGGINGFACE_API_KEY;
-const DEFAULT_HUGGING_FACE_MODEL = 'google/gemma-4-26b-it';
+export const DEFAULT_HUGGING_FACE_MODEL = 'google/gemma-4-26b-it';
 const ENV_HUGGING_FACE_MODEL = import.meta.env.VITE_HUGGINGFACE_MODEL || DEFAULT_HUGGING_FACE_MODEL;
-const AI_KEY_STORAGE_KEY = 'ghcountdown.huggingfaceApiKey';
-const AI_MODEL_STORAGE_KEY = 'ghcountdown.huggingfaceModel';
 const CHAT_COMPLETIONS_URL = 'https://api-inference.huggingface.co/v1/chat/completions';
 
 export interface AIConfiguration {
@@ -41,43 +39,22 @@ export interface AIConfiguration {
   model: string;
 }
 
-function getStoredValue(key: string): string | null {
-  try {
-    if (typeof window === 'undefined') return null;
-    const value = window.localStorage.getItem(key);
-    return value && value.trim().length > 0 ? value.trim() : null;
-  } catch {
-    return null;
-  }
-}
-
-function setStoredValue(key: string, value: string | undefined) {
-  try {
-    if (typeof window === 'undefined') return;
-    const normalized = value?.trim();
-    if (normalized) {
-      window.localStorage.setItem(key, normalized);
-    } else {
-      window.localStorage.removeItem(key);
-    }
-  } catch {
-    // localStorage unavailable
-  }
-}
+let runtimeApiKey = ENV_HUGGING_FACE_API_KEY || '';
+let runtimeModel = ENV_HUGGING_FACE_MODEL || DEFAULT_HUGGING_FACE_MODEL;
 
 export function getAIConfiguration(): AIConfiguration {
   return {
-    apiKey: getStoredValue(AI_KEY_STORAGE_KEY) || ENV_HUGGING_FACE_API_KEY || '',
-    model: getStoredValue(AI_MODEL_STORAGE_KEY) || ENV_HUGGING_FACE_MODEL || DEFAULT_HUGGING_FACE_MODEL,
+    apiKey: runtimeApiKey,
+    model: runtimeModel,
   };
 }
 
 export function updateAIConfiguration(config: Partial<AIConfiguration>) {
-  if (Object.prototype.hasOwnProperty.call(config, 'apiKey')) {
-    setStoredValue(AI_KEY_STORAGE_KEY, config.apiKey);
+  if ('apiKey' in config) {
+    runtimeApiKey = config.apiKey?.trim() || '';
   }
-  if (Object.prototype.hasOwnProperty.call(config, 'model')) {
-    setStoredValue(AI_MODEL_STORAGE_KEY, config.model);
+  if ('model' in config) {
+    runtimeModel = config.model?.trim() || DEFAULT_HUGGING_FACE_MODEL;
   }
 }
 

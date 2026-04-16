@@ -66,7 +66,7 @@ VITE_HUGGINGFACE_API_KEY=your_huggingface_api_key_here
 VITE_HUGGINGFACE_MODEL=google/gemma-4-26b-it
 ```
 
-Or, open **AI Action Assistant** in the app and save your Hugging Face key/model there (stored locally on your device).
+Or, open **AI Action Assistant** in the app and set your Hugging Face key/model for the current app session.
 
 > Keep `.env` local only. It is gitignored and should never be committed.
 

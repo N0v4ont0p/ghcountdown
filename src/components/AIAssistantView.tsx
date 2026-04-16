@@ -12,6 +12,7 @@ import { getAllTimeBlocks, createTimeBlock } from '@/db/repositories/timeBlocksR
 import {
   AIAssistantResult,
   AISuggestion,
+  DEFAULT_HUGGING_FACE_MODEL,
   generateActionPlan,
   getAIConfiguration,
   isAIConfigured,
@@ -21,7 +22,7 @@ import {
 export function AIAssistantView() {
   const [prompt, setPrompt] = useState('');
   const [apiKey, setApiKey] = useState('');
-  const [model, setModel] = useState('google/gemma-4-26b-it');
+  const [model, setModel] = useState(DEFAULT_HUGGING_FACE_MODEL);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isApplyingAll, setIsApplyingAll] = useState(false);
@@ -57,12 +58,12 @@ export function AIAssistantView() {
 
     updateAIConfiguration({
       apiKey: trimmedApiKey,
-      model: trimmedModel || 'google/gemma-4-26b-it',
+      model: trimmedModel || DEFAULT_HUGGING_FACE_MODEL,
     });
 
     setApiKey(trimmedApiKey);
-    setModel(trimmedModel || 'google/gemma-4-26b-it');
-    toast.success(trimmedApiKey ? 'AI credentials saved locally.' : 'Saved model. Add an API key to enable AI.');
+    setModel(trimmedModel || DEFAULT_HUGGING_FACE_MODEL);
+    toast.success(trimmedApiKey ? 'AI credentials updated for this session.' : 'Saved model. Add an API key to enable AI.');
   }
 
   async function handleGenerate() {
@@ -194,7 +195,7 @@ export function AIAssistantView() {
         <Card className="p-4 border-yellow-500/40">
           <div className="flex items-center gap-2 text-sm">
             <WarningCircle size={18} className="text-yellow-500" />
-            <p>Add your Hugging Face API key below (saved locally) or set VITE_HUGGINGFACE_API_KEY.</p>
+            <p>Add your Hugging Face API key below for this app session, or set VITE_HUGGINGFACE_API_KEY.</p>
           </div>
         </Card>
       )}
@@ -202,7 +203,7 @@ export function AIAssistantView() {
       <Card className="p-5 space-y-3">
         <h3 className="font-semibold">AI Provider Configuration</h3>
         <p className="text-sm text-muted-foreground">
-          Save your Hugging Face key locally in this app and choose the model to use.
+          Set your Hugging Face key for this app session and choose the model to use.
         </p>
         <div className="grid gap-3 md:grid-cols-2">
           <Input
@@ -215,7 +216,7 @@ export function AIAssistantView() {
           <Input
             value={model}
             onChange={(event) => setModel(event.target.value)}
-            placeholder="google/gemma-4-26b-it"
+            placeholder={DEFAULT_HUGGING_FACE_MODEL}
           />
         </div>
         <div className="flex items-center gap-2">
