@@ -71,10 +71,12 @@ export async function transaction<T>(
     const store = tx.objectStore(storeName);
     const request = callback(store);
     let requestResult: T;
+    let requestCompleted = false;
     let settled = false;
 
     request.onsuccess = () => {
       requestResult = request.result;
+      requestCompleted = true;
     };
 
     request.onerror = () => {
@@ -85,6 +87,11 @@ export async function transaction<T>(
 
     tx.oncomplete = () => {
       if (settled) return;
+      if (!requestCompleted) {
+        settled = true;
+        reject(new Error('IndexedDB request did not complete before transaction completion'));
+        return;
+      }
       settled = true;
       resolve(requestResult);
     };

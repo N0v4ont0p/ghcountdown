@@ -365,7 +365,6 @@ export function WeeklyCalendarView() {
           <Button
             onClick={() => {
               resetForm();
-              setFormData((prev) => ({ ...prev, date: defaultDateForCurrentWeek }));
               setIsDialogOpen(true);
             }}
             className="gap-2"
@@ -694,7 +693,10 @@ export function WeeklyCalendarView() {
               </Label>
             </div>
 
-            <div className="flex items-center justify-between gap-2 pt-4">
+            <div className={cn(
+              "flex items-center gap-2 pt-4",
+              editingBlock ? "justify-between" : "justify-end"
+            )}>
               {editingBlock ? (
                 <Button
                   type="button"
@@ -705,7 +707,7 @@ export function WeeklyCalendarView() {
                   <Trash size={14} />
                   Delete
                 </Button>
-              ) : <span />}
+              ) : null}
 
               <div className="flex gap-2">
               <Button
