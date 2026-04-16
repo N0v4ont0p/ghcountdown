@@ -1,11 +1,12 @@
 import { useMemo, useState, useEffect } from 'react';
-import { Sparkle, Lightning, WarningCircle, CheckCircle, WifiSlash } from '@phosphor-icons/react';
+import { Sparkle, Lightning, WarningCircle, CheckCircle, WifiSlash, SlidersHorizontal } from '@phosphor-icons/react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 import { getAllTodos, createTodo } from '@/db/repositories/todosRepo';
 import { getAllEvents, createEvent } from '@/db/repositories/eventsRepo';
@@ -20,7 +21,6 @@ import {
   PresetModel,
   generateActionPlan,
   getAIConfiguration,
-  isAIConfigured,
   isPresetModel,
   updateAIConfiguration,
 } from '@/lib/aiPlanner';
@@ -60,8 +60,10 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
   const [isApplyingAll, setIsApplyingAll] = useState(false);
   const [result, setResult] = useState<AIAssistantResult | null>(null);
   const [appliedIds, setAppliedIds] = useState<string[]>([]);
+  const [isCompactSettingsOpen, setIsCompactSettingsOpen] = useState(false);
 
   const isCustomModel = model === CUSTOM_MODEL_ID;
+  const hasApiKey = apiKey.trim().length > 0;
 
   useEffect(() => {
     const config = getAIConfiguration();
@@ -90,7 +92,7 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
     window.localStorage.setItem(AI_MODE_STORAGE_KEY, mode);
   }, [mode]);
 
-  const aiReady = isOnline && isAIConfigured();
+  const aiReady = isOnline && hasApiKey;
   const confidencePercent = useMemo(
     () => (result ? Math.round(result.confidence * 100) : 0),
     [result]
@@ -148,9 +150,12 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
       toast.error('Enter a custom model ID first.');
       return;
     }
-    updateAIConfiguration({ model: resolvedModel ?? DEFAULT_HUGGING_FACE_MODEL });
+    updateAIConfiguration({
+      apiKey: apiKey.trim(),
+      model: resolvedModel ?? DEFAULT_HUGGING_FACE_MODEL,
+    });
 
-    if (!isAIConfigured()) {
+    if (!apiKey.trim()) {
       toast.error('Missing AI key. Add your Hugging Face key below or via VITE_HUGGINGFACE_API_KEY.');
       return;
     }
@@ -266,15 +271,19 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
         </Card>
       )}
 
-      {!isAIConfigured() && (
+      {!hasApiKey && (
         <Card className="p-4 border-yellow-500/40">
           <div className="flex items-center gap-2 text-sm">
             <WarningCircle size={18} className="text-yellow-500" />
-            <p>Add your Hugging Face API key below for this app session, or set VITE_HUGGINGFACE_API_KEY.</p>
+            <p>{compact
+              ? 'Add your Hugging Face API key in AI Settings to enable generation.'
+              : 'Add your Hugging Face API key below for this app session, or set VITE_HUGGINGFACE_API_KEY.'}
+            </p>
           </div>
         </Card>
       )}
 
+      {!compact && (
       <Card className="p-5 space-y-3">
         <h3 className="font-semibold">AI Provider Configuration</h3>
         <p className="text-sm text-muted-foreground">
@@ -337,11 +346,26 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
           <Button type="button" variant="outline" onClick={handleSaveAIConfig}>
             Save AI Settings
           </Button>
-          {isAIConfigured() && <Badge variant="secondary">AI key configured</Badge>}
+          {hasApiKey && <Badge variant="secondary">AI key configured</Badge>}
         </div>
       </Card>
+      )}
 
       <Card className="p-5 space-y-4">
+        {compact ? (
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Badge variant={aiReady ? 'secondary' : 'outline'}>
+                {aiReady ? 'AI ready' : 'Setup needed'}
+              </Badge>
+              <Badge variant="outline">{mode === 'agent' ? 'Agent mode' : 'Plan mode'}</Badge>
+            </div>
+            <Button type="button" variant="outline" size="sm" onClick={() => setIsCompactSettingsOpen(true)}>
+              <SlidersHorizontal size={14} className="mr-2" />
+              AI Settings
+            </Button>
+          </div>
+        ) : (
         <div className="space-y-2">
           <p className="text-sm font-medium">Mode</p>
           <div className="flex flex-wrap gap-2">
@@ -369,6 +393,7 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
               : 'Plan mode keeps output concise and execution-focused.'}
           </p>
         </div>
+        )}
         <Textarea
           value={prompt}
           onChange={(event) => setPrompt(event.target.value)}
@@ -394,6 +419,81 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
           </Button>
         </div>
       </Card>
+
+      {compact && (
+        <Dialog open={isCompactSettingsOpen} onOpenChange={setIsCompactSettingsOpen}>
+          <DialogContent className="sm:max-w-xl">
+            <DialogHeader>
+              <DialogTitle>AI Settings</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <Input
+                type="password"
+                value={apiKey}
+                onChange={(event) => setApiKey(event.target.value)}
+                placeholder="Hugging Face API key (hf_xxx...)"
+                autoComplete="off"
+              />
+              <div className="space-y-2">
+                <p className="text-xs font-medium text-muted-foreground">Model</p>
+                <Select value={toSelectValue(model)} onValueChange={handleModelSelectChange}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a model…" />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-72">
+                    {PRESET_MODELS.map((preset) => (
+                      <SelectItem key={preset.id} value={preset.id}>
+                        <div className="flex flex-col gap-0.5 py-0.5">
+                          <span className="flex items-center gap-2">
+                            {preset.label}
+                            <span className={`text-xs font-medium ${TIER_LABELS[preset.tier].color}`}>
+                              {TIER_LABELS[preset.tier].label}
+                            </span>
+                          </span>
+                        </div>
+                      </SelectItem>
+                    ))}
+                    <SelectItem value={CUSTOM_MODEL_ID}>Custom model…</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                {isCustomModel && (
+                  <Input
+                    value={customModelInput}
+                    onChange={(event) => setCustomModelInput(event.target.value)}
+                    placeholder="e.g. org/model-name"
+                  />
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-xs font-medium text-muted-foreground">Mode</p>
+                <div className="flex flex-wrap gap-2">
+                  <Button type="button" size="sm" variant={mode === 'plan' ? 'default' : 'outline'} onClick={() => setMode('plan')}>
+                    Plan
+                  </Button>
+                  <Button type="button" size="sm" variant={mode === 'agent' ? 'default' : 'outline'} onClick={() => setMode('agent')}>
+                    Agent
+                  </Button>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between gap-2">
+                <Button
+                  type="button"
+                  onClick={() => {
+                    handleSaveAIConfig();
+                    setIsCompactSettingsOpen(false);
+                  }}
+                >
+                  Save & Close
+                </Button>
+                {hasApiKey && <Badge variant="secondary">AI key configured</Badge>}
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
 
       {result && (
         <Card className="p-5 space-y-5">
