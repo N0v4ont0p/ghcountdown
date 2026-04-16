@@ -42,7 +42,7 @@ export function AIAssistantView() {
     }
 
     if (!isOnline) {
-      toast.error('AI is offline and currently disabled.');
+      toast.error('No internet connection. AI features are disabled.');
       return;
     }
 
@@ -155,7 +155,7 @@ export function AIAssistantView() {
         <Card className="p-4 border-destructive/40">
           <div className="flex items-center gap-2 text-sm">
             <WifiSlash size={18} className="text-destructive" />
-            <p>AI is offline and disabled until your connection is restored.</p>
+            <p>No internet connection. AI features are disabled until your connection is restored.</p>
           </div>
         </Card>
       )}
