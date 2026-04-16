@@ -709,7 +709,7 @@ function App() {
       <Dialog open={isAIPopupOpen} onOpenChange={setIsAIPopupOpen}>
         <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>AI Assistant Popup</DialogTitle>
+            <DialogTitle>AI Assistant</DialogTitle>
           </DialogHeader>
           <AIAssistantView compact />
         </DialogContent>

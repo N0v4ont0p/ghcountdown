@@ -268,7 +268,7 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
             >
               Agent mode
             </Button>
-            <Badge variant="secondary">Default saved automatically</Badge>
+            <Badge variant="secondary">Auto-saved as default</Badge>
           </div>
           <p className="text-xs text-muted-foreground">
             {mode === 'agent'

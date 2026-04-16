@@ -37,7 +37,6 @@ const CHAT_COMPLETIONS_URLS = [
   'https://api-inference.huggingface.co/v1/chat/completions',
 ];
 const FALLBACK_HUGGING_FACE_MODELS = [
-  DEFAULT_HUGGING_FACE_MODEL,
   'google/gemma-4-26b-it',
 ];
 const AUTH_FAILURE_CODES = new Set([401, 403]);
@@ -247,7 +246,7 @@ async function parseErrorDetail(response: Response): Promise<string> {
 }
 
 function buildModelCandidates(requestedModel: string) {
-  return Array.from(new Set([requestedModel, ...FALLBACK_HUGGING_FACE_MODELS]));
+  return Array.from(new Set([requestedModel, DEFAULT_HUGGING_FACE_MODEL, ...FALLBACK_HUGGING_FACE_MODELS]));
 }
 
 function formatAttemptError(status: number | null, endpoint: string, model: string, detail?: string) {
@@ -263,10 +262,13 @@ async function requestWithFallback(params: {
   userPrompt: string;
 }) {
   const modelCandidates = buildModelCandidates(params.model);
+  const totalAttempts = CHAT_COMPLETIONS_URLS.length * modelCandidates.length;
+  let attempts = 0;
   let finalError = 'AI request failed.';
 
   for (const endpoint of CHAT_COMPLETIONS_URLS) {
     for (const model of modelCandidates) {
+      attempts += 1;
       try {
         const response = await fetch(endpoint, {
           method: 'POST',
@@ -305,7 +307,7 @@ async function requestWithFallback(params: {
     }
   }
 
-  throw new Error(`AI request failed after trying available endpoints/models. Last error: ${finalError}`);
+  throw new Error(`AI request failed after ${attempts} attempts across available endpoints/models. Last error: ${finalError}`);
 }
 
 export async function generateActionPlan(
