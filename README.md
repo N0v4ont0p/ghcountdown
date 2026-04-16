@@ -28,6 +28,7 @@ A native macOS desktop app built with Electron + React that keeps all your event
 | 📆 **Weekly Calendar** | Week-at-a-glance view with recurring schedule presets |
 | ⏱ **Time Tracking** | One-tap timer linked to any task, with daily/weekly totals |
 | 📊 **Statistics** | Productivity charts and time breakdown |
+| ✨ **AI Assistant** | Generates actionable summaries and can directly add todos, events, and timeline blocks |
 | 🎨 **Themes** | Light, dark, and system-matched — persisted across launches |
 
 ---
@@ -51,6 +52,21 @@ npm install
 npm run dev            # Vite on http://localhost:5173
 npm run electron:dev   # Open Electron pointing at the dev server
 ```
+
+### Optional AI setup (Hugging Face)
+
+```bash
+cp .env.example .env
+```
+
+Then set your local key in `.env`:
+
+```env
+VITE_HUGGINGFACE_API_KEY=your_huggingface_api_key_here
+VITE_HUGGINGFACE_MODEL=google/gemma-4-26b-it
+```
+
+> Keep `.env` local only. It is gitignored and should never be committed.
 
 ### Build the macOS app
 
@@ -131,4 +147,3 @@ ghcountdown/
 ## License
 
 [MIT](LICENSE)
-

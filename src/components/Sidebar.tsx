@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { House, CalendarBlank, ListChecks, Clock, Gear, CalendarCheck, ChartBar, Timer } from '@phosphor-icons/react';
+import { House, CalendarBlank, ListChecks, Clock, Gear, CalendarCheck, ChartBar, Timer, Sparkle } from '@phosphor-icons/react';
 import { cn } from '@/lib/utils';
 import logoUrl from '@/assets/logo.svg';
 
@@ -16,6 +16,7 @@ const navItems = [
   { id: 'weekly', label: 'Weekly', icon: CalendarCheck },
   { id: 'time-tracking', label: 'Time Tracking', icon: Timer },
   { id: 'statistics', label: 'Statistics', icon: ChartBar },
+  { id: 'ai-assistant', label: 'AI Assistant', icon: Sparkle },
   { id: 'settings', label: 'Settings', icon: Gear },
 ];
 

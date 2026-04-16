@@ -9,6 +9,7 @@ import { TimelineView } from '@/components/TimelineView';
 import { WeeklyCalendarView } from '@/components/WeeklyCalendarView';
 import { StatisticsView } from '@/components/StatisticsView';
 import { TimeTrackingView } from '@/components/TimeTrackingView';
+import { AIAssistantView } from '@/components/AIAssistantView';
 import { initDB } from '@/db/core';
 import { seedDatabase } from '@/db/seed';
 import { deleteAllEvents, getNextImportantEvent, getAllEvents } from '@/db/repositories/eventsRepo';
@@ -440,6 +441,18 @@ function App() {
                 transition={{ duration: 0.3 }}
               >
                 <StatisticsView />
+              </motion.div>
+            )}
+
+            {currentView === 'ai-assistant' && (
+              <motion.div
+                key="ai-assistant"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                transition={{ duration: 0.3 }}
+              >
+                <AIAssistantView />
               </motion.div>
             )}
 
