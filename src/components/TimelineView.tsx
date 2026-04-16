@@ -209,11 +209,15 @@ export function TimelineView() {
   }
 
   async function handleDeleteConfirm() {
-    if (blockToDelete) {
+    if (!blockToDelete) return;
+    try {
       await deleteTimeBlock(blockToDelete);
       toast.success('Time block deleted');
+      await loadData();
+    } catch (error) {
+      toast.error('Failed to delete time block');
+    } finally {
       setBlockToDelete(null);
-      loadData();
     }
   }
 
@@ -659,7 +663,10 @@ export function TimelineView() {
 
       <ConfirmDialog
         open={deleteConfirmOpen}
-        onOpenChange={setDeleteConfirmOpen}
+        onOpenChange={(open) => {
+          setDeleteConfirmOpen(open);
+          if (!open) setBlockToDelete(null);
+        }}
         title="Delete Time Block?"
         description="Are you sure you want to delete this time block? This action cannot be undone."
         actionType="delete"

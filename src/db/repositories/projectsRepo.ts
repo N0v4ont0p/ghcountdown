@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import { Project, STORES } from '../schema';
-import { getAll, getByKey, put, remove } from '../core';
+import { clearStore, getAll, getByKey, put, remove } from '../core';
 
 export async function getAllProjects(): Promise<Project[]> {
   return getAll<Project>(STORES.PROJECTS);
@@ -45,4 +45,8 @@ export async function deleteProject(id: string): Promise<boolean> {
   if (!existing) return false;
   await remove(STORES.PROJECTS, id);
   return true;
+}
+
+export async function deleteAllProjects(): Promise<void> {
+  await clearStore(STORES.PROJECTS);
 }

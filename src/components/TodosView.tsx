@@ -114,11 +114,15 @@ export function TodosView() {
   }
 
   async function handleDeleteConfirm() {
-    if (todoToDelete) {
+    if (!todoToDelete) return;
+    try {
       await deleteTodo(todoToDelete);
       toast.success('Todo deleted');
+      await loadData();
+    } catch (error) {
+      toast.error('Failed to delete todo');
+    } finally {
       setTodoToDelete(null);
-      loadData();
     }
   }
 
@@ -128,11 +132,15 @@ export function TodosView() {
   }
 
   async function handleDeleteProjectConfirm() {
-    if (projectToDelete) {
+    if (!projectToDelete) return;
+    try {
       await deleteProject(projectToDelete);
       toast.success('Project deleted');
+      await loadData();
+    } catch (error) {
+      toast.error('Failed to delete project');
+    } finally {
       setProjectToDelete(null);
-      loadData();
     }
   }
 
@@ -560,7 +568,10 @@ export function TodosView() {
 
       <ConfirmDialog
         open={deleteConfirmOpen}
-        onOpenChange={setDeleteConfirmOpen}
+        onOpenChange={(open) => {
+          setDeleteConfirmOpen(open);
+          if (!open) setTodoToDelete(null);
+        }}
         title="Delete Todo?"
         description="Are you sure you want to delete this todo? This action cannot be undone."
         actionType="delete"
@@ -571,7 +582,10 @@ export function TodosView() {
 
       <ConfirmDialog
         open={deleteProjectConfirmOpen}
-        onOpenChange={setDeleteProjectConfirmOpen}
+        onOpenChange={(open) => {
+          setDeleteProjectConfirmOpen(open);
+          if (!open) setProjectToDelete(null);
+        }}
         title="Delete Project?"
         description="Are you sure you want to delete this project? Todos in this project will not be deleted, but will no longer be linked to it."
         actionType="warning"

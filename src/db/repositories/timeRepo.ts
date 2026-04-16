@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import { TimeEntry, STORES } from '../schema';
-import { getAll, getByKey, put, remove, getAllByIndex } from '../core';
+import { clearStore, getAll, getByKey, put, remove, getAllByIndex } from '../core';
 
 export async function getAllTimeEntries(): Promise<TimeEntry[]> {
   return getAll<TimeEntry>(STORES.TIME_ENTRIES);
@@ -65,4 +65,8 @@ export async function deleteTimeEntry(id: string): Promise<boolean> {
   if (!existing) return false;
   await remove(STORES.TIME_ENTRIES, id);
   return true;
+}
+
+export async function deleteAllTimeEntries(): Promise<void> {
+  await clearStore(STORES.TIME_ENTRIES);
 }

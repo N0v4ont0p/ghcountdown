@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import { TimeBlock, STORES } from '../schema';
-import { getAll, add, put, remove, getAllByIndex } from '../core';
+import { clearStore, getAll, add, put, remove, getAllByIndex } from '../core';
 
 export async function getAllTimeBlocks(): Promise<TimeBlock[]> {
   return getAll<TimeBlock>(STORES.TIME_BLOCKS);
@@ -55,4 +55,8 @@ export async function updateTimeBlock(
 
 export async function deleteTimeBlock(id: string): Promise<void> {
   await remove(STORES.TIME_BLOCKS, id);
+}
+
+export async function deleteAllTimeBlocks(): Promise<void> {
+  await clearStore(STORES.TIME_BLOCKS);
 }

@@ -61,9 +61,9 @@ export function ConfirmDialog({
   const [isConfirming, setIsConfirming] = useState(false);
 
   const handleConfirm = async () => {
+    if (isConfirming) return;
     setIsConfirming(true);
     try {
-      await new Promise(resolve => setTimeout(resolve, 300));
       await onConfirm();
       onOpenChange(false);
     } catch (error) {
@@ -74,6 +74,7 @@ export function ConfirmDialog({
   };
 
   const handleCancel = () => {
+    if (isConfirming) return;
     onCancel?.();
     onOpenChange(false);
   };

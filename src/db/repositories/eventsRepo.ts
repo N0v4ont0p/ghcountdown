@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import { Event, STORES } from '../schema';
-import { getAll, getByKey, put, remove, getAllByIndex } from '../core';
+import { clearStore, getAll, getByKey, put, remove, getAllByIndex } from '../core';
 
 export async function getAllEvents(): Promise<Event[]> {
   return getAll<Event>(STORES.EVENTS);
@@ -70,4 +70,8 @@ export async function deleteEvent(id: string): Promise<boolean> {
   if (!existing) return false;
   await remove(STORES.EVENTS, id);
   return true;
+}
+
+export async function deleteAllEvents(): Promise<void> {
+  await clearStore(STORES.EVENTS);
 }
