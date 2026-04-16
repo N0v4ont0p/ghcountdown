@@ -32,12 +32,17 @@ interface AIContext {
 const ENV_HUGGING_FACE_API_KEY = import.meta.env.VITE_HUGGINGFACE_API_KEY;
 export const DEFAULT_HUGGING_FACE_MODEL = 'google/gemma-4-26B-A4B';
 const ENV_HUGGING_FACE_MODEL = import.meta.env.VITE_HUGGINGFACE_MODEL || DEFAULT_HUGGING_FACE_MODEL;
+
+function encodeModelPath(model: string) {
+  return model.split('/').map(encodeURIComponent).join('/');
+}
+
 const CHAT_COMPLETIONS_ENDPOINTS = [
   {
     buildUrl: () => 'https://router.huggingface.co/v1/chat/completions',
   },
   {
-    buildUrl: (model: string) => `https://api-inference.huggingface.co/models/${model.split('/').map(encodeURIComponent).join('/')}/v1/chat/completions`,
+    buildUrl: (model: string) => `https://api-inference.huggingface.co/models/${encodeModelPath(model)}/v1/chat/completions`,
   },
 ];
 const FALLBACK_HUGGING_FACE_MODELS = [

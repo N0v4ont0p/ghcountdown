@@ -97,6 +97,9 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
     () => (result ? Math.round(result.confidence * 100) : 0),
     [result]
   );
+  const missingKeyMessage = compact
+    ? 'Add your Hugging Face API key in AI Settings to enable generation.'
+    : 'Add your Hugging Face API key below for this app session, or set VITE_HUGGINGFACE_API_KEY.';
 
   function handleModelSelectChange(value: string) {
     setModel(value);
@@ -275,10 +278,7 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
         <Card className="p-4 border-yellow-500/40">
           <div className="flex items-center gap-2 text-sm">
             <WarningCircle size={18} className="text-yellow-500" />
-            <p>{compact
-              ? 'Add your Hugging Face API key in AI Settings to enable generation.'
-              : 'Add your Hugging Face API key below for this app session, or set VITE_HUGGINGFACE_API_KEY.'}
-            </p>
+            <p>{missingKeyMessage}</p>
           </div>
         </Card>
       )}
