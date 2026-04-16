@@ -15,6 +15,7 @@ import { toast } from 'sonner';
 import { getAllTodos, createTodo } from '@/db/repositories/todosRepo';
 import { getAllEvents, createEvent } from '@/db/repositories/eventsRepo';
 import { getAllTimeBlocks, createTimeBlock } from '@/db/repositories/timeBlocksRepo';
+import { updateSettings } from '@/db/repositories/settingsRepo';
 import {
   AIMode,
   AIAssistantResult,
@@ -136,12 +137,14 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
       return;
     }
 
+    const finalModel = resolvedModel ?? DEFAULT_HUGGING_FACE_MODEL;
     updateAIConfiguration({
       apiKey: trimmedApiKey,
-      model: resolvedModel ?? DEFAULT_HUGGING_FACE_MODEL,
+      model: finalModel,
     });
+    updateSettings({ aiApiKey: trimmedApiKey, aiModel: finalModel });
 
-    toast.success(trimmedApiKey ? 'AI credentials updated for this session.' : 'Saved model. Add an API key to enable AI.');
+    toast.success(trimmedApiKey ? 'AI credentials saved.' : 'Saved model. Add an API key to enable AI.');
   }
 
   async function handleGenerate() {
@@ -161,10 +164,12 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
       toast.error('Enter a custom model ID first.');
       return;
     }
+    const finalModel = resolvedModel ?? DEFAULT_HUGGING_FACE_MODEL;
     updateAIConfiguration({
       apiKey: apiKey.trim(),
-      model: resolvedModel ?? DEFAULT_HUGGING_FACE_MODEL,
+      model: finalModel,
     });
+    updateSettings({ aiApiKey: apiKey.trim(), aiModel: finalModel });
 
     if (!apiKey.trim()) {
       toast.error('Missing AI key. Add your Hugging Face key below or via VITE_HUGGINGFACE_API_KEY.');

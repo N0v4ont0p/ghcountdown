@@ -66,6 +66,8 @@ export interface Settings {
   timelineStartHour: number;
   timelineEndHour: number;
   reducedMotion: boolean;
+  aiApiKey: string;
+  aiModel: string;
 }
 
 export const STORES = {

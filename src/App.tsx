@@ -31,6 +31,7 @@ import { exportAllData, downloadJSON, exportTimeEntriesCSV, exportEventsCSV, exp
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { toast } from 'sonner';
+import { getAIConfiguration, updateAIConfiguration } from '@/lib/aiPlanner';
 
 function App() {
   const [currentView, setCurrentView] = useState('home');
@@ -52,6 +53,13 @@ function App() {
         
         const appSettings = await getSettings();
         setSettings(appSettings);
+
+        // Restore persisted AI config into the runtime (env-var key takes priority)
+        const runtimeConfig = getAIConfiguration();
+        updateAIConfiguration({
+          apiKey: runtimeConfig.apiKey || appSettings.aiApiKey,
+          model: appSettings.aiModel || runtimeConfig.model,
+        });
         
         const important = await getNextImportantEvent(appSettings.importantPriorityThreshold);
         setNextEvent(important);
