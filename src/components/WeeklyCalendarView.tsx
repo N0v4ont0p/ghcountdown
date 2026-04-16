@@ -98,6 +98,7 @@ export function WeeklyCalendarView() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isPresetDialogOpen, setIsPresetDialogOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [deleteBlockId, setDeleteBlockId] = useState<string | null>(null);
   const [editingBlock, setEditingBlock] = useState<TimeBlock | null>(null);
   const [draggedBlock, setDraggedBlock] = useState<TimeBlock | null>(null);
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -229,13 +230,13 @@ export function WeeklyCalendarView() {
   }
 
   async function handleDeleteConfirm() {
-    if (!editingBlock) return;
+    if (!deleteBlockId) return;
 
     try {
-      await deleteTimeBlock(editingBlock.id);
+      await deleteTimeBlock(deleteBlockId);
       toast.success('Time block deleted!');
-      setIsDialogOpen(false);
       setDeleteConfirmOpen(false);
+      setDeleteBlockId(null);
       resetForm();
       loadData();
     } catch (error) {
@@ -701,7 +702,11 @@ export function WeeklyCalendarView() {
                 <Button
                   type="button"
                   variant="destructive"
-                  onClick={() => setDeleteConfirmOpen(true)}
+                  onClick={() => {
+                    setDeleteBlockId(editingBlock.id);
+                    setDeleteConfirmOpen(true);
+                    setIsDialogOpen(false);
+                  }}
                   className="gap-2"
                 >
                   <Trash size={14} />
@@ -789,7 +794,10 @@ export function WeeklyCalendarView() {
 
       <ConfirmDialog
         open={deleteConfirmOpen}
-        onOpenChange={setDeleteConfirmOpen}
+        onOpenChange={(open) => {
+          setDeleteConfirmOpen(open);
+          if (!open) setDeleteBlockId(null);
+        }}
         title="Delete Time Block?"
         description="Are you sure you want to delete this time block? This action cannot be undone."
         actionType="delete"
