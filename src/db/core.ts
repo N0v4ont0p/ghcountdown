@@ -70,9 +70,36 @@ export async function transaction<T>(
     const tx = db.transaction(storeName, mode);
     const store = tx.objectStore(storeName);
     const request = callback(store);
+    let requestResult: T;
+    let settled = false;
 
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
+    request.onsuccess = () => {
+      requestResult = request.result;
+    };
+
+    request.onerror = () => {
+      if (settled) return;
+      settled = true;
+      reject(request.error);
+    };
+
+    tx.oncomplete = () => {
+      if (settled) return;
+      settled = true;
+      resolve(requestResult);
+    };
+
+    tx.onerror = () => {
+      if (settled) return;
+      settled = true;
+      reject(tx.error ?? request.error ?? new Error('IndexedDB transaction failed'));
+    };
+
+    tx.onabort = () => {
+      if (settled) return;
+      settled = true;
+      reject(tx.error ?? request.error ?? new Error('IndexedDB transaction aborted'));
+    };
   });
 }
 
