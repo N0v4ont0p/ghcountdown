@@ -287,7 +287,7 @@ export function TimelineView() {
 
   async function handleChipKeyDown(e: React.KeyboardEvent, todo: Todo) {
     if (e.key !== 'Enter' && e.key !== ' ') return;
-    e.preventDefault();
+    e.preventDefault(); // prevent page scroll on Space, form submit on Enter
     const dateStr = format(currentDate, 'yyyy-MM-dd');
     try {
       const count = await scheduleMyDay(dateStr, [todo], timeBlocks);

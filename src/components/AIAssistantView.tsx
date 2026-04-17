@@ -30,8 +30,8 @@ const AI_MODE_STORAGE_KEY = 'ghcountdown.ai.defaultMode';
 
 /**
  * Phrases that trigger deterministic scheduling instead of the AI API.
- * Matches: "schedule my todos", "schedule my tasks", "schedule my day",
- * "schedule todos/tasks", "plan my day".
+ * Matches (with or without "my"): "schedule todos", "schedule my todos",
+ * "schedule tasks", "schedule my tasks", "schedule my day", "plan my day".
  * Uses non-greedy `.*?` to avoid spanning multiple unrelated sentences.
  */
 const SCHEDULE_INTENT_RE = /\bschedule\b.*?\b(my\s+)?(todos?|tasks?|day)\b|\bplan\s+my\s+day\b/i;

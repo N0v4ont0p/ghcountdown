@@ -675,6 +675,16 @@ function App() {
 
 export default App;
 
+/** Formats a number of minutes as a human-readable "in Xh Ym" or "in X min" string. */
+function formatTimeUntil(minutes: number): string {
+  if (minutes >= 60) {
+    const h = Math.floor(minutes / 60);
+    const m = minutes % 60;
+    return m > 0 ? `in ${h}h ${m}m` : `in ${h}h`;
+  }
+  return `in ${minutes} min`;
+}
+
 // ─── RIGHT NOW CARD ───────────────────────────────────────────────────────────
 
 interface RightNowCardProps {
@@ -729,9 +739,7 @@ function RightNowCard({ blocks, now, onNavigateTimeline }: RightNowCardProps) {
     const startTotal = startH * 60 + startM;
     const nowTotal = now.getHours() * 60 + now.getMinutes();
     const inMin = startTotal - nowTotal;
-    const inText = inMin >= 60
-      ? `in ${Math.floor(inMin / 60)}h ${inMin % 60 > 0 ? `${inMin % 60}m` : ''}`.trim()
-      : `in ${inMin} min`;
+    const inText = formatTimeUntil(inMin);
 
     content = (
       <div className="flex items-start gap-4">
