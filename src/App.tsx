@@ -35,6 +35,7 @@ import { toast } from 'sonner';
 import { getAIConfiguration, updateAIConfiguration } from '@/lib/aiPlanner';
 import { withColorAlpha } from '@/lib/scheduleDay';
 import { performDailyRollover } from '@/lib/rollover';
+import { escalateOverdueTodos } from '@/lib/overdueCheck';
 
 function App() {
   const [currentView, setCurrentView] = useState('home');
@@ -85,6 +86,11 @@ function App() {
         if (rolledOver.length > 0) {
           toast.info(`🔄 ${rolledOver.length} unfinished todo${rolledOver.length !== 1 ? 's' : ''} rolled over from yesterday`);
         }
+
+        const escalated = await escalateOverdueTodos();
+        if (escalated > 0) {
+          toast.warning(`⚠️ ${escalated} overdue todo${escalated !== 1 ? 's' : ''} escalated to critical priority`);
+        }
       } catch (error) {
         console.error('Failed to initialize:', error);
       } finally {
@@ -99,6 +105,18 @@ function App() {
   useEffect(() => {
     const id = setInterval(() => setNowTick(new Date()), 60_000);
     return () => clearInterval(id);
+  }, []);
+
+  // Global Cmd/Ctrl+K shortcut to open AI popup
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        setIsAIPopupOpen(true);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
   }, []);
 
   useEffect(() => {
@@ -649,6 +667,9 @@ function App() {
       >
         <Sparkle size={16} className="mr-2" />
         AI Assistant
+        <kbd className="ml-2 text-[10px] opacity-70 font-mono bg-white/20 rounded px-1 py-0.5">
+          {typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(navigator.platform) ? '⌘K' : 'Ctrl+K'}
+        </kbd>
       </Button>
 
       <Dialog open={isAIPopupOpen} onOpenChange={setIsAIPopupOpen}>

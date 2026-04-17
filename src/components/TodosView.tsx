@@ -163,17 +163,34 @@ export function TodosView() {
     }
   }
 
-  const inboxTodos = todos.filter(t => t.status === 'inbox');
-  const todayTodos = todos.filter(t => t.status === 'today');
+  const inboxTodos = todos
+    .filter(t => t.status === 'inbox')
+    .sort((a, b) => {
+      const aOv = isOverdue(a) ? 0 : 1;
+      const bOv = isOverdue(b) ? 0 : 1;
+      return aOv - bOv;
+    });
+  const todayTodos = todos
+    .filter(t => t.status === 'today')
+    .sort((a, b) => {
+      const aOv = isOverdue(a) ? 0 : 1;
+      const bOv = isOverdue(b) ? 0 : 1;
+      return aOv - bOv;
+    });
   const doneTodos = todos.filter(t => t.status === 'done');
 
   function getTodosByProject(projectId: string) {
     return todos.filter(t => t.projectId === projectId && t.status !== 'done');
   }
 
+  function isOverdue(todo: Todo): boolean {
+    return todo.status !== 'done' && !!todo.dueAt && new Date(todo.dueAt).getTime() < Date.now();
+  }
+
   function TodoItem({ todo, showProject = false }: { todo: Todo; showProject?: boolean }) {
     const project = todo.projectId ? projects.find(p => p.id === todo.projectId) : null;
     const isDone = todo.status === 'done';
+    const overdue = isOverdue(todo);
 
     return (
       <motion.div
@@ -185,7 +202,8 @@ export function TodosView() {
       >
         <Card className={cn(
           "p-3 group hover:shadow-sm transition-all duration-200",
-          isDone && "opacity-60"
+          isDone && "opacity-60",
+          overdue && "border-l-4 border-l-red-500"
         )}>
           <div className="flex items-start gap-3">
             <div className="pt-0.5">
@@ -204,7 +222,10 @@ export function TodosView() {
                 )}>
                   {todo.title}
                 </span>
-                {todo.priority >= 4 && (
+                {overdue && (
+                  <Badge variant="destructive" className="h-5 text-xs bg-red-600">OVERDUE</Badge>
+                )}
+                {!overdue && todo.priority >= 4 && (
                   <Badge variant="destructive" className="h-5 text-xs">High</Badge>
                 )}
                 {showProject && project && (
@@ -220,7 +241,10 @@ export function TodosView() {
               </div>
               
               {todo.dueAt && (
-                <p className="text-xs text-muted-foreground mt-1">
+                <p className={cn(
+                  "text-xs mt-1",
+                  overdue ? "text-red-500 font-medium" : "text-muted-foreground"
+                )}>
                   Due: {format(new Date(todo.dueAt), 'MMM d, yyyy')}
                 </p>
               )}

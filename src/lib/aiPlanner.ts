@@ -27,6 +27,11 @@ interface AIContext {
   todoTitles: string[];
   upcomingEventTitles: string[];
   recentBlockTitles: string[];
+  unscheduledTodayTodos: string[];
+  overdueTodos: string[];
+  currentStreak: number;
+  todayFocusMinutes: number;
+  nextEventDateTime: string | null;
 }
 
 const ENV_HUGGING_FACE_API_KEY = import.meta.env.VITE_HUGGINGFACE_API_KEY;
@@ -434,6 +439,11 @@ export async function generateActionPlan(
     `Existing todos: ${context.todoTitles.join(' | ') || 'none'}`,
     `Upcoming events: ${context.upcomingEventTitles.join(' | ') || 'none'}`,
     `Recent time blocks: ${context.recentBlockTitles.join(' | ') || 'none'}`,
+    `Unscheduled today todos: ${context.unscheduledTodayTodos.join(' | ') || 'none'}`,
+    `Overdue todos: ${context.overdueTodos.join(' | ') || 'none'}`,
+    `Current productivity streak: ${context.currentStreak} day${context.currentStreak !== 1 ? 's' : ''}`,
+    `Today focused minutes: ${context.todayFocusMinutes}`,
+    `Next event: ${context.nextEventDateTime ?? 'none'}`,
     ``,
     `User request: ${prompt.trim()}`,
   ].join('\n');
