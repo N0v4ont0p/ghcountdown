@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence, Reorder } from 'framer-motion';
 import { TimeBlock, Todo, Event, Project } from '@/db/schema';
 import { getAllTimeBlocks, createTimeBlock, updateTimeBlock, deleteTimeBlock, getTimeBlocksByDate } from '@/db/repositories/timeBlocksRepo';
-import { getAllTodos } from '@/db/repositories/todosRepo';
+import { getAllTodos, updateTodo } from '@/db/repositories/todosRepo';
 import { getAllEvents } from '@/db/repositories/eventsRepo';
 import { getAllProjects } from '@/db/repositories/projectsRepo';
 import { createTimeEntry, getRunningTimer, updateTimeEntry } from '@/db/repositories/timeRepo';
@@ -15,10 +15,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
-import { Plus, Play, Stop, Trash, Pencil, Clock, CalendarBlank } from '@phosphor-icons/react';
+import { Plus, Play, Stop, Trash, Pencil, Clock, CalendarBlank, CheckSquare, Lightning } from '@phosphor-icons/react';
 import { format, startOfDay, endOfDay, parse, differenceInMinutes } from 'date-fns';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { scheduleMyDay } from '@/lib/scheduleDay';
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
 const TIMELINE_HOUR_HEIGHT = 80;
@@ -35,6 +36,8 @@ export function TimelineView() {
   const [currentTime, setCurrentTime] = useState(new Date());
   const timelineRef = useRef<HTMLDivElement>(null);
   const [dragStart, setDragStart] = useState<{ hour: number; minute: number } | null>(null);
+  const [dragOverHour, setDragOverHour] = useState<number | null>(null);
+  const [isScheduling, setIsScheduling] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [blockToDelete, setBlockToDelete] = useState<string | null>(null);
 
@@ -221,6 +224,75 @@ export function TimelineView() {
     }
   }
 
+  async function handleCompleteBlock(block: TimeBlock) {
+    if (!block.todoId) return;
+    try {
+      await updateTodo(block.todoId, { status: 'done' });
+      toast.success('Todo marked as done!');
+      loadData();
+    } catch {
+      toast.error('Failed to complete todo');
+    }
+  }
+
+  async function handleTodoDrop(hour: number, e: React.DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    setDragOverHour(null);
+    const todoId = e.dataTransfer.getData('todoId');
+    const todoTitle = e.dataTransfer.getData('todoTitle');
+    const todoPriority = parseInt(e.dataTransfer.getData('todoPriority') || '3', 10);
+
+    if (todoId && todoTitle) {
+      const dateStr = format(currentDate, 'yyyy-MM-dd');
+      const startHour = String(hour).padStart(2, '0');
+      const endHour = String(hour + 1).padStart(2, '0');
+
+      const priorityColors: Record<number, string> = {
+        5: 'oklch(0.58 0.20 20)',
+        4: 'oklch(0.65 0.18 40)',
+        3: 'oklch(0.58 0.20 260)',
+        2: 'oklch(0.60 0.16 240)',
+        1: 'oklch(0.65 0.12 200)',
+      };
+      const color = priorityColors[todoPriority] ?? priorityColors[3];
+
+      try {
+        await createTimeBlock({
+          title: todoTitle,
+          date: dateStr,
+          startTime: `${startHour}:00`,
+          endTime: `${endHour}:00`,
+          todoId,
+          projectId: null,
+          color,
+          autoTrack: true,
+        });
+        toast.success(`Scheduled "${todoTitle}"`);
+        loadData();
+      } catch {
+        toast.error('Failed to schedule todo');
+      }
+    }
+  }
+
+  async function handleScheduleMyDay() {
+    setIsScheduling(true);
+    try {
+      const dateStr = format(currentDate, 'yyyy-MM-dd');
+      const count = await scheduleMyDay(dateStr, unscheduledTodayTodos, timeBlocks);
+      if (count === 0) {
+        toast.info('All todos are already scheduled!');
+      } else {
+        toast.success(`Scheduled ${count} todo${count !== 1 ? 's' : ''} for today`);
+        loadData();
+      }
+    } catch {
+      toast.error('Failed to schedule todos');
+    } finally {
+      setIsScheduling(false);
+    }
+  }
+
   async function handleManualTimer(block: TimeBlock) {
     if (runningTimer) {
       await updateTimeEntry(runningTimer.id, { endAt: new Date().toISOString() });
@@ -266,6 +338,10 @@ export function TimelineView() {
   });
 
   const isToday = format(currentDate, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd');
+
+  const scheduledTodoIds = new Set(timeBlocks.map(b => b.todoId).filter(Boolean) as string[]);
+  const todayTodos = todos.filter(t => t.status === 'today');
+  const unscheduledTodayTodos = todayTodos.filter(t => !scheduledTodoIds.has(t.id));
 
   return (
     <div className="max-w-7xl mx-auto h-[calc(100vh-6rem)]">
@@ -318,6 +394,18 @@ export function TimelineView() {
             <Plus size={16} weight="bold" />
             Add Block
           </Button>
+
+          {unscheduledTodayTodos.length > 0 && (
+            <Button
+              variant="secondary"
+              onClick={handleScheduleMyDay}
+              disabled={isScheduling}
+              className="gap-2 hover:scale-105 active:scale-95 transition-transform"
+            >
+              <Lightning size={16} weight="bold" />
+              {isScheduling ? 'Scheduling…' : 'Schedule My Day'}
+            </Button>
+          )}
         </div>
       </div>
 
@@ -332,14 +420,23 @@ export function TimelineView() {
               {HOURS.map((hour) => (
                 <div
                   key={hour}
-                  className="absolute left-0 right-0 border-t border-border"
+                  className={cn(
+                    "absolute left-0 right-0 border-t border-border transition-colors",
+                    dragOverHour === hour && "bg-primary/5"
+                  )}
                   style={{ top: hour * TIMELINE_HOUR_HEIGHT, height: TIMELINE_HOUR_HEIGHT }}
+                  onDragOver={(e) => { e.preventDefault(); setDragOverHour(hour); }}
+                  onDragLeave={() => setDragOverHour(null)}
+                  onDrop={(e) => handleTodoDrop(hour, e)}
                 >
                   <div className="flex items-start gap-4 px-4 py-2">
                     <div className="w-20 text-sm text-muted-foreground font-medium z-20 bg-background/80 backdrop-blur-sm rounded px-2 py-0.5">
                       {format(new Date().setHours(hour, 0, 0, 0), 'h:mm a')}
                     </div>
-                    <div className="flex-1 h-full border-l border-border/50 relative"></div>
+                    <div className={cn(
+                      "flex-1 h-full border-l border-border/50 relative",
+                      dragOverHour === hour && "border-primary/50"
+                    )}></div>
                   </div>
                 </div>
               ))}
@@ -412,6 +509,17 @@ export function TimelineView() {
                           <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity"
                             onClick={(e) => e.stopPropagation()}
                           >
+                            {block.todoId && (
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                onClick={() => handleCompleteBlock(block)}
+                                className="h-6 w-6 text-green-600 hover:scale-110 active:scale-95 transition-transform"
+                                title="Mark todo as done"
+                              >
+                                <CheckSquare size={12} />
+                              </Button>
+                            )}
                             <Button
                               size="icon"
                               variant="ghost"
@@ -503,18 +611,41 @@ export function TimelineView() {
           )}
 
           <Card className="p-4">
-            <h3 className="font-semibold mb-3">Today's Todos</h3>
-            {todos.filter(t => t.status === 'today').length === 0 ? (
+            <h3 className="font-semibold mb-1">Today's Todos</h3>
+            {todayTodos.length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-4">No todos for today</p>
+            ) : unscheduledTodayTodos.length === 0 ? (
+              <p className="text-sm text-green-500 text-center py-3 font-medium">All tasks scheduled ✓</p>
             ) : (
-              <div className="space-y-2">
-                {todos.filter(t => t.status === 'today').slice(0, 5).map((todo) => (
-                  <div key={todo.id} className="flex items-center gap-2 text-sm p-2 rounded hover:bg-accent/5">
-                    <div className="w-3 h-3 rounded border-2"></div>
-                    <span className="flex-1 truncate">{todo.title}</span>
-                  </div>
-                ))}
-              </div>
+              <>
+                <p className="text-xs text-muted-foreground mb-3">Drag to schedule →</p>
+                <div className="space-y-2">
+                  {unscheduledTodayTodos.map((todo, index) => (
+                    <motion.div
+                      key={todo.id}
+                      draggable={true}
+                      onDragStart={(e) => {
+                        e.dataTransfer.setData('todoId', todo.id);
+                        e.dataTransfer.setData('todoTitle', todo.title);
+                        e.dataTransfer.setData('todoPriority', String(todo.priority));
+                        e.dataTransfer.effectAllowed = 'copy';
+                      }}
+                      className="flex items-center gap-2 rounded-lg px-3 py-2 cursor-grab active:cursor-grabbing border border-border/50 select-none"
+                      style={{
+                        backgroundColor: `color-mix(in srgb, var(--priority-${todo.priority}) 20%, transparent)`,
+                      }}
+                      initial={{ opacity: 0, x: 20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: index * 0.05 }}
+                    >
+                      <Badge variant="outline" className="text-[10px] px-1 h-4 shrink-0">
+                        P{todo.priority}
+                      </Badge>
+                      <span className="text-sm truncate flex-1">{todo.title}</span>
+                    </motion.div>
+                  ))}
+                </div>
+              </>
             )}
           </Card>
         </div>
