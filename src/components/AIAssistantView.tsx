@@ -205,10 +205,21 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
 
       if (mode === 'agent' && plan.suggestions.length > 0) {
         // Auto-apply all suggestions in agent mode
+        let appliedCount = 0;
+        let failedCount = 0;
         for (const suggestion of plan.suggestions) {
-          await applySuggestion(suggestion);
+          try {
+            await applySuggestion(suggestion);
+            appliedCount += 1;
+          } catch {
+            failedCount += 1;
+          }
         }
-        toast.success(`Agent executed ${plan.suggestions.length} action(s) automatically.`);
+        if (failedCount === 0) {
+          toast.success(`Agent executed ${appliedCount} action(s) automatically.`);
+        } else {
+          toast.error(`Agent executed ${appliedCount} action(s); ${failedCount} failed. Review and re-apply if needed.`);
+        }
       } else {
         toast.success('AI action plan generated.');
       }
