@@ -191,11 +191,14 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
           return sum + Math.max(0, (eh * 60 + em) - (sh * 60 + sm));
         }, 0);
 
-      // Compute current streak from time entries
+      // Compute current streak from time entries (start from today if has activity, else yesterday)
       const completedEntries = entries.filter(e => e.endAt !== null);
       const daysWithActivity = new Set(completedEntries.map(e => e.startAt.split('T')[0]));
       let currentStreak = 0;
-      const checkDate = new Date();
+      const streakStart = daysWithActivity.has(today)
+        ? new Date()
+        : new Date(Date.now() - 86400000);
+      const checkDate = new Date(streakStart);
       for (let i = 0; i < 365; i++) {
         const dateStr = checkDate.toISOString().split('T')[0];
         if (daysWithActivity.has(dateStr)) {
