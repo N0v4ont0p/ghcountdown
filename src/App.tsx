@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import type { ReactNode } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Toaster } from '@/components/ui/sonner';
 import { Sidebar } from '@/components/Sidebar';
@@ -17,11 +18,11 @@ import { deleteAllTodos, getAllTodos } from '@/db/repositories/todosRepo';
 import { getSettings, updateSettings } from '@/db/repositories/settingsRepo';
 import { deleteAllProjects } from '@/db/repositories/projectsRepo';
 import { deleteAllTimeEntries } from '@/db/repositories/timeRepo';
-import { deleteAllTimeBlocks } from '@/db/repositories/timeBlocksRepo';
-import { Event, Todo, Settings } from '@/db/schema';
+import { deleteAllTimeBlocks, getTimeBlocksByDate } from '@/db/repositories/timeBlocksRepo';
+import { Event, Todo, TimeBlock, Settings } from '@/db/schema';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Plus, CalendarBlank, Sun, Moon, Monitor, DownloadSimple, UploadSimple, Trash, Sparkle } from '@phosphor-icons/react';
+import { Plus, CalendarBlank, Sun, Moon, Monitor, DownloadSimple, UploadSimple, Trash, Sparkle, ArrowRight, Clock } from '@phosphor-icons/react';
 import { format } from 'date-fns';
 import { Badge } from '@/components/ui/badge';
 import { useTheme } from '@/hooks/use-theme';
@@ -32,12 +33,15 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 import { getAIConfiguration, updateAIConfiguration } from '@/lib/aiPlanner';
+import { withColorAlpha } from '@/lib/scheduleDay';
 
 function App() {
   const [currentView, setCurrentView] = useState('home');
   const [nextEvent, setNextEvent] = useState<Event | null>(null);
   const [upcomingEvents, setUpcomingEvents] = useState<Event[]>([]);
   const [todos, setTodos] = useState<Todo[]>([]);
+  const [todayBlocks, setTodayBlocks] = useState<TimeBlock[]>([]);
+  const [nowTick, setNowTick] = useState(new Date());
   const [settings, setSettings] = useState<Settings | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isAIPopupOpen, setIsAIPopupOpen] = useState(false);
@@ -72,6 +76,9 @@ function App() {
         
         const allTodos = await getAllTodos();
         setTodos(allTodos.filter(t => t.status !== 'done'));
+
+        const blocks = await getTimeBlocksByDate(format(new Date(), 'yyyy-MM-dd'));
+        setTodayBlocks(blocks.sort((a, b) => a.startTime.localeCompare(b.startTime)));
       } catch (error) {
         console.error('Failed to initialize:', error);
       } finally {
@@ -80,6 +87,12 @@ function App() {
     }
 
     initialize();
+  }, []);
+
+  // Tick every minute so the "RIGHT NOW" card updates automatically
+  useEffect(() => {
+    const id = setInterval(() => setNowTick(new Date()), 60_000);
+    return () => clearInterval(id);
   }, []);
 
   useEffect(() => {
@@ -102,6 +115,9 @@ function App() {
     
     const allTodos = await getAllTodos();
     setTodos(allTodos.filter(t => t.status !== 'done'));
+
+    const blocks = await getTimeBlocksByDate(format(new Date(), 'yyyy-MM-dd'));
+    setTodayBlocks(blocks.sort((a, b) => a.startTime.localeCompare(b.startTime)));
   }
 
   async function handleExportJSON() {
@@ -288,96 +304,12 @@ function App() {
 
                 <CountdownHero event={nextEvent} />
 
-                <div className="grid md:grid-cols-2 gap-6">
-                  <Card className="p-6">
-                    <div className="flex items-center justify-between mb-4">
-                      <h3 className="text-lg font-semibold">Upcoming Events</h3>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => setCurrentView('events')}
-                      >
-                        <Plus size={16} className="mr-1" />
-                        Add
-                      </Button>
-                    </div>
-
-                    {upcomingEvents.length === 0 ? (
-                      <div className="text-center py-8 text-muted-foreground">
-                        <CalendarBlank size={48} className="mx-auto mb-2 opacity-50" />
-                        <p>No upcoming events</p>
-                      </div>
-                    ) : (
-                      <div className="space-y-3">
-                        <AnimatePresence mode="popLayout">
-                          {upcomingEvents.map((event, index) => (
-                            <motion.div
-                              key={event.id}
-                              initial={{ opacity: 0, x: -20 }}
-                              animate={{ opacity: 1, x: 0 }}
-                              exit={{ opacity: 0, x: 20 }}
-                              transition={{ delay: index * 0.05 }}
-                              onClick={() => setCurrentView('events')}
-                              className="p-3 rounded-lg border bg-card hover:bg-accent/5 transition-all duration-200 cursor-pointer hover:shadow-sm"
-                            >
-                              <div className="flex items-start justify-between">
-                                <div className="flex-1">
-                                  <h4 className="font-medium">{event.title}</h4>
-                                  <p className="text-sm text-muted-foreground">
-                                    {format(new Date(event.startsAt), 'MMM d • h:mm a')}
-                                  </p>
-                                </div>
-                                <Badge variant="outline">P{event.priority}</Badge>
-                              </div>
-                            </motion.div>
-                          ))}
-                        </AnimatePresence>
-                      </div>
-                    )}
-                  </Card>
-
-                  <Card className="p-6">
-                    <div className="flex items-center justify-between mb-4">
-                      <h3 className="text-lg font-semibold">Today's Tasks</h3>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => setCurrentView('todos')}
-                      >
-                        <Plus size={16} className="mr-1" />
-                        Add
-                      </Button>
-                    </div>
-
-                    {todos.filter(t => t.status === 'today').length === 0 ? (
-                      <div className="text-center py-8 text-muted-foreground">
-                        <p>No tasks for today</p>
-                      </div>
-                    ) : (
-                      <div className="space-y-2">
-                        <AnimatePresence mode="popLayout">
-                          {todos.filter(t => t.status === 'today').map((todo, index) => (
-                            <motion.div
-                              key={todo.id}
-                              initial={{ opacity: 0, x: -20 }}
-                              animate={{ opacity: 1, x: 0 }}
-                              exit={{ opacity: 0, x: 20 }}
-                              transition={{ delay: index * 0.05 }}
-                              onClick={() => setCurrentView('todos')}
-                              className="flex items-center gap-3 p-2 rounded hover:bg-accent/5 transition-all duration-200 cursor-pointer"
-                            >
-                              <div className="w-4 h-4 rounded border-2"></div>
-                              <span className="flex-1">{todo.title}</span>
-                              {todo.priority >= 4 && (
-                                <Badge variant="destructive" className="text-xs">High</Badge>
-                              )}
-                            </motion.div>
-                          ))}
-                        </AnimatePresence>
-                      </div>
-                    )}
-                  </Card>
-                </div>
+                {/* RIGHT NOW card */}
+                <RightNowCard
+                  blocks={todayBlocks}
+                  now={nowTick}
+                  onNavigateTimeline={() => setCurrentView('timeline')}
+                />
               </motion.div>
             )}
 
@@ -742,3 +674,126 @@ function App() {
 }
 
 export default App;
+
+// ─── RIGHT NOW CARD ───────────────────────────────────────────────────────────
+
+interface RightNowCardProps {
+  blocks: TimeBlock[];
+  now: Date;
+  onNavigateTimeline: () => void;
+}
+
+function RightNowCard({ blocks, now, onNavigateTimeline }: RightNowCardProps) {
+  const currentHHMM = format(now, 'HH:mm');
+
+  const activeBlock = blocks.find(
+    b => b.startTime <= currentHHMM && currentHHMM < b.endTime
+  ) ?? null;
+
+  const nextBlock = !activeBlock
+    ? blocks.find(b => b.startTime > currentHHMM) ?? null
+    : null;
+
+  let content: ReactNode;
+
+  if (activeBlock) {
+    const [endH, endM] = activeBlock.endTime.split(':').map(Number);
+    const endTotal = endH * 60 + endM;
+    const nowTotal = now.getHours() * 60 + now.getMinutes();
+    const remainMin = endTotal - nowTotal;
+
+    content = (
+      <div className="flex items-start gap-4">
+        <div
+          className="w-1 self-stretch rounded-full flex-shrink-0"
+          style={{ backgroundColor: activeBlock.color }}
+        />
+        <div className="flex-1 min-w-0">
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">
+            You're in
+          </p>
+          <h4 className="text-xl font-semibold truncate">{activeBlock.title}</h4>
+          <p className="text-sm text-muted-foreground mt-1">
+            {activeBlock.startTime}–{activeBlock.endTime}
+            {remainMin > 0 && ` · ${remainMin} min remaining`}
+          </p>
+        </div>
+        <div className="flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center"
+          style={{ backgroundColor: withColorAlpha(activeBlock.color, 0.2) }}>
+          <Clock size={20} style={{ color: activeBlock.color }} />
+        </div>
+      </div>
+    );
+  } else if (nextBlock) {
+    const [startH, startM] = nextBlock.startTime.split(':').map(Number);
+    const startTotal = startH * 60 + startM;
+    const nowTotal = now.getHours() * 60 + now.getMinutes();
+    const inMin = startTotal - nowTotal;
+    const inText = inMin >= 60
+      ? `in ${Math.floor(inMin / 60)}h ${inMin % 60 > 0 ? `${inMin % 60}m` : ''}`.trim()
+      : `in ${inMin} min`;
+
+    content = (
+      <div className="flex items-start gap-4">
+        <div
+          className="w-1 self-stretch rounded-full flex-shrink-0 opacity-50"
+          style={{ backgroundColor: nextBlock.color }}
+        />
+        <div className="flex-1 min-w-0">
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">
+            Up next
+          </p>
+          <h4 className="text-xl font-semibold truncate">{nextBlock.title}</h4>
+          <p className="text-sm text-muted-foreground mt-1">
+            {nextBlock.startTime} · starts {inText}
+          </p>
+        </div>
+        <div className="flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center bg-muted">
+          <ArrowRight size={20} className="text-muted-foreground" />
+        </div>
+      </div>
+    );
+  } else {
+    content = (
+      <div className="flex items-start gap-4">
+        <div className="flex-1 min-w-0">
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">
+            Right now
+          </p>
+          <h4 className="text-xl font-semibold">Free time</h4>
+          <p className="text-sm text-muted-foreground mt-1">
+            No more blocks scheduled today
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <motion.div
+      key={activeBlock?.id ?? nextBlock?.id ?? 'free'}
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.25 }}
+    >
+      <Card className="p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold flex items-center gap-2">
+            <Clock size={18} />
+            Right Now
+          </h3>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={onNavigateTimeline}
+            className="gap-1 text-xs text-muted-foreground"
+          >
+            Timeline
+            <ArrowRight size={14} />
+          </Button>
+        </div>
+        {content}
+      </Card>
+    </motion.div>
+  );
+}
