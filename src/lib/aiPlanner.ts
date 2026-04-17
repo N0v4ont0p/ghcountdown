@@ -183,6 +183,7 @@ function buildSystemPrompt(mode: AIMode): string {
   return `${modeDirective}
 
 Today is ${today}. Tomorrow is ${tomorrow}.
+Always output times in 24-hour HH:mm format. "2pm"=14:00, "9am"=09:00, "noon"=12:00, "midnight"=00:00.
 
 Create 2-5 suggestions that directly address the user request.
 Mix suggestion types appropriately:
@@ -412,10 +413,24 @@ export async function generateActionPlan(
 
   const systemPrompt = buildSystemPrompt(mode);
 
+  const now = new Date();
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const localISO = new Date(
+    now.getTime() - now.getTimezoneOffset() * 60000
+  ).toISOString().slice(0, 19);
+  const dayName = now.toLocaleDateString('en-US', { weekday: 'long' });
+  const offsetMin = -now.getTimezoneOffset();
+  const offsetSign = offsetMin >= 0 ? '+' : '-';
+  const offsetHours = String(Math.floor(Math.abs(offsetMin) / 60)).padStart(2, '0');
+  const offsetMins = String(Math.abs(offsetMin) % 60).padStart(2, '0');
+  const offsetStr = `${offsetSign}${offsetHours}:${offsetMins}`;
+
   const userPrompt = [
-    `Current date: ${new Date().toISOString().split('T')[0]}`,
-    `Day of week: ${new Date().toLocaleDateString('en-US', {weekday:'long'})}`,
-    `Current time: ${new Date().toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit'})}`,
+    `Current local date-time: ${localISO} (${dayName})`,
+    `User timezone: ${tz} (UTC${offsetStr})`,
+    `IMPORTANT: All times you produce must be interpreted in the user's local timezone.`,
+    `When user says "2pm" output "14:00". When user says "this Sunday" use the Sunday that comes AFTER today in user's timezone.`,
+    `All startsAt values in your JSON output MUST include the timezone offset ${offsetStr} (e.g. 2026-04-19T14:00:00${offsetStr})`,
     `Existing todos: ${context.todoTitles.join(' | ') || 'none'}`,
     `Upcoming events: ${context.upcomingEventTitles.join(' | ') || 'none'}`,
     `Recent time blocks: ${context.recentBlockTitles.join(' | ') || 'none'}`,

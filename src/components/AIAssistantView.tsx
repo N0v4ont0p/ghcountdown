@@ -11,9 +11,9 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { toast } from 'sonner';
-import { getAllTodos, createTodo } from '@/db/repositories/todosRepo';
+import { getAllTodos, createTodo, getTodosByStatus } from '@/db/repositories/todosRepo';
 import { getAllEvents, createEvent } from '@/db/repositories/eventsRepo';
-import { getAllTimeBlocks, createTimeBlock } from '@/db/repositories/timeBlocksRepo';
+import { getAllTimeBlocks, createTimeBlock, getTimeBlocksByDate } from '@/db/repositories/timeBlocksRepo';
 import { updateSettings } from '@/db/repositories/settingsRepo';
 import {
   AIMode,
@@ -23,8 +23,18 @@ import {
   getAIConfiguration,
   updateAIConfiguration,
 } from '@/lib/aiPlanner';
+import { scheduleMyDay } from '@/lib/scheduleDay';
+import { format } from 'date-fns';
 
 const AI_MODE_STORAGE_KEY = 'ghcountdown.ai.defaultMode';
+
+/**
+ * Phrases that trigger deterministic scheduling instead of the AI API.
+ * Matches (with or without "my"): "schedule todos", "schedule my todos",
+ * "schedule tasks", "schedule my tasks", "schedule my day", "plan my day".
+ * Uses non-greedy `.*?` to avoid spanning multiple unrelated sentences.
+ */
+const SCHEDULE_INTENT_RE = /\bschedule\b.*?\b(my\s+)?(todos?|tasks?|day)\b|\bplan\s+my\s+day\b/i;
 
 interface AIAssistantViewProps {
   compact?: boolean;
@@ -108,6 +118,32 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
 
     updateAIConfiguration({ apiKey: apiKey.trim() });
     updateSettings({ aiApiKey: apiKey.trim() });
+
+    // Detect scheduling intent — runs the same deterministic logic as "Schedule My Day"
+    const isSchedulingIntent = SCHEDULE_INTENT_RE.test(prompt.trim());
+    if (isSchedulingIntent) {
+      setIsGenerating(true);
+      try {
+        const today = format(new Date(), 'yyyy-MM-dd');
+        const [todayTodos, todayBlocks] = await Promise.all([
+          getTodosByStatus('today'),
+          getTimeBlocksByDate(today),
+        ]);
+        const scheduledIds = new Set(todayBlocks.map(b => b.todoId).filter(Boolean) as string[]);
+        const unscheduled = todayTodos.filter(t => !scheduledIds.has(t.id));
+        const count = await scheduleMyDay(today, unscheduled, todayBlocks);
+        if (count > 0) {
+          toast.success(`Scheduled ${count} todo${count !== 1 ? 's' : ''} for today`);
+        } else {
+          toast.info('All todos are already scheduled!');
+        }
+      } catch {
+        toast.error('Failed to schedule todos');
+      } finally {
+        setIsGenerating(false);
+      }
+      return;
+    }
 
     if (!apiKey.trim()) {
       toast.error('Missing AI key. Add your Hugging Face key below or via VITE_HUGGINGFACE_API_KEY.');
