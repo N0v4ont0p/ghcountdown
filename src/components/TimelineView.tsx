@@ -285,6 +285,23 @@ export function TimelineView() {
     }
   }
 
+  async function handleChipKeyDown(e: React.KeyboardEvent, todo: Todo) {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    e.preventDefault();
+    const dateStr = format(currentDate, 'yyyy-MM-dd');
+    try {
+      const count = await scheduleMyDay(dateStr, [todo], timeBlocks);
+      if (count > 0) {
+        toast.success(`Scheduled "${todo.title}"`);
+        loadData();
+      } else {
+        toast.error('No available time slots for this todo');
+      }
+    } catch {
+      toast.error('Failed to schedule todo');
+    }
+  }
+
   async function handleManualTimer(block: TimeBlock) {
     if (runningTimer) {
       await updateTimeEntry(runningTimer.id, { endAt: new Date().toISOString() });
@@ -616,13 +633,17 @@ export function TimelineView() {
                     <motion.div
                       key={todo.id}
                       draggable={true}
+                      tabIndex={0}
+                      role="button"
+                      aria-label={`${todo.title}, Priority ${todo.priority}. Press Enter to schedule.`}
                       onDragStart={(e) => {
                         e.dataTransfer.setData('todoId', todo.id);
                         e.dataTransfer.setData('todoTitle', todo.title);
                         e.dataTransfer.setData('todoPriority', String(todo.priority));
                         e.dataTransfer.effectAllowed = 'copy';
                       }}
-                      className="flex items-center gap-2 rounded-lg px-3 py-2 cursor-grab active:cursor-grabbing border border-border/50 select-none"
+                      onKeyDown={(e) => handleChipKeyDown(e, todo)}
+                      className="flex items-center gap-2 rounded-lg px-3 py-2 cursor-grab active:cursor-grabbing border border-border/50 select-none focus:outline-none focus:ring-2 focus:ring-primary"
                       style={{
                         backgroundColor: withColorAlpha(PRIORITY_COLORS[todo.priority] ?? PRIORITY_COLORS[3], 0.2),
                       }}
@@ -630,7 +651,11 @@ export function TimelineView() {
                       animate={{ opacity: 1, x: 0 }}
                       transition={{ delay: index * 0.05 }}
                     >
-                      <Badge variant="outline" className="text-[10px] px-1 h-4 shrink-0">
+                      <Badge
+                        variant="outline"
+                        className="text-[10px] px-1 h-4 shrink-0"
+                        aria-label={`Priority ${todo.priority}`}
+                      >
                         P{todo.priority}
                       </Badge>
                       <span className="text-sm truncate flex-1">{todo.title}</span>

@@ -38,13 +38,15 @@ export async function scheduleMyDay(
   // Sort by priority descending so p5/p4 go first and earlier
   const sorted = [...unscheduledTodos].sort((a, b) => b.priority - a.priority);
 
-  // Build the set of hours already occupied by existing blocks
+  // Build the set of hours already occupied by existing blocks.
+  // Hour H is occupied if any existing block overlaps the [H:00, H+1:00) window.
   const occupiedHours = new Set<number>();
   for (const block of existingBlocks) {
-    const [startH] = block.startTime.split(':').map(Number);
+    const [startH, startM] = block.startTime.split(':').map(Number);
     const [endH, endM] = block.endTime.split(':').map(Number);
-    const actualEndH = endM > 0 ? endH + 1 : endH;
-    for (let h = startH; h < actualEndH; h++) {
+    const startMinutes = startH * 60 + startM;
+    const endMinutes = endH * 60 + endM;
+    for (let h = Math.floor(startMinutes / 60); h < Math.ceil(endMinutes / 60); h++) {
       occupiedHours.add(h);
     }
   }
