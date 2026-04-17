@@ -500,7 +500,13 @@ export async function generateActionPlan(
     throw new Error('AI returned an empty response.');
   }
 
-  const parsed = extractFirstJsonObject(textResponse);
+  const cleanedResponse = textResponse
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```$/i, '')
+    .replace(/^[^{]*/s, (match) => (match.includes('{') ? '' : match))
+    .trim();
+
+  const parsed = extractFirstJsonObject(cleanedResponse);
   if (!parsed || typeof parsed !== 'object') {
     throw new Error('AI response was not valid JSON.');
   }
