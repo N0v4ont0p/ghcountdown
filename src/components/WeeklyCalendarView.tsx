@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, DragEvent } from 'react';
+import { useState, useEffect, useRef, useMemo, DragEvent } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { TimeBlock, Todo, Event, Project } from '@/db/schema';
 import { createTimeBlock, updateTimeBlock, deleteTimeBlock, getTimeBlocksByDateRange } from '@/db/repositories/timeBlocksRepo';
@@ -320,6 +320,20 @@ export function WeeklyCalendarView() {
   const todayDayIndex = weekDays.findIndex(day => isToday(day));
   const currentTimePos = getCurrentTimePosition();
 
+  const WEEKLY_CAPACITY_HOURS = 40;
+
+  const scheduledHours = useMemo(() => {
+    return timeBlocks.reduce((total, block) => {
+      const [sh, sm] = block.startTime.split(':').map(Number);
+      const [eh, em] = block.endTime.split(':').map(Number);
+      const minutes = (eh * 60 + em) - (sh * 60 + sm);
+      return total + Math.max(0, minutes);
+    }, 0) / 60;
+  }, [timeBlocks]);
+
+  const capacityPct = Math.min(100, (scheduledHours / WEEKLY_CAPACITY_HOURS) * 100);
+  const capacityColor = capacityPct >= 90 ? 'bg-red-500' : capacityPct >= 70 ? 'bg-amber-500' : 'bg-emerald-500';
+
   return (
     <div className="h-[calc(100vh-4rem)] flex flex-col">
       <div className="mb-4 flex items-center justify-between">
@@ -378,8 +392,24 @@ export function WeeklyCalendarView() {
         </div>
       </div>
 
-      <Card className="flex-1 overflow-hidden">
-        <div className="grid grid-cols-[60px_repeat(7,1fr)] h-full">
+      <div className="mb-3 flex items-center gap-4 rounded-lg border bg-card px-4 py-2.5 text-sm">
+        <span className="text-muted-foreground whitespace-nowrap">This week:</span>
+        <span className="font-semibold">
+          {scheduledHours % 1 === 0 ? scheduledHours : scheduledHours.toFixed(1)}h scheduled
+        </span>
+        <span className="text-muted-foreground">/ {WEEKLY_CAPACITY_HOURS}h capacity</span>
+        <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
+          <div
+            className={cn('h-full rounded-full transition-all duration-500', capacityColor)}
+            style={{ width: `${capacityPct}%` }}
+          />
+        </div>
+        <span className="text-muted-foreground whitespace-nowrap text-xs">
+          {Math.round(capacityPct)}% full
+        </span>
+      </div>
+
+      <Card className="flex-1 overflow-hidden">        <div className="grid grid-cols-[60px_repeat(7,1fr)] h-full">
           <div className="border-r bg-muted/30">
             <div className="h-12 border-b flex items-center justify-center text-xs font-semibold text-muted-foreground">
               Time
