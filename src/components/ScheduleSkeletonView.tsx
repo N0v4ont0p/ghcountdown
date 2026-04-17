@@ -21,6 +21,7 @@ import {
   createScheduleSkeletonEntry,
   deleteScheduleSkeletonEntry,
   getAllScheduleSkeletonEntries,
+  getScheduleSkeletonEntryById,
   updateScheduleSkeletonEntry,
 } from '@/db/repositories/scheduleSkeletonRepo';
 import { getHabitModel } from '@/lib/habitModel';
@@ -123,6 +124,14 @@ export function ScheduleSkeletonView() {
   }
 
   async function handleDeleteLocation(id: string) {
+    const affectedEntries = entries.filter((entry) => entry.locationId === id);
+    await Promise.all(
+      affectedEntries.map(async (entry) => {
+        const latest = await getScheduleSkeletonEntryById(entry.id);
+        if (!latest) return;
+        await updateScheduleSkeletonEntry(entry.id, { locationId: null });
+      })
+    );
     await deleteLocation(id);
     setEntries((prev) => prev.map((entry) => (entry.locationId === id ? { ...entry, locationId: null } : entry)));
     toast.success('Location deleted');

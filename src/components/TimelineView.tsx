@@ -85,6 +85,10 @@ export function TimelineView() {
     async function buildGhostSuggestions() {
       const dateStr = format(currentDate, 'yyyy-MM-dd');
       const flexSlots = await getFreeSlotsForDate(dateStr);
+      const toMinutes = (timeValue: string) => {
+        const [h, m] = timeValue.split(':').map(Number);
+        return (h * 60) + m;
+      };
 
       const suggestions = await Promise.all(
         flexSlots.map(async (slot) => {
@@ -95,7 +99,13 @@ export function TimelineView() {
           const id = `${dateStr}:${slot.startTime}:${slot.endTime}:${prediction.label}`;
           if (ghostDismissedIds.has(id)) return null;
 
-          const occupied = timeBlocks.some((block) => block.startTime < slot.endTime && block.endTime > slot.startTime);
+          const slotStart = toMinutes(slot.startTime);
+          const slotEnd = toMinutes(slot.endTime);
+          const occupied = timeBlocks.some((block) => {
+            const blockStart = toMinutes(block.startTime);
+            const blockEnd = toMinutes(block.endTime);
+            return blockStart < slotEnd && blockEnd > slotStart;
+          });
           if (occupied) return null;
 
           return {
@@ -715,8 +725,8 @@ export function TimelineView() {
                           <p className="text-[10px] text-muted-foreground">{ghost.startTime} - {ghost.endTime}</p>
                         </div>
                         <div className="flex gap-1">
-                          <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => void handleAcceptGhost(ghost)}>+</Button>
-                          <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => handleDismissGhost(ghost)}>✕</Button>
+                          <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => void handleAcceptGhost(ghost)} aria-label="Accept suggestion">+</Button>
+                          <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => handleDismissGhost(ghost)} aria-label="Dismiss suggestion">✕</Button>
                         </div>
                       </div>
                     </div>

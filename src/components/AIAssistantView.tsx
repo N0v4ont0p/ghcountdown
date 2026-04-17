@@ -297,20 +297,28 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
       const blockDate = suggestion.date ?? new Date().toISOString().split('T')[0];
       const startTime = suggestion.startTime ?? '09:00';
       const endTime = suggestion.endTime ?? '10:00';
+      const toMinutes = (value: string) => {
+        const [h, m] = value.split(':').map(Number);
+        return (h * 60) + m;
+      };
+      const startMinutes = toMinutes(startTime);
+      const endMinutes = toMinutes(endTime);
       const effectiveSchedule = await getEffectiveScheduleForDate(blockDate);
       const conflictingFixed = effectiveSchedule.find(
         (entry) =>
           entry.kind === 'fixed' &&
-          startTime < entry.endTime &&
-          endTime > entry.startTime
+          startMinutes < toMinutes(entry.endTime) &&
+          endMinutes > toMinutes(entry.startTime)
       );
 
       if (conflictingFixed) {
-        throw new Error(`AI suggestion overlaps fixed routine: ${conflictingFixed.title} (${conflictingFixed.startTime}-${conflictingFixed.endTime})`);
+        throw new Error(
+          `AI suggestion overlaps with fixed routine "${conflictingFixed.title}" from ${conflictingFixed.startTime} to ${conflictingFixed.endTime}`
+        );
       }
 
       const matchingSlot = effectiveSchedule.find(
-        (entry) => startTime < entry.endTime && endTime > entry.startTime
+        (entry) => startMinutes < toMinutes(entry.endTime) && endMinutes > toMinutes(entry.startTime)
       );
 
       await createTimeBlock({

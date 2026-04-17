@@ -7,6 +7,7 @@ import { getAllTimeBlocks } from '@/db/repositories/timeBlocksRepo';
 export const DECAY_HALF_LIFE_DAYS = 14;
 const MIN_ENTRY_MINUTES = 2;
 const MODEL_CACHE_MS = 15 * 60 * 1000;
+const BLOCK_WEIGHT_FACTOR = 0.7;
 
 export interface HabitCell {
   dayOfWeek: number;
@@ -157,7 +158,8 @@ export async function computeHabitModel(): Promise<HabitModel> {
 
     const label = extractLabel(block.title);
     const decay = decayWeight(start);
-    const weightedDuration = durationMinutes * decay * 0.7;
+    // Time blocks are treated as weaker evidence than completed tracked entries.
+    const weightedDuration = durationMinutes * decay * BLOCK_WEIGHT_FACTOR;
 
     const day = start.getDay();
     const hour = start.getHours();
@@ -170,9 +172,9 @@ export async function computeHabitModel(): Promise<HabitModel> {
       addMinutesToHourMap(focusMinutesByHour, day, hour, weightedDuration);
     }
 
-    wakeHourWeights.set(hour, (wakeHourWeights.get(hour) ?? 0) + decay * 0.7);
+    wakeHourWeights.set(hour, (wakeHourWeights.get(hour) ?? 0) + decay * BLOCK_WEIGHT_FACTOR);
     const endHour = Number.isFinite(eH) ? eH : hour;
-    sleepHourWeights.set(endHour, (sleepHourWeights.get(endHour) ?? 0) + decay * 0.7);
+    sleepHourWeights.set(endHour, (sleepHourWeights.get(endHour) ?? 0) + decay * BLOCK_WEIGHT_FACTOR);
 
     totalTrackedMinutes += durationMinutes;
   }
@@ -293,5 +295,6 @@ export async function predictActivity(date = new Date()): Promise<{ label: strin
 }
 
 export async function detectDrift(): Promise<string[]> {
+  // Intentionally returns no drift signals for now per current product requirement.
   return [];
 }
