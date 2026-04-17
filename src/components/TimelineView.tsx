@@ -19,7 +19,7 @@ import { Plus, Play, Stop, Trash, Pencil, Clock, CalendarBlank, CheckSquare, Lig
 import { format, startOfDay, endOfDay, parse, differenceInMinutes } from 'date-fns';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
-import { scheduleMyDay } from '@/lib/scheduleDay';
+import { scheduleMyDay, PRIORITY_COLORS } from '@/lib/scheduleDay';
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
 const TIMELINE_HOUR_HEIGHT = 80;
@@ -246,15 +246,7 @@ export function TimelineView() {
       const dateStr = format(currentDate, 'yyyy-MM-dd');
       const startHour = String(hour).padStart(2, '0');
       const endHour = String(hour + 1).padStart(2, '0');
-
-      const priorityColors: Record<number, string> = {
-        5: 'oklch(0.58 0.20 20)',
-        4: 'oklch(0.65 0.18 40)',
-        3: 'oklch(0.58 0.20 260)',
-        2: 'oklch(0.60 0.16 240)',
-        1: 'oklch(0.65 0.12 200)',
-      };
-      const color = priorityColors[todoPriority] ?? priorityColors[3];
+      const color = PRIORITY_COLORS[todoPriority] ?? PRIORITY_COLORS[3];
 
       try {
         await createTimeBlock({
@@ -632,7 +624,7 @@ export function TimelineView() {
                       }}
                       className="flex items-center gap-2 rounded-lg px-3 py-2 cursor-grab active:cursor-grabbing border border-border/50 select-none"
                       style={{
-                        backgroundColor: `color-mix(in srgb, var(--priority-${todo.priority}) 20%, transparent)`,
+                        backgroundColor: (PRIORITY_COLORS[todo.priority] ?? PRIORITY_COLORS[3]).replace(')', ' / 0.2)'),
                       }}
                       initial={{ opacity: 0, x: 20 }}
                       animate={{ opacity: 1, x: 0 }}

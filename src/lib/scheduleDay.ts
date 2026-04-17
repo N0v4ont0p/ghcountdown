@@ -2,7 +2,7 @@ import { format } from 'date-fns';
 import { Todo, TimeBlock } from '@/db/schema';
 import { createTimeBlock } from '@/db/repositories/timeBlocksRepo';
 
-const PRIORITY_COLORS: Record<number, string> = {
+export const PRIORITY_COLORS: Record<number, string> = {
   5: 'oklch(0.58 0.20 20)',
   4: 'oklch(0.65 0.18 40)',
   3: 'oklch(0.58 0.20 260)',
@@ -47,10 +47,10 @@ export async function scheduleMyDay(
   let created = 0;
   for (const todo of sorted) {
     // Advance to the next free hour slot
-    while (occupiedHours.has(currentHour) && currentHour < 23) {
+    while (occupiedHours.has(currentHour) && currentHour < 24) {
       currentHour++;
     }
-    if (currentHour >= 23) break;
+    if (currentHour >= 24) break;
 
     const startTime = `${String(currentHour).padStart(2, '0')}:00`;
     const endTime = `${String(currentHour + 1).padStart(2, '0')}:00`;
