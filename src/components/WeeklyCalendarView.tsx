@@ -217,6 +217,7 @@ export function WeeklyCalendarView() {
           projectId: formData.projectId || null,
           color: formData.color,
           autoTrack: formData.autoTrack,
+          slotType: 'fixed',
         });
         toast.success('Time block created!');
       }
@@ -245,7 +246,7 @@ export function WeeklyCalendarView() {
   }
 
   async function applyPreset(preset: RecurringPreset) {
-    const blocksToCreate = [];
+    const blocksToCreate: Promise<TimeBlock>[] = [];
     
     for (const dayIndex of preset.days) {
       const date = weekDays[dayIndex];
@@ -267,6 +268,7 @@ export function WeeklyCalendarView() {
           projectId: null,
           color: preset.color,
           autoTrack: preset.autoTrack,
+          slotType: 'fixed',
         }));
       }
     }

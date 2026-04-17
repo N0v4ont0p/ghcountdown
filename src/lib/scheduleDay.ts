@@ -80,6 +80,7 @@ export async function scheduleMyDay(
       projectId: todo.projectId,
       color,
       autoTrack: true,
+      slotType: 'fixed',
     });
 
     occupiedHours.add(currentHour);

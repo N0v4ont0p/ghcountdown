@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence, Reorder } from 'framer-motion';
 import { TimeBlock, Todo, Event, Project } from '@/db/schema';
 import { getAllTimeBlocks, createTimeBlock, updateTimeBlock, deleteTimeBlock, getTimeBlocksByDate } from '@/db/repositories/timeBlocksRepo';
@@ -15,11 +15,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
-import { Plus, Play, Stop, Trash, Pencil, Clock, CalendarBlank, CheckSquare, Lightning } from '@phosphor-icons/react';
+import { Plus, Play, Stop, Trash, Pencil, Clock, CalendarBlank, CheckSquare, Lightning, Warning } from '@phosphor-icons/react';
 import { format, startOfDay, endOfDay, parse, differenceInMinutes } from 'date-fns';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { scheduleMyDay, PRIORITY_COLORS, withColorAlpha } from '@/lib/scheduleDay';
+import { detectBlockConflicts } from '@/lib/conflictDetection';
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
 const TIMELINE_HOUR_HEIGHT = 80;
@@ -49,6 +50,7 @@ export function TimelineView() {
     projectId: 'none',
     color: 'oklch(0.60 0.19 250)',
     autoTrack: true,
+    slotType: 'fixed' as 'fixed' | 'flex-todo' | 'flex-project',
   });
 
   useEffect(() => {
@@ -128,6 +130,38 @@ export function TimelineView() {
         return;
       }
     }
+
+    // Auto-fill flex blocks whose start time is within 5 minutes
+    const nowMinutes = now.getHours() * 60 + now.getMinutes();
+    const allTodos = await getAllTodos();
+    const scheduledIds = new Set(blocks.filter(b => b.todoId).map(b => b.todoId as string));
+
+    for (const block of blocks) {
+      const slotType = block.slotType || 'fixed';
+      if (slotType === 'fixed' || block.todoId) continue;
+      const [bH, bM] = block.startTime.split(':').map(Number);
+      const blockStartMinutes = bH * 60 + bM;
+      if (Math.abs(nowMinutes - blockStartMinutes) <= 5) {
+        await autoFillFlexBlock(block, allTodos, scheduledIds);
+      }
+    }
+  }
+
+  async function autoFillFlexBlock(block: TimeBlock, allTodos: Todo[], scheduledIds: Set<string>) {
+    const candidates = allTodos.filter(t => t.status === 'today' && !scheduledIds.has(t.id));
+    let winner: Todo | undefined;
+    if ((block.slotType || 'fixed') === 'flex-todo') {
+      winner = [...candidates].sort((a, b) => b.priority - a.priority)[0];
+    } else if ((block.slotType || 'fixed') === 'flex-project') {
+      winner = [...candidates]
+        .filter(t => block.projectId && t.projectId === block.projectId)
+        .sort((a, b) => b.priority - a.priority)[0];
+    }
+    if (winner) {
+      await updateTimeBlock(block.id, { title: winner.title, todoId: winner.id });
+      toast.success(`Auto-filled flex slot with "${winner.title}"`);
+      loadData();
+    }
   }
 
   function resetForm() {
@@ -139,6 +173,7 @@ export function TimelineView() {
       projectId: 'none',
       color: 'oklch(0.60 0.19 250)',
       autoTrack: true,
+      slotType: 'fixed',
     });
     setEditingBlock(null);
   }
@@ -153,6 +188,7 @@ export function TimelineView() {
       projectId: block.projectId || 'none',
       color: block.color,
       autoTrack: block.autoTrack,
+      slotType: (block.slotType || 'fixed') as 'fixed' | 'flex-todo' | 'flex-project',
     });
     setIsDialogOpen(true);
   }
@@ -172,6 +208,30 @@ export function TimelineView() {
 
     const dateStr = format(currentDate, 'yyyy-MM-dd');
 
+    // Conflict detection — warn but still allow save
+    const previewId = editingBlock?.id || '__preview__';
+    const wouldBeBlock: TimeBlock = {
+      id: previewId,
+      title: formData.title,
+      date: dateStr,
+      startTime: formData.startTime,
+      endTime: formData.endTime,
+      todoId: formData.todoId !== 'none' ? formData.todoId : null,
+      projectId: formData.projectId !== 'none' ? formData.projectId : null,
+      color: formData.color,
+      autoTrack: formData.autoTrack,
+      slotType: formData.slotType,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    const otherBlocks = timeBlocks.filter(b => b.id !== previewId);
+    const conflictPairs = detectBlockConflicts([...otherBlocks, wouldBeBlock], dateStr);
+    const myConflict = conflictPairs.find(c => c.blockA.id === previewId || c.blockB.id === previewId);
+    if (myConflict) {
+      const other = myConflict.blockA.id === previewId ? myConflict.blockB : myConflict.blockA;
+      toast.warning(`⚠ This overlaps with "${other.title}"`);
+    }
+
     try {
       if (editingBlock) {
         await updateTimeBlock(editingBlock.id, {
@@ -182,6 +242,7 @@ export function TimelineView() {
           projectId: formData.projectId !== 'none' ? formData.projectId : null,
           color: formData.color,
           autoTrack: formData.autoTrack,
+          slotType: formData.slotType,
         });
         toast.success('Time block updated!');
       } else {
@@ -194,6 +255,7 @@ export function TimelineView() {
           projectId: formData.projectId !== 'none' ? formData.projectId : null,
           color: formData.color,
           autoTrack: formData.autoTrack,
+          slotType: formData.slotType,
         });
         toast.success('Time block created!');
       }
@@ -258,6 +320,7 @@ export function TimelineView() {
           projectId: null,
           color,
           autoTrack: true,
+          slotType: 'fixed',
         });
         toast.success(`Scheduled "${todoTitle}"`);
         loadData();
@@ -351,6 +414,17 @@ export function TimelineView() {
   const scheduledTodoIds = new Set(timeBlocks.map(b => b.todoId).filter(Boolean) as string[]);
   const todayTodos = todos.filter(t => t.status === 'today');
   const unscheduledTodayTodos = todayTodos.filter(t => !scheduledTodoIds.has(t.id));
+
+  const conflictingBlockIds = useMemo(() => {
+    const dateStr = format(currentDate, 'yyyy-MM-dd');
+    const pairs = detectBlockConflicts(timeBlocks, dateStr);
+    const ids = new Set<string>();
+    pairs.forEach(({ blockA, blockB }) => {
+      ids.add(blockA.id);
+      ids.add(blockB.id);
+    });
+    return ids;
+  }, [timeBlocks, currentDate]);
 
   return (
     <div className="max-w-7xl mx-auto h-[calc(100vh-6rem)]">
@@ -471,6 +545,8 @@ export function TimelineView() {
                     const isRunning = runningTimer?.timeBlockId === block.id;
                     const todo = block.todoId ? todos.find(t => t.id === block.todoId) : null;
                     const project = block.projectId ? projects.find(p => p.id === block.projectId) : null;
+                    const isFlex = (block.slotType || 'fixed') !== 'fixed';
+                    const isConflicting = conflictingBlockIds.has(block.id);
 
                     return (
                       <motion.div
@@ -478,13 +554,15 @@ export function TimelineView() {
                         className={cn(
                           "absolute left-2 right-2 rounded-xl p-3 cursor-pointer group shadow-md",
                           "hover:shadow-lg transition-all duration-200 border-2",
-                          isRunning && "ring-2 ring-primary ring-offset-2 ring-offset-background"
+                          isRunning && "ring-2 ring-primary ring-offset-2 ring-offset-background",
+                          isConflicting && "ring-2 ring-red-500 ring-offset-2 ring-offset-background"
                         )}
                         style={{
                           top: style.top,
                           height: style.height,
                           backgroundColor: block.color + '20',
                           borderColor: block.color,
+                          borderStyle: isFlex ? 'dashed' : 'solid',
                         }}
                         initial={{ opacity: 0, scale: 0.95 }}
                         animate={{ opacity: 1, scale: 1 }}
@@ -496,16 +574,24 @@ export function TimelineView() {
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 mb-1">
                               <h4 className="font-semibold text-sm truncate" style={{ color: block.color }}>
-                                {block.title}
+                                {isFlex ? '⚡ Flex slot' : block.title}
                               </h4>
+                              {isConflicting && (
+                                <Warning size={12} className="text-red-500 shrink-0" weight="fill" />
+                              )}
                               {block.autoTrack && (
                                 <Badge variant="outline" className="h-4 text-[10px] px-1">Auto</Badge>
                               )}
                             </div>
+                            {isFlex && (
+                              <p className="text-xs truncate text-foreground/70 mb-0.5">
+                                {todo ? todo.title : block.title}
+                              </p>
+                            )}
                             <p className="text-xs text-muted-foreground">
                               {block.startTime} - {block.endTime}
                             </p>
-                            {todo && (
+                            {!isFlex && todo && (
                               <p className="text-xs mt-1 truncate text-foreground/70">{todo.title}</p>
                             )}
                             {project && (
@@ -679,6 +765,23 @@ export function TimelineView() {
           
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
+              <Label htmlFor="blockType">Block type</Label>
+              <Select
+                value={formData.slotType}
+                onValueChange={(val) => setFormData({ ...formData, slotType: val as 'fixed' | 'flex-todo' | 'flex-project' })}
+              >
+                <SelectTrigger id="blockType">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="fixed">Fixed task</SelectItem>
+                  <SelectItem value="flex-todo">Flex: auto-fill with top todo</SelectItem>
+                  <SelectItem value="flex-project">Flex: auto-fill from project</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
               <Label htmlFor="title">Title *</Label>
               <Input
                 id="title"
@@ -734,6 +837,7 @@ export function TimelineView() {
               </Select>
             </div>
 
+            {formData.slotType !== 'flex-project' && (
             <div>
               <Label htmlFor="project">Project (optional)</Label>
               <Select
@@ -753,6 +857,28 @@ export function TimelineView() {
                 </SelectContent>
               </Select>
             </div>
+            )}
+
+            {formData.slotType === 'flex-project' && (
+            <div>
+              <Label htmlFor="flexProject">Project to pull from *</Label>
+              <Select
+                value={formData.projectId}
+                onValueChange={(val) => setFormData({ ...formData, projectId: val })}
+              >
+                <SelectTrigger id="flexProject">
+                  <SelectValue placeholder="Select project" />
+                </SelectTrigger>
+                <SelectContent>
+                  {projects.map((project) => (
+                    <SelectItem key={project.id} value={project.id}>
+                      {project.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            )}
 
             <div>
               <Label>Block Color</Label>

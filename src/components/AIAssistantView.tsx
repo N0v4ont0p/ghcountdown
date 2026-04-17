@@ -236,6 +236,7 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
         projectId: null,
         color: 'oklch(0.60 0.19 250)',
         autoTrack: suggestion.autoTrack !== false,
+        slotType: 'fixed',
       });
     }
 
