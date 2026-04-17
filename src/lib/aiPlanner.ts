@@ -30,11 +30,12 @@ interface AIContext {
 }
 
 const ENV_HUGGING_FACE_API_KEY = import.meta.env.VITE_HUGGINGFACE_API_KEY;
-export const DEFAULT_HUGGING_FACE_MODEL = 'Qwen/Qwen3-32B';
-const ENV_HUGGING_FACE_MODEL = import.meta.env.VITE_HUGGINGFACE_MODEL || DEFAULT_HUGGING_FACE_MODEL;
+const FIXED_MODEL = 'meta-llama/Llama-3.3-70B-Instruct';
+export const DEFAULT_HUGGING_FACE_MODEL = FIXED_MODEL;
+const ENV_HUGGING_FACE_MODEL = import.meta.env.VITE_HUGGINGFACE_MODEL || FIXED_MODEL;
 
 const CHAT_COMPLETIONS_ENDPOINTS = [
-  { buildUrl: () => 'https://router.huggingface.co/cerebras/v1/chat/completions' },
+  { buildUrl: () => 'https://router.huggingface.co/v1/chat/completions' },
 ];
 const AUTH_FAILURE_CODES = new Set([401, 403]);
 export type AIMode = 'plan' | 'agent';
@@ -342,7 +343,7 @@ async function attemptRequest(params: {
   endpointUrl: string;
 }): Promise<{ ok: boolean; status: number | null; json: unknown; error?: string }> {
   const requestBody = JSON.stringify({
-    model: params.model,
+    model: `${params.model}:cerebras`,
     temperature: 0.1,
     max_tokens: 1000,
     response_format: {
@@ -626,11 +627,6 @@ export async function generateActionPlan(
     throw new Error('AI returned an empty response. Check your API key and try again.');
   }
 
-  // Qwen3 may prepend <think>...</think> before the JSON
-  // even with schema enforcement — strip it before parsing
-  const stripped = textResponse
-    .replace(/<think>[\s\S]*?<\/think>/gi, '')
-    .trim();
-  const parsed = JSON.parse(stripped);
+  const parsed = JSON.parse(textResponse.trim());
   return normalizeAIResponse(parsed);
 }
