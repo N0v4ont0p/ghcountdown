@@ -1,6 +1,7 @@
 import { format } from 'date-fns';
 import { Todo, TimeBlock } from '@/db/schema';
 import { createTimeBlock } from '@/db/repositories/timeBlocksRepo';
+import { getPeakFocusHours } from '@/lib/energyHours';
 
 export const PRIORITY_COLORS: Record<number, string> = {
   5: 'oklch(0.58 0.20 20)',
@@ -35,7 +36,7 @@ export async function scheduleMyDay(
 ): Promise<number> {
   if (unscheduledTodos.length === 0) return 0;
 
-  // Sort by priority descending so p5/p4 go first and earlier
+  // Sort by priority descending so p5/p4 go first
   const sorted = [...unscheduledTodos].sort((a, b) => b.priority - a.priority);
 
   // Build the set of hours already occupied by existing blocks.
@@ -51,7 +52,42 @@ export async function scheduleMyDay(
     }
   }
 
-  // Start from 9am, or the current hour when scheduling today (let slot availability decide)
+  const peakHours = await getPeakFocusHours();
+  const fallback = [9, 10, 14, 15];
+  const hours = peakHours.length ? peakHours : fallback;
+
+  // Partition todos into high-priority (p4-5) and lower-priority (p1-3)
+  const highPriority = sorted.filter(t => t.priority >= 4);
+  const lowPriority = sorted.filter(t => t.priority < 4);
+
+  let created = 0;
+
+  // High-priority todos: assign into earliest available slots that match hours[]
+  for (const todo of highPriority) {
+    const slot = hours.find(h => !occupiedHours.has(h));
+    if (slot === undefined) break;
+
+    const startTime = `${String(slot).padStart(2, '0')}:00`;
+    const endTime = `${String(slot + 1).padStart(2, '0')}:00`;
+    const color = PRIORITY_COLORS[todo.priority] ?? PRIORITY_COLORS[3];
+
+    await createTimeBlock({
+      title: todo.title,
+      date: dateStr,
+      startTime,
+      endTime,
+      todoId: todo.id,
+      projectId: todo.projectId,
+      color,
+      autoTrack: true,
+      slotType: 'fixed',
+    });
+
+    occupiedHours.add(slot);
+    created++;
+  }
+
+  // Low-priority todos: fill remaining time chronologically
   const now = new Date();
   const todayStr = format(now, 'yyyy-MM-dd');
   let currentHour = 9;
@@ -59,9 +95,7 @@ export async function scheduleMyDay(
     currentHour = Math.max(9, now.getHours());
   }
 
-  let created = 0;
-  for (const todo of sorted) {
-    // Advance to the next free hour slot
+  for (const todo of lowPriority) {
     while (occupiedHours.has(currentHour) && currentHour < 24) {
       currentHour++;
     }
@@ -80,6 +114,7 @@ export async function scheduleMyDay(
       projectId: todo.projectId,
       color,
       autoTrack: true,
+      slotType: 'fixed',
     });
 
     occupiedHours.add(currentHour);

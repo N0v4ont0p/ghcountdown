@@ -27,6 +27,11 @@ interface AIContext {
   todoTitles: string[];
   upcomingEventTitles: string[];
   recentBlockTitles: string[];
+  unscheduledTodayTodos: string[];
+  overdueTodos: string[];
+  currentStreak: number;
+  todayFocusMinutes: number;
+  nextEventDateTime: string | null;
 }
 
 const ENV_HUGGING_FACE_API_KEY = import.meta.env.VITE_HUGGINGFACE_API_KEY;
@@ -193,7 +198,8 @@ Mix suggestion types appropriately:
 
 Priority scale: 5=critical deadline, 4=high importance, 3=normal, 2=low priority, 1=someday.
 Confidence is 0.0 to 1.0 representing how well you understood the request.
-urgencyHours is how many hours until something is urgent, or null if not time-sensitive.`;
+urgencyHours is how many hours until something is urgent, or null if not time-sensitive.
+You can produce timeBlocks for ANY date, not just today. Use the "date" field to specify which day. If user mentions "this week" produce blocks across Mon-Fri. If they mention "tomorrow" use the tomorrow date given above.`;
 }
 
 function buildModelCandidates(requestedModel: string) {
@@ -434,6 +440,11 @@ export async function generateActionPlan(
     `Existing todos: ${context.todoTitles.join(' | ') || 'none'}`,
     `Upcoming events: ${context.upcomingEventTitles.join(' | ') || 'none'}`,
     `Recent time blocks: ${context.recentBlockTitles.join(' | ') || 'none'}`,
+    `Unscheduled today todos: ${context.unscheduledTodayTodos.join(' | ') || 'none'}`,
+    `Overdue todos: ${context.overdueTodos.join(' | ') || 'none'}`,
+    `Current productivity streak: ${context.currentStreak} day${context.currentStreak !== 1 ? 's' : ''}`,
+    `Today focused minutes: ${context.todayFocusMinutes}`,
+    `Next event: ${context.nextEventDateTime ?? 'none'}`,
     ``,
     `User request: ${prompt.trim()}`,
   ].join('\n');

@@ -14,6 +14,7 @@ import { toast } from 'sonner';
 import { getAllTodos, createTodo, getTodosByStatus } from '@/db/repositories/todosRepo';
 import { getAllEvents, createEvent } from '@/db/repositories/eventsRepo';
 import { getAllTimeBlocks, createTimeBlock, getTimeBlocksByDate } from '@/db/repositories/timeBlocksRepo';
+import { getAllTimeEntries } from '@/db/repositories/timeRepo';
 import { updateSettings } from '@/db/repositories/settingsRepo';
 import {
   AIMode,
@@ -152,14 +153,18 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
 
     setIsGenerating(true);
     try {
-      const [todos, events, blocks] = await Promise.all([
+      const today = format(new Date(), 'yyyy-MM-dd');
+      const [todos, events, blocks, entries] = await Promise.all([
         getAllTodos(),
         getAllEvents(),
         getAllTimeBlocks(),
+        getAllTimeEntries(),
       ]);
 
+      const now = Date.now();
+
       const nextEvents = events
-        .filter((event) => new Date(event.startsAt).getTime() >= Date.now())
+        .filter((event) => new Date(event.startsAt).getTime() >= now)
         .sort((a, b) => a.startsAt.localeCompare(b.startsAt))
         .slice(0, 8);
 
@@ -168,10 +173,53 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
         .sort((a, b) => `${b.date}${b.startTime}`.localeCompare(`${a.date}${a.startTime}`))
         .slice(0, 10);
 
+      const todayBlocks = blocks.filter(b => b.date === today);
+      const scheduledTodoIds = new Set(todayBlocks.map(b => b.todoId).filter(Boolean) as string[]);
+      const todayTodos = todos.filter(t => t.status === 'today');
+      const unscheduledTodayTodos = todayTodos.filter(t => !scheduledTodoIds.has(t.id));
+
+      const overdueTodos = todos.filter(
+        t => t.status !== 'done' && t.dueAt && new Date(t.dueAt).getTime() < now
+      );
+
+      // Compute today's focus minutes from autoTrack time blocks
+      const todayFocusMinutes = todayBlocks
+        .filter(b => b.autoTrack)
+        .reduce((sum, b) => {
+          const [sh, sm] = b.startTime.split(':').map(Number);
+          const [eh, em] = b.endTime.split(':').map(Number);
+          return sum + Math.max(0, (eh * 60 + em) - (sh * 60 + sm));
+        }, 0);
+
+      // Compute current streak from time entries (start from today if has activity, else yesterday)
+      const completedEntries = entries.filter(e => e.endAt !== null);
+      const daysWithActivity = new Set(completedEntries.map(e => e.startAt.split('T')[0]));
+      let currentStreak = 0;
+      const streakStart = daysWithActivity.has(today)
+        ? new Date()
+        : new Date(Date.now() - 86400000);
+      const checkDate = new Date(streakStart);
+      for (let i = 0; i < 365; i++) {
+        const dateStr = checkDate.toISOString().split('T')[0];
+        if (daysWithActivity.has(dateStr)) {
+          currentStreak++;
+          checkDate.setDate(checkDate.getDate() - 1);
+        } else {
+          break;
+        }
+      }
+
+      const nextEvent = nextEvents[0] ?? null;
+
       const plan = await generateActionPlan(prompt.trim(), {
         todoTitles: todos.slice(0, 20).map((todo) => todo.title),
         upcomingEventTitles: nextEvents.map((event) => event.title),
         recentBlockTitles: recentBlocks.map((block) => block.title),
+        unscheduledTodayTodos: unscheduledTodayTodos.map(t => t.title),
+        overdueTodos: overdueTodos.map(t => t.title),
+        currentStreak,
+        todayFocusMinutes,
+        nextEventDateTime: nextEvent ? nextEvent.startsAt : null,
       }, { mode });
 
       setResult(plan);
@@ -236,6 +284,7 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
         projectId: null,
         color: 'oklch(0.60 0.19 250)',
         autoTrack: suggestion.autoTrack !== false,
+        slotType: 'fixed',
       });
     }
 

@@ -55,6 +55,7 @@ export interface TimeBlock {
   projectId: string | null;
   color: string;
   autoTrack: boolean;
+  slotType: 'fixed' | 'flex-todo' | 'flex-project';
   createdAt: string;
   updatedAt: string;
 }

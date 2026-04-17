@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react';
-import type { ReactNode } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Toaster } from '@/components/ui/sonner';
 import { Sidebar } from '@/components/Sidebar';
 import { CountdownHero } from '@/components/CountdownHero';
+import { RightNowCard } from '@/components/RightNowCard';
+import { DeadlinePressureStrip } from '@/components/DeadlinePressureStrip';
+import { MomentumStrip } from '@/components/MomentumStrip';
+import { SmartSuggestions } from '@/components/SmartSuggestions';
 import { EventsView } from '@/components/EventsView';
 import { TodosView } from '@/components/TodosView';
 import { TimelineView } from '@/components/TimelineView';
@@ -22,7 +25,7 @@ import { deleteAllTimeBlocks, getTimeBlocksByDate } from '@/db/repositories/time
 import { Event, Todo, TimeBlock, Settings } from '@/db/schema';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Plus, CalendarBlank, Sun, Moon, Monitor, DownloadSimple, UploadSimple, Trash, Sparkle, ArrowRight, Clock } from '@phosphor-icons/react';
+import { Plus, CalendarBlank, Sun, Moon, Monitor, DownloadSimple, UploadSimple, Trash, Sparkle } from '@phosphor-icons/react';
 import { format } from 'date-fns';
 import { Badge } from '@/components/ui/badge';
 import { useTheme } from '@/hooks/use-theme';
@@ -33,7 +36,8 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 import { getAIConfiguration, updateAIConfiguration } from '@/lib/aiPlanner';
-import { withColorAlpha } from '@/lib/scheduleDay';
+import { performDailyRollover } from '@/lib/rollover';
+import { escalateOverdueTodos } from '@/lib/overdueCheck';
 
 function App() {
   const [currentView, setCurrentView] = useState('home');
@@ -70,8 +74,7 @@ function App() {
         const allEvents = await getAllEvents();
         const upcoming = allEvents
           .filter(e => new Date(e.startsAt) > new Date())
-          .sort((a, b) => a.startsAt.localeCompare(b.startsAt))
-          .slice(0, 5);
+          .sort((a, b) => a.startsAt.localeCompare(b.startsAt));
         setUpcomingEvents(upcoming);
         
         const allTodos = await getAllTodos();
@@ -79,6 +82,16 @@ function App() {
 
         const blocks = await getTimeBlocksByDate(format(new Date(), 'yyyy-MM-dd'));
         setTodayBlocks(blocks.sort((a, b) => a.startTime.localeCompare(b.startTime)));
+
+        const rolledOver = await performDailyRollover();
+        if (rolledOver.length > 0) {
+          toast.info(`🔄 ${rolledOver.length} unfinished todo${rolledOver.length !== 1 ? 's' : ''} rolled over from yesterday`);
+        }
+
+        const escalated = await escalateOverdueTodos();
+        if (escalated > 0) {
+          toast.warning(`⚠️ ${escalated} overdue todo${escalated !== 1 ? 's' : ''} escalated to critical priority`);
+        }
       } catch (error) {
         console.error('Failed to initialize:', error);
       } finally {
@@ -95,6 +108,18 @@ function App() {
     return () => clearInterval(id);
   }, []);
 
+  // Global Cmd/Ctrl+K shortcut to open AI popup
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        setIsAIPopupOpen(true);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
+
   useEffect(() => {
     if (currentView === 'home') {
       loadHomeData();
@@ -109,8 +134,7 @@ function App() {
     const allEvents = await getAllEvents();
     const upcoming = allEvents
       .filter(e => new Date(e.startsAt) > new Date())
-      .sort((a, b) => a.startsAt.localeCompare(b.startsAt))
-      .slice(0, 5);
+      .sort((a, b) => a.startsAt.localeCompare(b.startsAt));
     setUpcomingEvents(upcoming);
     
     const allTodos = await getAllTodos();
@@ -304,12 +328,17 @@ function App() {
 
                 <CountdownHero event={nextEvent} />
 
-                {/* RIGHT NOW card */}
                 <RightNowCard
                   blocks={todayBlocks}
                   now={nowTick}
                   onNavigateTimeline={() => setCurrentView('timeline')}
                 />
+
+                <DeadlinePressureStrip events={upcomingEvents} />
+
+                <MomentumStrip />
+
+                <SmartSuggestions onNavigate={setCurrentView} />
               </motion.div>
             )}
 
@@ -643,6 +672,9 @@ function App() {
       >
         <Sparkle size={16} className="mr-2" />
         AI Assistant
+        <kbd className="ml-2 text-[10px] opacity-70 font-mono bg-white/20 rounded px-1 py-0.5">
+          {typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(navigator.platform) ? '⌘K' : 'Ctrl+K'}
+        </kbd>
       </Button>
 
       <Dialog open={isAIPopupOpen} onOpenChange={setIsAIPopupOpen}>
@@ -674,134 +706,3 @@ function App() {
 }
 
 export default App;
-
-/** Formats a number of minutes as a human-readable "in Xh Ym" or "in X min" string. */
-function formatTimeUntil(minutes: number): string {
-  if (minutes >= 60) {
-    const h = Math.floor(minutes / 60);
-    const m = minutes % 60;
-    return m > 0 ? `in ${h}h ${m}m` : `in ${h}h`;
-  }
-  return `in ${minutes} min`;
-}
-
-// ─── RIGHT NOW CARD ───────────────────────────────────────────────────────────
-
-interface RightNowCardProps {
-  blocks: TimeBlock[];
-  now: Date;
-  onNavigateTimeline: () => void;
-}
-
-function RightNowCard({ blocks, now, onNavigateTimeline }: RightNowCardProps) {
-  const currentHHMM = format(now, 'HH:mm');
-
-  const activeBlock = blocks.find(
-    b => b.startTime <= currentHHMM && currentHHMM < b.endTime
-  ) ?? null;
-
-  const nextBlock = !activeBlock
-    ? blocks.find(b => b.startTime > currentHHMM) ?? null
-    : null;
-
-  let content: ReactNode;
-
-  if (activeBlock) {
-    const [endH, endM] = activeBlock.endTime.split(':').map(Number);
-    const endTotal = endH * 60 + endM;
-    const nowTotal = now.getHours() * 60 + now.getMinutes();
-    const remainMin = endTotal - nowTotal;
-
-    content = (
-      <div className="flex items-start gap-4">
-        <div
-          className="w-1 self-stretch rounded-full flex-shrink-0"
-          style={{ backgroundColor: activeBlock.color }}
-        />
-        <div className="flex-1 min-w-0">
-          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">
-            You're in
-          </p>
-          <h4 className="text-xl font-semibold truncate">{activeBlock.title}</h4>
-          <p className="text-sm text-muted-foreground mt-1">
-            {activeBlock.startTime}–{activeBlock.endTime}
-            {remainMin > 0 && ` · ${remainMin} min remaining`}
-          </p>
-        </div>
-        <div className="flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center"
-          style={{ backgroundColor: withColorAlpha(activeBlock.color, 0.2) }}>
-          <Clock size={20} style={{ color: activeBlock.color }} />
-        </div>
-      </div>
-    );
-  } else if (nextBlock) {
-    const [startH, startM] = nextBlock.startTime.split(':').map(Number);
-    const startTotal = startH * 60 + startM;
-    const nowTotal = now.getHours() * 60 + now.getMinutes();
-    const inMin = startTotal - nowTotal;
-    const inText = formatTimeUntil(inMin);
-
-    content = (
-      <div className="flex items-start gap-4">
-        <div
-          className="w-1 self-stretch rounded-full flex-shrink-0 opacity-50"
-          style={{ backgroundColor: nextBlock.color }}
-        />
-        <div className="flex-1 min-w-0">
-          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">
-            Up next
-          </p>
-          <h4 className="text-xl font-semibold truncate">{nextBlock.title}</h4>
-          <p className="text-sm text-muted-foreground mt-1">
-            {nextBlock.startTime} · starts {inText}
-          </p>
-        </div>
-        <div className="flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center bg-muted">
-          <ArrowRight size={20} className="text-muted-foreground" />
-        </div>
-      </div>
-    );
-  } else {
-    content = (
-      <div className="flex items-start gap-4">
-        <div className="flex-1 min-w-0">
-          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">
-            Right now
-          </p>
-          <h4 className="text-xl font-semibold">Free time</h4>
-          <p className="text-sm text-muted-foreground mt-1">
-            No more blocks scheduled today
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <motion.div
-      key={activeBlock?.id ?? nextBlock?.id ?? 'free'}
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.25 }}
-    >
-      <Card className="p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold flex items-center gap-2">
-            <Clock size={18} />
-            Right Now
-          </h3>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={onNavigateTimeline}
-            className="gap-1 text-xs text-muted-foreground"
-          >
-            Timeline
-            <ArrowRight size={14} />
-          </Button>
-        </div>
-        {content}
-      </Card>
-    </motion.div>
-  );
-}
