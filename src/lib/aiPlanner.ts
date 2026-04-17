@@ -30,11 +30,11 @@ interface AIContext {
 }
 
 const ENV_HUGGING_FACE_API_KEY = import.meta.env.VITE_HUGGINGFACE_API_KEY;
-export const DEFAULT_HUGGING_FACE_MODEL = 'google/gemma-3-27b-it';
+export const DEFAULT_HUGGING_FACE_MODEL = 'Qwen/Qwen3-32B';
 const ENV_HUGGING_FACE_MODEL = import.meta.env.VITE_HUGGINGFACE_MODEL || DEFAULT_HUGGING_FACE_MODEL;
 
 const CHAT_COMPLETIONS_ENDPOINTS = [
-  { buildUrl: () => 'https://router.huggingface.co/v1/chat/completions' },
+  { buildUrl: () => 'https://router.huggingface.co/cerebras/v1/chat/completions' },
 ];
 const AUTH_FAILURE_CODES = new Set([401, 403]);
 export type AIMode = 'plan' | 'agent';
@@ -281,26 +281,15 @@ function normalizeSuggestion(raw: any): AISuggestion | null {
 }
 
 function normalizeAIResponse(raw: any): AIAssistantResult {
-  const suggestionsRaw = Array.isArray(raw?.suggestions) ? raw.suggestions : [];
-  const suggestions = suggestionsRaw
-    .map((suggestion) => normalizeSuggestion(suggestion))
-    .filter((suggestion): suggestion is AISuggestion => Boolean(suggestion));
-
-  const confidenceValue = Number(raw?.confidence);
-  const confidence = Number.isFinite(confidenceValue)
-    ? Math.max(0, Math.min(1, confidenceValue))
-    : 0.7;
-
-  const urgencyValue = Number(raw?.urgencyHours);
-  const urgencyHours = Number.isFinite(urgencyValue) && urgencyValue >= 0 ? Math.round(urgencyValue) : null;
+  const suggestions = (raw.suggestions || [])
+    .map((s: any) => normalizeSuggestion(s))
+    .filter((s: any): s is AISuggestion => Boolean(s));
 
   return {
-    summary: typeof raw?.summary === 'string' && raw.summary.trim().length > 0
-      ? raw.summary.trim()
-      : 'Plan generated successfully.',
-    severity: normalizeSeverity(raw?.severity),
-    urgencyHours,
-    confidence,
+    summary: raw.summary || 'Actions created.',
+    severity: normalizeSeverity(raw.severity),
+    urgencyHours: raw.urgencyHours ?? null,
+    confidence: Math.max(0, Math.min(1, Number(raw.confidence) || 0.8)),
     suggestions,
   };
 }
@@ -311,62 +300,26 @@ export function isAIConfigured() {
 
 function buildSystemPrompt(mode: AIMode): string {
   const today = new Date().toISOString().split('T')[0];
-  const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
+  const tomorrow = new Date(Date.now() + 86400000)
+    .toISOString().split('T')[0];
 
   const modeDirective = mode === 'agent'
-    ? 'You are executing as an autonomous agent. Infer all details. Never ask questions.'
-    : 'You are a planning assistant. Be concise.';
+    ? 'You are an autonomous productivity agent. Execute immediately. Infer all missing details. Never ask questions. Be decisive about times, dates, and priorities.'
+    : 'You are a productivity planning assistant. Be concise and practical.';
 
-  return `You are GHCountdown Action AI. ${modeDirective}
+  return `${modeDirective}
 
-CRITICAL OUTPUT RULE: Your entire response must be a single raw JSON object. 
-No markdown. No code fences. No explanation. Start with { and end with }.
+Today is ${today}. Tomorrow is ${tomorrow}.
 
-Today is ${today}.
+Create 2-5 suggestions that directly address the user request.
+Mix suggestion types appropriately:
+- Use "timeBlock" to schedule focused work sessions (requires date in YYYY-MM-DD, startTime and endTime in HH:mm 24h format)
+- Use "event" for deadlines, meetings, or appointments (requires startsAt as full ISO datetime e.g. ${today}T18:00:00.000Z)
+- Use "todo" for tasks and action items (optional dueAt as full ISO datetime)
 
-VALID TYPES: "todo", "event", "timeBlock" — no other values are accepted.
-
-FIELD RULES:
-- type "todo": requires title, priority, optional dueAt (ISO datetime string)
-- type "event": requires title, priority, startsAt (ISO datetime string like "${today}T18:00:00.000Z"), allDay (boolean)
-- type "timeBlock": requires title, priority, date (YYYY-MM-DD like "${today}"), startTime (HH:mm like "09:00"), endTime (HH:mm like "11:00"), autoTrack (boolean)
-
-EXAMPLE OF CORRECT OUTPUT (do not copy the content, only the structure):
-{
-  "summary": "Created a deep work block tomorrow morning and a review task.",
-  "severity": "medium",
-  "urgencyHours": 18,
-  "confidence": 0.85,
-  "suggestions": [
-    {
-      "type": "timeBlock",
-      "title": "Deep Work: FTC Code Review",
-      "priority": 4,
-      "date": "${tomorrow}",
-      "startTime": "09:00",
-      "endTime": "11:00",
-      "autoTrack": true,
-      "notes": "Focus on autonomous routine"
-    },
-    {
-      "type": "todo",
-      "title": "Prepare autonomous routine test cases",
-      "priority": 3,
-      "dueAt": "${tomorrow}T23:59:00.000Z",
-      "notes": ""
-    },
-    {
-      "type": "event",
-      "title": "Rowing Practice",
-      "priority": 3,
-      "startsAt": "${tomorrow}T18:00:00.000Z",
-      "allDay": false,
-      "notes": ""
-    }
-  ]
-}
-
-Now respond to the user request below with the same JSON structure.`;
+Priority scale: 5=critical deadline, 4=high importance, 3=normal, 2=low priority, 1=someday.
+Confidence is 0.0 to 1.0 representing how well you understood the request.
+urgencyHours is how many hours until something is urgent, or null if not time-sensitive.`;
 }
 
 function buildModelCandidates(requestedModel: string) {
@@ -390,8 +343,57 @@ async function attemptRequest(params: {
 }): Promise<{ ok: boolean; status: number | null; json: unknown; error?: string }> {
   const requestBody = JSON.stringify({
     model: params.model,
-    temperature: 0.25,
+    temperature: 0.1,
     max_tokens: 1000,
+    response_format: {
+      type: 'json_schema',
+      json_schema: {
+        name: 'ActionPlan',
+        strict: true,
+        schema: {
+          type: 'object',
+          required: ['summary', 'severity', 'urgencyHours', 'confidence', 'suggestions'],
+          additionalProperties: false,
+          properties: {
+            summary: { type: 'string' },
+            severity: {
+              type: 'string',
+              enum: ['low', 'medium', 'high', 'critical'],
+            },
+            urgencyHours: {
+              oneOf: [{ type: 'number' }, { type: 'null' }],
+            },
+            confidence: { type: 'number' },
+            suggestions: {
+              type: 'array',
+              items: {
+                type: 'object',
+                required: ['type', 'title', 'priority'],
+                additionalProperties: false,
+                properties: {
+                  type: {
+                    type: 'string',
+                    enum: ['todo', 'event', 'timeBlock'],
+                  },
+                  title: { type: 'string' },
+                  priority: { type: 'number' },
+                  notes: { type: 'string' },
+                  dueAt: {
+                    oneOf: [{ type: 'string' }, { type: 'null' }],
+                  },
+                  startsAt: { type: 'string' },
+                  allDay: { type: 'boolean' },
+                  date: { type: 'string' },
+                  startTime: { type: 'string' },
+                  endTime: { type: 'string' },
+                  autoTrack: { type: 'boolean' },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
     messages: [
       { role: 'system', content: params.systemPrompt },
       { role: 'user', content: params.userPrompt },
@@ -594,11 +596,8 @@ export async function generateActionPlan(
     `Recent time blocks: ${context.recentBlockTitles.join(' | ') || 'none'}`,
     ``,
     `User request: ${prompt.trim()}`,
-    ``,
-    `REMINDER: Respond with raw JSON only. No markdown. No explanation.`,
   ].join('\n');
 
-  // First attempt
   const body = await requestWithFallback({
     apiKey: config.apiKey,
     model: config.model,
@@ -606,75 +605,17 @@ export async function generateActionPlan(
     userPrompt,
   });
 
-  const extractText = (b: any): string =>
-    b?.choices?.[0]?.message?.content ||
-    b?.generated_text ||
-    b?.[0]?.generated_text || '';
+  const textResponse =
+    body?.choices?.[0]?.message?.content ||
+    body?.generated_text ||
+    body?.[0]?.generated_text || '';
 
-  let textResponse = extractText(body);
-
-  // Aggressively clean markdown fences the model adds despite instructions
-  const cleanJson = (text: string): string => text
-    .replace(/^[\s\S]*?(?=\{)/, '')  // strip everything before first {
-    .replace(/\}[\s\S]*$/, '}')       // strip everything after last }
-    .trim();
-
-  let parsed = extractFirstJsonObject(cleanJson(textResponse));
-  let validation = parsed ? validateAndRepairResult(parsed, prompt) :
-    { valid: false, error: 'Could not extract JSON from response' };
-
-  // If first attempt failed, retry once with an even stricter prompt
-  if (!validation.valid) {
-    const retrySystemPrompt = [
-      'Output a single raw JSON object only. Nothing else.',
-      'Start your response with { and end with }.',
-      'No markdown. No code fences. No text before or after.',
-      'Required format: {"summary":"string","severity":"medium",' +
-      '"urgencyHours":null,"confidence":0.8,"suggestions":[' +
-      '{"type":"todo","title":"string","priority":3}]}',
-    ].join('\n');
-
-    const retryUserPrompt = `Create 1-3 actionable items for: ${prompt.trim()}\n\nRespond with JSON only starting with {`;
-
-    const retryBody = await requestWithFallback({
-      apiKey: config.apiKey,
-      model: config.model,
-      systemPrompt: retrySystemPrompt,
-      userPrompt: retryUserPrompt,
-    });
-
-    const retryText = extractText(retryBody);
-    const retryParsed = extractFirstJsonObject(cleanJson(retryText));
-    const retryValidation = retryParsed
-      ? validateAndRepairResult(retryParsed, prompt)
-      : { valid: false, error: 'Retry also failed to produce valid JSON' };
-
-    if (!retryValidation.valid || !retryValidation.result) {
-      // Last resort: create a single todo from the user's prompt text
-      // so SOMETHING always gets created rather than showing an error
-      return {
-        summary: `Created task from your request: "${prompt.trim().slice(0, 60)}"`,
-        severity: 'medium',
-        urgencyHours: null,
-        confidence: 0.4,
-        suggestions: [{
-          id: crypto.randomUUID(),
-          type: 'todo',
-          title: prompt.trim().slice(0, 80),
-          priority: 3,
-          dueAt: null,
-          startsAt: new Date().toISOString(),
-          allDay: false,
-          date: new Date().toISOString().split('T')[0],
-          startTime: '09:00',
-          endTime: '10:00',
-          autoTrack: true,
-        }],
-      };
-    }
-
-    return retryValidation.result;
+  if (!textResponse || textResponse.trim().length === 0) {
+    throw new Error('AI returned an empty response. Check your API key and try again.');
   }
 
-  return validation.result!;
+  // Schema enforcement means this is guaranteed valid JSON
+  // matching our ActionPlan schema exactly
+  const parsed = JSON.parse(textResponse);
+  return normalizeAIResponse(parsed);
 }
