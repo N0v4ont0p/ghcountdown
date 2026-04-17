@@ -475,6 +475,102 @@ async function requestWithFallback(params: {
   throw new Error(`AI request failed after ${attempts} attempt(s). Last error: ${finalError}`);
 }
 
+function validateAndRepairResult(
+  raw: any,
+  prompt: string
+): { valid: boolean; result?: AIAssistantResult; error?: string } {
+  if (!raw || typeof raw !== 'object') {
+    return { valid: false, error: 'Response is not a JSON object' };
+  }
+
+  if (!Array.isArray(raw.suggestions) || raw.suggestions.length === 0) {
+    return { valid: false, error: 'No suggestions in response' };
+  }
+
+  // Repair each suggestion rather than silently defaulting
+  const today = new Date().toISOString().split('T')[0];
+  const repairedSuggestions: AISuggestion[] = [];
+
+  for (const s of raw.suggestions) {
+    if (!s || typeof s.title !== 'string' || !s.title.trim()) continue;
+
+    // Repair type
+    const validTypes = ['todo', 'event', 'timeBlock'];
+    const type = validTypes.includes(s.type) ? s.type : 'todo';
+
+    // Repair priority
+    const priority = normalizePriority(s.priority);
+
+    // Repair dates — try multiple common formats the model produces
+    let startsAt = s.startsAt;
+    if (startsAt && isNaN(new Date(startsAt).getTime())) {
+      // Try to parse natural language the model snuck in
+      const parsed = new Date(startsAt);
+      startsAt = isNaN(parsed.getTime())
+        ? new Date().toISOString()
+        : parsed.toISOString();
+    }
+
+    // Repair timeBlock times — accept "9am", "9:00am", "09:00", "9"
+    let startTime = s.startTime || '09:00';
+    let endTime = s.endTime || '10:00';
+
+    const parseTime = (t: string): string => {
+      if (/^([01]\d|2[0-3]):[0-5]\d$/.test(t)) return t;
+      const match = t.match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$/i);
+      if (match) {
+        let h = parseInt(match[1]);
+        const m = match[2] ? parseInt(match[2]) : 0;
+        const meridiem = (match[3] || '').toLowerCase();
+        if (meridiem === 'pm' && h !== 12) h += 12;
+        if (meridiem === 'am' && h === 12) h = 0;
+        return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+      }
+      return t.includes('start') ? '09:00' : '10:00';
+    };
+
+    startTime = parseTime(startTime);
+    endTime = parseTime(endTime);
+
+    // Ensure endTime is after startTime
+    if (endTime <= startTime) {
+      const [h, m] = startTime.split(':').map(Number);
+      const totalMins = h * 60 + m + 60;
+      endTime = `${String(Math.floor(totalMins/60)%24).padStart(2,'0')}:${String(totalMins%60).padStart(2,'0')}`;
+    }
+
+    repairedSuggestions.push({
+      id: crypto.randomUUID(),
+      type,
+      title: s.title.trim(),
+      priority,
+      notes: typeof s.notes === 'string' ? s.notes.trim() : undefined,
+      dueAt: s.dueAt ? (isNaN(new Date(s.dueAt).getTime()) ? null : new Date(s.dueAt).toISOString()) : null,
+      startsAt: startsAt || new Date().toISOString(),
+      allDay: Boolean(s.allDay),
+      date: /^\d{4}-\d{2}-\d{2}$/.test(s.date) ? s.date : today,
+      startTime,
+      endTime,
+      autoTrack: s.autoTrack !== false,
+    });
+  }
+
+  if (repairedSuggestions.length === 0) {
+    return { valid: false, error: 'All suggestions were malformed' };
+  }
+
+  return {
+    valid: true,
+    result: {
+      summary: typeof raw.summary === 'string' ? raw.summary : 'Actions created.',
+      severity: normalizeSeverity(raw.severity),
+      urgencyHours: Number.isFinite(Number(raw.urgencyHours)) ? Number(raw.urgencyHours) : null,
+      confidence: Math.max(0, Math.min(1, Number(raw.confidence) || 0.7)),
+      suggestions: repairedSuggestions,
+    },
+  };
+}
+
 export async function generateActionPlan(
   prompt: string,
   context: AIContext,
@@ -502,32 +598,83 @@ export async function generateActionPlan(
     `REMINDER: Respond with raw JSON only. No markdown. No explanation.`,
   ].join('\n');
 
+  // First attempt
   const body = await requestWithFallback({
     apiKey: config.apiKey,
     model: config.model,
     systemPrompt,
     userPrompt,
   });
-  const textResponse =
-    body?.choices?.[0]?.message?.content ||
-    body?.generated_text ||
-    body?.[0]?.generated_text ||
-    '';
 
-  if (typeof textResponse !== 'string' || textResponse.trim().length === 0) {
-    throw new Error('AI returned an empty response.');
-  }
+  const extractText = (b: any): string =>
+    b?.choices?.[0]?.message?.content ||
+    b?.generated_text ||
+    b?.[0]?.generated_text || '';
 
-  const cleanedResponse = textResponse
-    .replace(/^```(?:json)?\s*/i, '')
-    .replace(/\s*```$/i, '')
-    .replace(/^[^{]*/s, (match) => (match.includes('{') ? '' : match))
+  let textResponse = extractText(body);
+
+  // Aggressively clean markdown fences the model adds despite instructions
+  const cleanJson = (text: string): string => text
+    .replace(/^[\s\S]*?(?=\{)/, '')  // strip everything before first {
+    .replace(/\}[\s\S]*$/, '}')       // strip everything after last }
     .trim();
 
-  const parsed = extractFirstJsonObject(cleanedResponse);
-  if (!parsed || typeof parsed !== 'object') {
-    throw new Error('AI response was not valid JSON.');
+  let parsed = extractFirstJsonObject(cleanJson(textResponse));
+  let validation = parsed ? validateAndRepairResult(parsed, prompt) :
+    { valid: false, error: 'Could not extract JSON from response' };
+
+  // If first attempt failed, retry once with an even stricter prompt
+  if (!validation.valid) {
+    const retrySystemPrompt = [
+      'Output a single raw JSON object only. Nothing else.',
+      'Start your response with { and end with }.',
+      'No markdown. No code fences. No text before or after.',
+      'Required format: {"summary":"string","severity":"medium",' +
+      '"urgencyHours":null,"confidence":0.8,"suggestions":[' +
+      '{"type":"todo","title":"string","priority":3}]}',
+    ].join('\n');
+
+    const retryUserPrompt = `Create 1-3 actionable items for: ${prompt.trim()}\n\nRespond with JSON only starting with {`;
+
+    const retryBody = await requestWithFallback({
+      apiKey: config.apiKey,
+      model: config.model,
+      systemPrompt: retrySystemPrompt,
+      userPrompt: retryUserPrompt,
+    });
+
+    const retryText = extractText(retryBody);
+    const retryParsed = extractFirstJsonObject(cleanJson(retryText));
+    const retryValidation = retryParsed
+      ? validateAndRepairResult(retryParsed, prompt)
+      : { valid: false, error: 'Retry also failed to produce valid JSON' };
+
+    if (!retryValidation.valid || !retryValidation.result) {
+      // Last resort: create a single todo from the user's prompt text
+      // so SOMETHING always gets created rather than showing an error
+      return {
+        summary: `Created task from your request: "${prompt.trim().slice(0, 60)}"`,
+        severity: 'medium',
+        urgencyHours: null,
+        confidence: 0.4,
+        suggestions: [{
+          id: crypto.randomUUID(),
+          type: 'todo',
+          title: prompt.trim().slice(0, 80),
+          priority: 3,
+          dueAt: null,
+          startsAt: new Date().toISOString(),
+          allDay: false,
+          date: new Date().toISOString().split('T')[0],
+          startTime: '09:00',
+          endTime: '10:00',
+          autoTrack: true,
+        }],
+      };
+    }
+
+    return retryValidation.result;
   }
 
-  return normalizeAIResponse(parsed);
+  return validation.result!;
 }
