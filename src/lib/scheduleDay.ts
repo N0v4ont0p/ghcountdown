@@ -11,6 +11,19 @@ export const PRIORITY_COLORS: Record<number, string> = {
 };
 
 /**
+ * Returns a color with reduced opacity by inserting an alpha value into the
+ * oklch() function, e.g. oklch(0.58 0.20 20) → oklch(0.58 0.20 20 / 0.2).
+ */
+export function withColorAlpha(color: string, alpha: number): string {
+  const trimmed = color.trim();
+  if (trimmed.startsWith('oklch(') && trimmed.endsWith(')')) {
+    return `oklch(${trimmed.slice(6, -1)} / ${alpha})`;
+  }
+  // Fallback: wrap in color-mix for non-oklch formats
+  return `color-mix(in srgb, ${trimmed} ${Math.round(alpha * 100)}%, transparent)`;
+}
+
+/**
  * Schedules unscheduled todos as time blocks for the given date.
  * High-priority todos (p5, p4) are placed first and earlier in the day.
  * Returns the number of time blocks created.
@@ -36,12 +49,12 @@ export async function scheduleMyDay(
     }
   }
 
-  // Start from 9am, or the next full hour after now when scheduling today
+  // Start from 9am, or the current hour when scheduling today (let slot availability decide)
   const now = new Date();
   const todayStr = format(now, 'yyyy-MM-dd');
   let currentHour = 9;
-  if (dateStr === todayStr && now.getHours() >= 9) {
-    currentHour = now.getHours() + (now.getMinutes() > 0 ? 1 : 0);
+  if (dateStr === todayStr) {
+    currentHour = Math.max(9, now.getHours());
   }
 
   let created = 0;

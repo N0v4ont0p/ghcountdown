@@ -28,6 +28,13 @@ import { format } from 'date-fns';
 
 const AI_MODE_STORAGE_KEY = 'ghcountdown.ai.defaultMode';
 
+/**
+ * Phrases that trigger deterministic scheduling instead of the AI API.
+ * Matches: "schedule my todos", "schedule my tasks", "schedule my day",
+ * "schedule todos/tasks", "plan my day".
+ */
+const SCHEDULE_INTENT_RE = /\bschedule\b.*\b(my\s+)?(todos?|tasks?|day)\b|\bplan\s+my\s+day\b/i;
+
 interface AIAssistantViewProps {
   compact?: boolean;
 }
@@ -112,7 +119,7 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
     updateSettings({ aiApiKey: apiKey.trim() });
 
     // Detect scheduling intent — runs the same deterministic logic as "Schedule My Day"
-    const isSchedulingIntent = /\bschedule\b.*\b(my\s+)?(todos?|tasks?|day)\b|\bplan\s+my\s+day\b/i.test(prompt.trim());
+    const isSchedulingIntent = SCHEDULE_INTENT_RE.test(prompt.trim());
     if (isSchedulingIntent) {
       setIsGenerating(true);
       try {

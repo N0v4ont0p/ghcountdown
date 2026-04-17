@@ -19,7 +19,7 @@ import { Plus, Play, Stop, Trash, Pencil, Clock, CalendarBlank, CheckSquare, Lig
 import { format, startOfDay, endOfDay, parse, differenceInMinutes } from 'date-fns';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
-import { scheduleMyDay, PRIORITY_COLORS } from '@/lib/scheduleDay';
+import { scheduleMyDay, PRIORITY_COLORS, withColorAlpha } from '@/lib/scheduleDay';
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
 const TIMELINE_HOUR_HEIGHT = 80;
@@ -624,7 +624,7 @@ export function TimelineView() {
                       }}
                       className="flex items-center gap-2 rounded-lg px-3 py-2 cursor-grab active:cursor-grabbing border border-border/50 select-none"
                       style={{
-                        backgroundColor: (PRIORITY_COLORS[todo.priority] ?? PRIORITY_COLORS[3]).replace(')', ' / 0.2)'),
+                        backgroundColor: withColorAlpha(PRIORITY_COLORS[todo.priority] ?? PRIORITY_COLORS[3], 0.2),
                       }}
                       initial={{ opacity: 0, x: 20 }}
                       animate={{ opacity: 1, x: 0 }}
