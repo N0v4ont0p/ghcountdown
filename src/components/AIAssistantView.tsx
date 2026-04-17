@@ -202,7 +202,27 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
 
       setResult(plan);
       setAppliedIds([]);
-      toast.success('AI action plan generated.');
+
+      if (mode === 'agent' && plan.suggestions.length > 0) {
+        // Auto-apply all suggestions in agent mode
+        let appliedCount = 0;
+        let failedCount = 0;
+        for (const suggestion of plan.suggestions) {
+          try {
+            await applySuggestion(suggestion);
+            appliedCount += 1;
+          } catch {
+            failedCount += 1;
+          }
+        }
+        if (failedCount === 0) {
+          toast.success(`Agent executed ${appliedCount} action(s) automatically.`);
+        } else {
+          toast.error(`Agent executed ${appliedCount} action(s); ${failedCount} failed. Review and re-apply if needed.`);
+        }
+      } else {
+        toast.success('AI action plan generated.');
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to generate AI plan.';
       toast.error(message);
@@ -318,8 +338,13 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
             {/* suggestion chips */}
             {result.suggestions.length > 0 && (
               <div className="space-y-1.5">
+                {mode === 'agent' && (
+                  <div className="text-xs text-green-600 font-medium px-1">
+                    ✓ Agent auto-applied all actions
+                  </div>
+                )}
                 {result.suggestions.map((suggestion) => {
-                  const applied = appliedIds.includes(suggestion.id);
+                  const applied = mode === 'agent' || appliedIds.includes(suggestion.id);
                   return (
                     <div
                       key={suggestion.id}
@@ -330,18 +355,22 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
                       {suggestion.type === 'timeBlock' && suggestion.startTime && (
                         <span className="text-xs text-muted-foreground shrink-0">{suggestion.startTime}</span>
                       )}
-                      <button
-                        type="button"
-                        aria-label={applied ? 'Applied' : 'Add'}
-                        disabled={applied}
-                        onClick={() => applySuggestion(suggestion)}
-                        className="shrink-0 rounded-md p-0.5 hover:bg-accent disabled:cursor-not-allowed"
-                      >
-                        {applied
-                          ? <CheckCircle size={16} className="text-green-500" />
-                          : <span className="text-muted-foreground hover:text-foreground text-base leading-none">+</span>
-                        }
-                      </button>
+                      {mode === 'agent' ? (
+                        <CheckCircle size={16} className="text-green-500 shrink-0" />
+                      ) : (
+                        <button
+                          type="button"
+                          aria-label={applied ? 'Applied' : 'Add'}
+                          disabled={applied}
+                          onClick={() => applySuggestion(suggestion)}
+                          className="shrink-0 rounded-md p-0.5 hover:bg-accent disabled:cursor-not-allowed"
+                        >
+                          {applied
+                            ? <CheckCircle size={16} className="text-green-500" />
+                            : <span className="text-muted-foreground hover:text-foreground text-base leading-none">+</span>
+                          }
+                        </button>
+                      )}
                     </div>
                   );
                 })}
@@ -349,7 +378,7 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
             )}
 
             {/* apply all + clear */}
-            {result.suggestions.length > 1 && (
+            {result.suggestions.length > 1 && mode !== 'agent' && (
               <div className="flex items-center gap-3 pt-0.5">
                 <button
                   type="button"
@@ -463,7 +492,7 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
                   </Button>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  {mode === 'agent' ? 'Coaching tone with practical steps.' : 'Concise, execution-focused output.'}
+                  {mode === 'agent' ? 'Auto-executes all actions immediately.' : 'Concise, execution-focused output.'}
                 </p>
               </div>
               <div className="flex items-center justify-between gap-2 pt-1">
@@ -607,7 +636,7 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
           </div>
           <p className="text-xs text-muted-foreground">
             {mode === 'agent'
-              ? 'Agent mode responds with a more natural coaching tone while still producing actionable items.'
+              ? 'Agent mode automatically executes all suggestions immediately — todos, events, and time blocks are created for you without any clicks.'
               : 'Plan mode keeps output concise and execution-focused.'}
           </p>
         </div>
@@ -632,7 +661,7 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
             disabled={!result || result.suggestions.length === 0 || isApplyingAll}
           >
             <Lightning size={16} className="mr-2" />
-            {isApplyingAll ? 'Applying...' : 'Apply All Suggestions'}
+            {isApplyingAll ? 'Applying...' : mode === 'agent' ? 'Re-apply All' : 'Apply All Suggestions'}
           </Button>
         </div>
       </Card>
@@ -644,6 +673,9 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
             <Badge variant="outline">Confidence: {confidencePercent}%</Badge>
             {result.urgencyHours !== null && (
               <Badge variant="outline">Urgency window: {result.urgencyHours}h</Badge>
+            )}
+            {mode === 'agent' && (
+              <Badge variant="secondary">Auto-executed in agent mode</Badge>
             )}
           </div>
 

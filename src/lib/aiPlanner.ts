@@ -30,16 +30,11 @@ interface AIContext {
 }
 
 const ENV_HUGGING_FACE_API_KEY = import.meta.env.VITE_HUGGINGFACE_API_KEY;
-export const DEFAULT_HUGGING_FACE_MODEL = 'google/gemma-4-26B-A4B';
+export const DEFAULT_HUGGING_FACE_MODEL = 'Qwen/Qwen3-32B';
 const ENV_HUGGING_FACE_MODEL = import.meta.env.VITE_HUGGINGFACE_MODEL || DEFAULT_HUGGING_FACE_MODEL;
 
 const CHAT_COMPLETIONS_ENDPOINTS = [
-  {
-    buildUrl: () => 'https://router.huggingface.co/v1/chat/completions',
-  },
-  {
-    buildUrl: () => 'https://api-inference.huggingface.co/v1/chat/completions',
-  },
+  { buildUrl: () => 'https://router.huggingface.co/cerebras/v1/chat/completions' },
 ];
 const AUTH_FAILURE_CODES = new Set([401, 403]);
 export type AIMode = 'plan' | 'agent';
@@ -65,9 +60,9 @@ export interface PresetModel {
  */
 export const PRESET_MODELS: PresetModel[] = [
   {
-    id: 'google/gemma-4-26B-A4B',
-    label: 'Gemma 4 26B (A4B)',
-    description: 'Google Gemma 4 — 26 B sparse MoE, excellent instruction following & JSON output (recommended)',
+    id: 'google/gemma-3-27b-it',
+    label: 'Gemma 3 27B (Best Free)',
+    description: 'Google Gemma 3 — 27B instruction-tuned, top free Gemma on HF router, 128k context, excellent JSON output (recommended)',
     contextTokens: 131072,
     tier: 'quality',
   },
@@ -286,26 +281,15 @@ function normalizeSuggestion(raw: any): AISuggestion | null {
 }
 
 function normalizeAIResponse(raw: any): AIAssistantResult {
-  const suggestionsRaw = Array.isArray(raw?.suggestions) ? raw.suggestions : [];
-  const suggestions = suggestionsRaw
-    .map((suggestion) => normalizeSuggestion(suggestion))
-    .filter((suggestion): suggestion is AISuggestion => Boolean(suggestion));
-
-  const confidenceValue = Number(raw?.confidence);
-  const confidence = Number.isFinite(confidenceValue)
-    ? Math.max(0, Math.min(1, confidenceValue))
-    : 0.7;
-
-  const urgencyValue = Number(raw?.urgencyHours);
-  const urgencyHours = Number.isFinite(urgencyValue) && urgencyValue >= 0 ? Math.round(urgencyValue) : null;
+  const suggestions = (Array.isArray(raw.suggestions) ? raw.suggestions : [])
+    .map((s: any) => normalizeSuggestion(s))
+    .filter((s: any): s is AISuggestion => Boolean(s));
 
   return {
-    summary: typeof raw?.summary === 'string' && raw.summary.trim().length > 0
-      ? raw.summary.trim()
-      : 'Plan generated successfully.',
-    severity: normalizeSeverity(raw?.severity),
-    urgencyHours,
-    confidence,
+    summary: raw.summary || 'Actions created.',
+    severity: normalizeSeverity(raw.severity),
+    urgencyHours: raw.urgencyHours ?? null,
+    confidence: Math.max(0, Math.min(1, Number(raw.confidence) || 0.8)),
     suggestions,
   };
 }
@@ -314,38 +298,28 @@ export function isAIConfigured() {
   return Boolean(getAIConfiguration().apiKey);
 }
 
-function buildSystemPrompt(mode: AIMode) {
-  const modeDirective = mode === 'agent'
-    ? 'Use a natural, supportive tone in "summary" while still being concise and practical.'
-    : 'Keep "summary" brief and operational.';
+function buildSystemPrompt(mode: AIMode): string {
+  const today = new Date().toISOString().split('T')[0];
+  const tomorrow = new Date(Date.now() + 86400000)
+    .toISOString().split('T')[0];
 
-  return [
-    'You are GHCountdown Action AI.',
-    modeDirective,
-    'Return strict JSON only with this shape:',
-    '{',
-    '  "summary": "short summary",',
-    '  "severity": "low|medium|high|critical",',
-    '  "urgencyHours": number|null,',
-    '  "confidence": 0..1,',
-    '  "suggestions": [',
-    '    {',
-    '      "type": "todo|event|timeBlock",',
-    '      "title": "string",',
-    '      "priority": 1..5,',
-    '      "notes": "string optional",',
-    '      "dueAt": "ISO date-time optional",',
-    '      "startsAt": "ISO date-time optional",',
-    '      "allDay": "boolean optional",',
-    '      "date": "YYYY-MM-DD optional",',
-    '      "startTime": "HH:mm optional",',
-    '      "endTime": "HH:mm optional",',
-    '      "autoTrack": "boolean optional"',
-    '    }',
-    '  ]',
-    '}',
-    'Infer priority and urgency. Keep suggestions practical and directly actionable.',
-  ].join('\n');
+  const modeDirective = mode === 'agent'
+    ? 'You are an autonomous productivity agent. Execute immediately. Infer all missing details. Never ask questions. Be decisive about times, dates, and priorities.'
+    : 'You are a productivity planning assistant. Be concise and practical.';
+
+  return `${modeDirective}
+
+Today is ${today}. Tomorrow is ${tomorrow}.
+
+Create 2-5 suggestions that directly address the user request.
+Mix suggestion types appropriately:
+- Use "timeBlock" to schedule focused work sessions (requires date in YYYY-MM-DD, startTime and endTime in HH:mm 24h format)
+- Use "event" for deadlines, meetings, or appointments (requires startsAt as full ISO datetime e.g. ${today}T18:00:00.000Z)
+- Use "todo" for tasks and action items (optional dueAt as full ISO datetime)
+
+Priority scale: 5=critical deadline, 4=high importance, 3=normal, 2=low priority, 1=someday.
+Confidence is 0.0 to 1.0 representing how well you understood the request.
+urgencyHours is how many hours until something is urgent, or null if not time-sensitive.`;
 }
 
 function buildModelCandidates(requestedModel: string) {
@@ -369,8 +343,69 @@ async function attemptRequest(params: {
 }): Promise<{ ok: boolean; status: number | null; json: unknown; error?: string }> {
   const requestBody = JSON.stringify({
     model: params.model,
-    temperature: 0.25,
+    temperature: 0.1,
     max_tokens: 1000,
+    response_format: {
+      type: 'json_schema',
+      json_schema: {
+        name: 'ActionPlan',
+        strict: true,
+        schema: {
+          type: 'object',
+          required: ['summary', 'severity', 'urgencyHours', 'confidence', 'suggestions'],
+          additionalProperties: false,
+          properties: {
+            summary: { type: 'string' },
+            severity: {
+              type: 'string',
+              enum: ['low', 'medium', 'high', 'critical'],
+            },
+            urgencyHours: {
+              oneOf: [{ type: 'number' }, { type: 'null' }],
+            },
+            confidence: { type: 'number' },
+            suggestions: {
+              type: 'array',
+              items: {
+                type: 'object',
+                required: ['type', 'title', 'priority'],
+                additionalProperties: false,
+                properties: {
+                  type: {
+                    type: 'string',
+                    enum: ['todo', 'event', 'timeBlock'],
+                  },
+                  title: { type: 'string' },
+                  priority: { type: 'number' },
+                  notes: { type: 'string' },
+                  dueAt: {
+                    oneOf: [{ type: 'string' }, { type: 'null' }],
+                  },
+                  startsAt: {
+                    type: 'string',
+                    pattern: '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}',
+                  },
+                  allDay: { type: 'boolean' },
+                  date: {
+                    type: 'string',
+                    pattern: '^[0-9]{4}-[0-9]{2}-[0-9]{2}$',
+                  },
+                  startTime: {
+                    type: 'string',
+                    pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$',
+                  },
+                  endTime: {
+                    type: 'string',
+                    pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$',
+                  },
+                  autoTrack: { type: 'boolean' },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
     messages: [
       { role: 'system', content: params.systemPrompt },
       { role: 'user', content: params.userPrompt },
@@ -454,6 +489,102 @@ async function requestWithFallback(params: {
   throw new Error(`AI request failed after ${attempts} attempt(s). Last error: ${finalError}`);
 }
 
+function validateAndRepairResult(
+  raw: any,
+  prompt: string
+): { valid: boolean; result?: AIAssistantResult; error?: string } {
+  if (!raw || typeof raw !== 'object') {
+    return { valid: false, error: 'Response is not a JSON object' };
+  }
+
+  if (!Array.isArray(raw.suggestions) || raw.suggestions.length === 0) {
+    return { valid: false, error: 'No suggestions in response' };
+  }
+
+  // Repair each suggestion rather than silently defaulting
+  const today = new Date().toISOString().split('T')[0];
+  const repairedSuggestions: AISuggestion[] = [];
+
+  for (const s of raw.suggestions) {
+    if (!s || typeof s.title !== 'string' || !s.title.trim()) continue;
+
+    // Repair type
+    const validTypes = ['todo', 'event', 'timeBlock'];
+    const type = validTypes.includes(s.type) ? s.type : 'todo';
+
+    // Repair priority
+    const priority = normalizePriority(s.priority);
+
+    // Repair dates — try multiple common formats the model produces
+    let startsAt = s.startsAt;
+    if (startsAt && isNaN(new Date(startsAt).getTime())) {
+      // Try to parse natural language the model snuck in
+      const parsed = new Date(startsAt);
+      startsAt = isNaN(parsed.getTime())
+        ? new Date().toISOString()
+        : parsed.toISOString();
+    }
+
+    // Repair timeBlock times — accept "9am", "9:00am", "09:00", "9"
+    let startTime = s.startTime || '09:00';
+    let endTime = s.endTime || '10:00';
+
+    const parseTime = (t: string): string => {
+      if (/^([01]\d|2[0-3]):[0-5]\d$/.test(t)) return t;
+      const match = t.match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$/i);
+      if (match) {
+        let h = parseInt(match[1]);
+        const m = match[2] ? parseInt(match[2]) : 0;
+        const meridiem = (match[3] || '').toLowerCase();
+        if (meridiem === 'pm' && h !== 12) h += 12;
+        if (meridiem === 'am' && h === 12) h = 0;
+        return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+      }
+      return t.includes('start') ? '09:00' : '10:00';
+    };
+
+    startTime = parseTime(startTime);
+    endTime = parseTime(endTime);
+
+    // Ensure endTime is after startTime
+    if (endTime <= startTime) {
+      const [h, m] = startTime.split(':').map(Number);
+      const totalMins = h * 60 + m + 60;
+      endTime = `${String(Math.floor(totalMins/60)%24).padStart(2,'0')}:${String(totalMins%60).padStart(2,'0')}`;
+    }
+
+    repairedSuggestions.push({
+      id: crypto.randomUUID(),
+      type,
+      title: s.title.trim(),
+      priority,
+      notes: typeof s.notes === 'string' ? s.notes.trim() : undefined,
+      dueAt: s.dueAt ? (isNaN(new Date(s.dueAt).getTime()) ? null : new Date(s.dueAt).toISOString()) : null,
+      startsAt: startsAt || new Date().toISOString(),
+      allDay: Boolean(s.allDay),
+      date: /^\d{4}-\d{2}-\d{2}$/.test(s.date) ? s.date : today,
+      startTime,
+      endTime,
+      autoTrack: s.autoTrack !== false,
+    });
+  }
+
+  if (repairedSuggestions.length === 0) {
+    return { valid: false, error: 'All suggestions were malformed' };
+  }
+
+  return {
+    valid: true,
+    result: {
+      summary: typeof raw.summary === 'string' ? raw.summary : 'Actions created.',
+      severity: normalizeSeverity(raw.severity),
+      urgencyHours: Number.isFinite(Number(raw.urgencyHours)) ? Number(raw.urgencyHours) : null,
+      confidence: Math.max(0, Math.min(1, Number(raw.confidence) || 0.7)),
+      suggestions: repairedSuggestions,
+    },
+  };
+}
+
 export async function generateActionPlan(
   prompt: string,
   context: AIContext,
@@ -469,13 +600,14 @@ export async function generateActionPlan(
   const systemPrompt = buildSystemPrompt(mode);
 
   const userPrompt = [
-    `Assistant mode: ${mode}`,
-    `Current date-time: ${new Date().toISOString()}`,
+    `Current date: ${new Date().toISOString().split('T')[0]}`,
+    `Day of week: ${new Date().toLocaleDateString('en-US', {weekday:'long'})}`,
+    `Current time: ${new Date().toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit'})}`,
     `Existing todos: ${context.todoTitles.join(' | ') || 'none'}`,
     `Upcoming events: ${context.upcomingEventTitles.join(' | ') || 'none'}`,
-    `Recent timeline blocks: ${context.recentBlockTitles.join(' | ') || 'none'}`,
-    'User request:',
-    prompt,
+    `Recent time blocks: ${context.recentBlockTitles.join(' | ') || 'none'}`,
+    ``,
+    `User request: ${prompt.trim()}`,
   ].join('\n');
 
   const body = await requestWithFallback({
@@ -484,20 +616,21 @@ export async function generateActionPlan(
     systemPrompt,
     userPrompt,
   });
+
   const textResponse =
     body?.choices?.[0]?.message?.content ||
     body?.generated_text ||
-    body?.[0]?.generated_text ||
-    '';
+    body?.[0]?.generated_text || '';
 
-  if (typeof textResponse !== 'string' || textResponse.trim().length === 0) {
-    throw new Error('AI returned an empty response.');
+  if (!textResponse || textResponse.trim().length === 0) {
+    throw new Error('AI returned an empty response. Check your API key and try again.');
   }
 
-  const parsed = extractFirstJsonObject(textResponse);
-  if (!parsed || typeof parsed !== 'object') {
-    throw new Error('AI response was not valid JSON.');
-  }
-
+  // Qwen3 may prepend <think>...</think> before the JSON
+  // even with schema enforcement — strip it before parsing
+  const stripped = textResponse
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .trim();
+  const parsed = JSON.parse(stripped);
   return normalizeAIResponse(parsed);
 }
