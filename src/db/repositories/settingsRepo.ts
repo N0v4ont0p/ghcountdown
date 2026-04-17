@@ -10,6 +10,8 @@ const DEFAULT_SETTINGS: Settings = {
   timelineStartHour: 5,
   timelineEndHour: 24,
   reducedMotion: false,
+  aiApiKey: '',
+  aiModel: '',
 };
 
 export async function getSettings(): Promise<Settings> {
@@ -19,7 +21,8 @@ export async function getSettings(): Promise<Settings> {
     return DEFAULT_SETTINGS;
   }
   const { id, ...rest } = settings;
-  return rest;
+  // Merge with defaults so that new fields are populated for existing records
+  return { ...DEFAULT_SETTINGS, ...rest };
 }
 
 export async function saveSettings(settings: Settings): Promise<void> {

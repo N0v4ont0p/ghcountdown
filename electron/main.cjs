@@ -1,7 +1,36 @@
 'use strict';
 
-const { app, BrowserWindow, shell, nativeTheme } = require('electron');
+const { app, BrowserWindow, shell, nativeTheme, ipcMain, net } = require('electron');
 const path = require('path');
+
+// ---------------------------------------------------------------------------
+// IPC: proxy AI HTTP requests through the main process so the renderer
+// never makes outbound fetch() calls that CORS would block.
+// ---------------------------------------------------------------------------
+ipcMain.handle('ai-request', async (_event, { url, method, headers, body }) => {
+  return new Promise((resolve, reject) => {
+    const request = net.request({ method: method || 'POST', url });
+    Object.entries(headers || {}).forEach(([key, value]) => {
+      request.setHeader(key, String(value));
+    });
+
+    let responseBody = '';
+    let statusCode = 0;
+
+    request.on('response', (response) => {
+      statusCode = response.statusCode;
+      response.on('data', (chunk) => { responseBody += chunk; });
+      response.on('end', () => {
+        resolve({ ok: statusCode >= 200 && statusCode < 300, status: statusCode, body: responseBody });
+      });
+      response.on('error', (err) => reject(err.message));
+    });
+
+    request.on('error', (err) => reject(err.message));
+    if (body) request.write(body);
+    request.end();
+  });
+});
 
 const isDev = process.env.NODE_ENV === 'development';
 const isMac = process.platform === 'darwin';

@@ -33,21 +33,13 @@ const ENV_HUGGING_FACE_API_KEY = import.meta.env.VITE_HUGGINGFACE_API_KEY;
 export const DEFAULT_HUGGING_FACE_MODEL = 'google/gemma-4-26B-A4B';
 const ENV_HUGGING_FACE_MODEL = import.meta.env.VITE_HUGGINGFACE_MODEL || DEFAULT_HUGGING_FACE_MODEL;
 
-function encodeModelPath(model: string) {
-  return model.split('/').map(encodeURIComponent).join('/');
-}
-
 const CHAT_COMPLETIONS_ENDPOINTS = [
   {
     buildUrl: () => 'https://router.huggingface.co/v1/chat/completions',
   },
   {
-    buildUrl: (model: string) => `https://api-inference.huggingface.co/models/${encodeModelPath(model)}/v1/chat/completions`,
+    buildUrl: () => 'https://api-inference.huggingface.co/v1/chat/completions',
   },
-];
-const FALLBACK_HUGGING_FACE_MODELS = [
-  'google/gemma-4-26b-it',
-  'mistralai/Mistral-7B-Instruct-v0.3',
 ];
 const AUTH_FAILURE_CODES = new Set([401, 403]);
 export type AIMode = 'plan' | 'agent';
@@ -356,27 +348,8 @@ function buildSystemPrompt(mode: AIMode) {
   ].join('\n');
 }
 
-async function parseErrorDetail(response: Response): Promise<string> {
-  try {
-    const body = await response.clone().json();
-    const detail = body?.error?.message || body?.error || body?.message;
-    if (typeof detail === 'string' && detail.trim()) return detail.trim();
-  } catch {
-    // ignore JSON parse failures
-  }
-
-  try {
-    const text = await response.clone().text();
-    if (text.trim()) return text.trim();
-  } catch {
-    // ignore text parse failures
-  }
-
-  return '';
-}
-
 function buildModelCandidates(requestedModel: string) {
-  return Array.from(new Set([requestedModel, DEFAULT_HUGGING_FACE_MODEL, ...FALLBACK_HUGGING_FACE_MODELS]));
+  return [requestedModel?.trim() || DEFAULT_HUGGING_FACE_MODEL];
 }
 
 function formatAttemptError(status: number | null, endpoint: string, model: string, detail?: string) {
@@ -385,60 +358,100 @@ function formatAttemptError(status: number | null, endpoint: string, model: stri
   return `${statusText} at ${endpoint} using model "${model}"${detailText}`;
 }
 
+/** Attempt a single endpoint+model combination. Returns the parsed JSON body on success
+ *  or throws with a descriptive message on failure. */
+async function attemptRequest(params: {
+  apiKey: string;
+  model: string;
+  systemPrompt: string;
+  userPrompt: string;
+  endpointUrl: string;
+}): Promise<{ ok: boolean; status: number | null; json: unknown; error?: string }> {
+  const requestBody = JSON.stringify({
+    model: params.model,
+    temperature: 0.25,
+    max_tokens: 1000,
+    messages: [
+      { role: 'system', content: params.systemPrompt },
+      { role: 'user', content: params.userPrompt },
+    ],
+  });
+
+  const requestHeaders = {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${params.apiKey}`,
+  };
+
+  // In Electron the main-process bridge is available; it bypasses CORS entirely.
+  const electronAPI = typeof window !== 'undefined' && (window as any).electronAPI;
+  if (electronAPI?.aiRequest) {
+    let raw: { ok: boolean; status: number; body: string };
+    try {
+      raw = await electronAPI.aiRequest({
+        url: params.endpointUrl,
+        method: 'POST',
+        headers: requestHeaders,
+        body: requestBody,
+      });
+    } catch (err) {
+      return { ok: false, status: null, json: null, error: err instanceof Error ? err.message : String(err) };
+    }
+    let json: unknown = null;
+    try { json = JSON.parse(raw.body); } catch { /* non-JSON */ }
+    return { ok: raw.ok, status: raw.status, json };
+  }
+
+  // Web / browser fallback — subject to CORS but works in plain browser deployments.
+  try {
+    const response = await fetch(params.endpointUrl, {
+      method: 'POST',
+      headers: requestHeaders,
+      body: requestBody,
+    });
+    let json: unknown = null;
+    try { json = await response.clone().json(); } catch { /* non-JSON */ }
+    return { ok: response.ok, status: response.status, json };
+  } catch (err) {
+    return { ok: false, status: null, json: null, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
 async function requestWithFallback(params: {
   apiKey: string;
   model: string;
   systemPrompt: string;
   userPrompt: string;
-}) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+}): Promise<any> {
   const modelCandidates = buildModelCandidates(params.model);
-  const totalAttempts = CHAT_COMPLETIONS_ENDPOINTS.length * modelCandidates.length;
   let attempts = 0;
   let finalError = 'AI request failed.';
 
   for (const endpoint of CHAT_COMPLETIONS_ENDPOINTS) {
     for (const model of modelCandidates) {
       attempts += 1;
-      const endpointUrl = endpoint.buildUrl(model);
-      try {
-        const response = await fetch(endpointUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${params.apiKey}`,
-          },
-          body: JSON.stringify({
-            model,
-            temperature: 0.25,
-            max_tokens: 1000,
-            messages: [
-              { role: 'system', content: params.systemPrompt },
-              { role: 'user', content: params.userPrompt },
-            ],
-          }),
-        });
+      const endpointUrl = endpoint.buildUrl();
+      const result = await attemptRequest({ ...params, model, endpointUrl });
 
-        if (response.ok) {
-          return await response.json();
-        }
+      if (result.ok) {
+        return result.json;
+      }
 
-        const detail = await parseErrorDetail(response);
-        finalError = formatAttemptError(response.status, endpointUrl, model, detail);
+      const detail = typeof (result.json as any)?.error?.message === 'string'
+        ? (result.json as any).error.message
+        : typeof (result.json as any)?.error === 'string'
+          ? (result.json as any).error
+          : result.error || '';
 
-        if (AUTH_FAILURE_CODES.has(response.status)) {
-          throw new Error('Authentication failed. Check your Hugging Face key and permissions.');
-        }
-      } catch (error) {
-        if (error instanceof Error && error.message.startsWith('Authentication failed')) {
-          throw error;
-        }
-        const detail = error instanceof Error ? error.message : '';
-        finalError = formatAttemptError(null, endpointUrl, model, detail);
+      finalError = formatAttemptError(result.status, endpointUrl, model, detail);
+
+      if (result.status !== null && AUTH_FAILURE_CODES.has(result.status)) {
+        throw new Error('Authentication failed. Check your Hugging Face key and permissions.');
       }
     }
   }
 
-  throw new Error(`AI request failed after ${attempts} attempts across available endpoints/models. Last error: ${finalError}`);
+  throw new Error(`AI request failed after ${attempts} attempt(s). Last error: ${finalError}`);
 }
 
 export async function generateActionPlan(
