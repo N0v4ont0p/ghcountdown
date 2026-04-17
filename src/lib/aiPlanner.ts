@@ -281,7 +281,7 @@ function normalizeSuggestion(raw: any): AISuggestion | null {
 }
 
 function normalizeAIResponse(raw: any): AIAssistantResult {
-  const suggestions = (raw.suggestions || [])
+  const suggestions = (Array.isArray(raw.suggestions) ? raw.suggestions : [])
     .map((s: any) => normalizeSuggestion(s))
     .filter((s: any): s is AISuggestion => Boolean(s));
 
@@ -381,11 +381,23 @@ async function attemptRequest(params: {
                   dueAt: {
                     oneOf: [{ type: 'string' }, { type: 'null' }],
                   },
-                  startsAt: { type: 'string' },
+                  startsAt: {
+                    type: 'string',
+                    pattern: '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}',
+                  },
                   allDay: { type: 'boolean' },
-                  date: { type: 'string' },
-                  startTime: { type: 'string' },
-                  endTime: { type: 'string' },
+                  date: {
+                    type: 'string',
+                    pattern: '^[0-9]{4}-[0-9]{2}-[0-9]{2}$',
+                  },
+                  startTime: {
+                    type: 'string',
+                    pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$',
+                  },
+                  endTime: {
+                    type: 'string',
+                    pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$',
+                  },
                   autoTrack: { type: 'boolean' },
                 },
               },
@@ -614,8 +626,11 @@ export async function generateActionPlan(
     throw new Error('AI returned an empty response. Check your API key and try again.');
   }
 
-  // Schema enforcement means this is guaranteed valid JSON
-  // matching our ActionPlan schema exactly
-  const parsed = JSON.parse(textResponse);
+  // Qwen3 may prepend <think>...</think> before the JSON
+  // even with schema enforcement — strip it before parsing
+  const stripped = textResponse
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .trim();
+  const parsed = JSON.parse(stripped);
   return normalizeAIResponse(parsed);
 }
