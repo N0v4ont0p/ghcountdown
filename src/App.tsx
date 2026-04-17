@@ -58,7 +58,6 @@ function App() {
         const runtimeConfig = getAIConfiguration();
         updateAIConfiguration({
           apiKey: runtimeConfig.apiKey || appSettings.aiApiKey,
-          model: appSettings.aiModel || runtimeConfig.model,
         });
         
         const important = await getNextImportantEvent(appSettings.importantPriorityThreshold);

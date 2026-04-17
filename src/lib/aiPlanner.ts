@@ -30,9 +30,7 @@ interface AIContext {
 }
 
 const ENV_HUGGING_FACE_API_KEY = import.meta.env.VITE_HUGGINGFACE_API_KEY;
-const FIXED_MODEL = 'meta-llama/Llama-3.3-70B-Instruct';
-export const DEFAULT_HUGGING_FACE_MODEL = FIXED_MODEL;
-const ENV_HUGGING_FACE_MODEL = import.meta.env.VITE_HUGGINGFACE_MODEL || FIXED_MODEL;
+const FIXED_MODEL = 'openai/gpt-oss-120b';
 
 const CHAT_COMPLETIONS_ENDPOINTS = [
   { buildUrl: () => 'https://router.huggingface.co/v1/chat/completions' },
@@ -40,147 +38,21 @@ const CHAT_COMPLETIONS_ENDPOINTS = [
 const AUTH_FAILURE_CODES = new Set([401, 403]);
 export type AIMode = 'plan' | 'agent';
 
-/** A single entry in the curated model list. */
-export interface PresetModel {
-  /** Exact model identifier used in API calls. */
-  id: string;
-  /** Short display label. */
-  label: string;
-  /** Longer description shown in tooltips / sub-labels. */
-  description: string;
-  /** Approximate context window in tokens. */
-  contextTokens?: number;
-  /** Speed/quality tier: fast | balanced | quality */
-  tier: 'fast' | 'balanced' | 'quality';
-}
-
-/**
- * Curated list of Hugging Face models that work well with the
- * chat-completions endpoint for structured JSON output.
- * Listed in recommended-first order.
- */
-export const PRESET_MODELS: PresetModel[] = [
-  {
-    id: 'google/gemma-3-27b-it',
-    label: 'Gemma 3 27B (Best Free)',
-    description: 'Google Gemma 3 — 27B instruction-tuned, top free Gemma on HF router, 128k context, excellent JSON output (recommended)',
-    contextTokens: 131072,
-    tier: 'quality',
-  },
-  {
-    id: 'google/gemma-3-27b-it',
-    label: 'Gemma 3 27B',
-    description: 'Google Gemma 3 — dense 27 B instruction-tuned, strong reasoning & structured output',
-    contextTokens: 131072,
-    tier: 'quality',
-  },
-  {
-    id: 'google/gemma-3-12b-it',
-    label: 'Gemma 3 12B',
-    description: 'Google Gemma 3 — compact 12 B, good balance of speed and quality',
-    contextTokens: 131072,
-    tier: 'balanced',
-  },
-  {
-    id: 'google/gemma-3-4b-it',
-    label: 'Gemma 3 4B',
-    description: 'Google Gemma 3 — lightweight 4 B, fastest Gemma option',
-    contextTokens: 131072,
-    tier: 'fast',
-  },
-  {
-    id: 'mistralai/Mistral-7B-Instruct-v0.3',
-    label: 'Mistral 7B Instruct v0.3',
-    description: 'Mistral 7 B — fast, reliable, very good at following JSON schemas',
-    contextTokens: 32768,
-    tier: 'fast',
-  },
-  {
-    id: 'mistralai/Mixtral-8x7B-Instruct-v0.1',
-    label: 'Mixtral 8×7B Instruct',
-    description: 'Mistral sparse MoE — 8×7 B, strong quality at moderate speed',
-    contextTokens: 32768,
-    tier: 'balanced',
-  },
-  {
-    id: 'mistralai/Mistral-Nemo-Instruct-2407',
-    label: 'Mistral NeMo 12B',
-    description: 'Mistral × NVIDIA — 12 B, 128 k context, excellent structured generation',
-    contextTokens: 128000,
-    tier: 'balanced',
-  },
-  {
-    id: 'meta-llama/Llama-3.3-70B-Instruct',
-    label: 'Llama 3.3 70B Instruct',
-    description: 'Meta Llama 3.3 — 70 B, top-tier reasoning, best for complex plans',
-    contextTokens: 131072,
-    tier: 'quality',
-  },
-  {
-    id: 'meta-llama/Meta-Llama-3.1-8B-Instruct',
-    label: 'Llama 3.1 8B Instruct',
-    description: 'Meta Llama 3.1 — 8 B, snappy responses with solid JSON output',
-    contextTokens: 131072,
-    tier: 'fast',
-  },
-  {
-    id: 'Qwen/Qwen2.5-72B-Instruct',
-    label: 'Qwen 2.5 72B Instruct',
-    description: 'Alibaba Qwen 2.5 — 72 B, excellent multilingual & code/JSON quality',
-    contextTokens: 131072,
-    tier: 'quality',
-  },
-  {
-    id: 'Qwen/Qwen2.5-14B-Instruct',
-    label: 'Qwen 2.5 14B Instruct',
-    description: 'Alibaba Qwen 2.5 — 14 B, fast with great structured output',
-    contextTokens: 131072,
-    tier: 'balanced',
-  },
-  {
-    id: 'microsoft/phi-4',
-    label: 'Phi-4 14B',
-    description: 'Microsoft Phi-4 — 14 B, punches above its weight for reasoning & JSON',
-    contextTokens: 16384,
-    tier: 'balanced',
-  },
-  {
-    id: 'deepseek-ai/DeepSeek-V3-0324',
-    label: 'DeepSeek V3',
-    description: 'DeepSeek V3 — 671 B sparse MoE, top-tier quality for complex prompts',
-    contextTokens: 131072,
-    tier: 'quality',
-  },
-];
-
-export const CUSTOM_MODEL_ID = '__custom__';
-
-/** Returns true if the given model ID appears in the preset list. */
-export function isPresetModel(modelId: string): boolean {
-  return PRESET_MODELS.some((m) => m.id === modelId);
-}
-
 export interface AIConfiguration {
   apiKey: string;
-  model: string;
 }
 
 let runtimeApiKey = ENV_HUGGING_FACE_API_KEY || '';
-let runtimeModel = ENV_HUGGING_FACE_MODEL || DEFAULT_HUGGING_FACE_MODEL;
 
 export function getAIConfiguration(): AIConfiguration {
   return {
     apiKey: runtimeApiKey,
-    model: runtimeModel,
   };
 }
 
 export function updateAIConfiguration(config: Partial<AIConfiguration>) {
   if ('apiKey' in config) {
     runtimeApiKey = config.apiKey?.trim() || '';
-  }
-  if ('model' in config) {
-    runtimeModel = config.model?.trim() || DEFAULT_HUGGING_FACE_MODEL;
   }
 }
 
@@ -324,7 +196,7 @@ urgencyHours is how many hours until something is urgent, or null if not time-se
 }
 
 function buildModelCandidates(requestedModel: string) {
-  return [requestedModel?.trim() || DEFAULT_HUGGING_FACE_MODEL];
+  return [requestedModel?.trim() || FIXED_MODEL];
 }
 
 function formatAttemptError(status: number | null, endpoint: string, model: string, detail?: string) {
@@ -346,67 +218,7 @@ async function attemptRequest(params: {
     model: `${params.model}:cerebras`,
     temperature: 0.1,
     max_tokens: 1000,
-    response_format: {
-      type: 'json_schema',
-      json_schema: {
-        name: 'ActionPlan',
-        strict: true,
-        schema: {
-          type: 'object',
-          required: ['summary', 'severity', 'urgencyHours', 'confidence', 'suggestions'],
-          additionalProperties: false,
-          properties: {
-            summary: { type: 'string' },
-            severity: {
-              type: 'string',
-              enum: ['low', 'medium', 'high', 'critical'],
-            },
-            urgencyHours: {
-              oneOf: [{ type: 'number' }, { type: 'null' }],
-            },
-            confidence: { type: 'number' },
-            suggestions: {
-              type: 'array',
-              items: {
-                type: 'object',
-                required: ['type', 'title', 'priority'],
-                additionalProperties: false,
-                properties: {
-                  type: {
-                    type: 'string',
-                    enum: ['todo', 'event', 'timeBlock'],
-                  },
-                  title: { type: 'string' },
-                  priority: { type: 'number' },
-                  notes: { type: 'string' },
-                  dueAt: {
-                    oneOf: [{ type: 'string' }, { type: 'null' }],
-                  },
-                  startsAt: {
-                    type: 'string',
-                    pattern: '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}',
-                  },
-                  allDay: { type: 'boolean' },
-                  date: {
-                    type: 'string',
-                    pattern: '^[0-9]{4}-[0-9]{2}-[0-9]{2}$',
-                  },
-                  startTime: {
-                    type: 'string',
-                    pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$',
-                  },
-                  endTime: {
-                    type: 'string',
-                    pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$',
-                  },
-                  autoTrack: { type: 'boolean' },
-                },
-              },
-            },
-          },
-        },
-      },
-    },
+    response_format: { type: 'json_object' },
     messages: [
       { role: 'system', content: params.systemPrompt },
       { role: 'user', content: params.userPrompt },
@@ -613,7 +425,7 @@ export async function generateActionPlan(
 
   const body = await requestWithFallback({
     apiKey: config.apiKey,
-    model: config.model,
+    model: FIXED_MODEL,
     systemPrompt,
     userPrompt,
   });
