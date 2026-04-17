@@ -30,16 +30,11 @@ interface AIContext {
 }
 
 const ENV_HUGGING_FACE_API_KEY = import.meta.env.VITE_HUGGINGFACE_API_KEY;
-export const DEFAULT_HUGGING_FACE_MODEL = 'google/gemma-4-26B-A4B';
+export const DEFAULT_HUGGING_FACE_MODEL = 'google/gemma-3-27b-it';
 const ENV_HUGGING_FACE_MODEL = import.meta.env.VITE_HUGGINGFACE_MODEL || DEFAULT_HUGGING_FACE_MODEL;
 
 const CHAT_COMPLETIONS_ENDPOINTS = [
-  {
-    buildUrl: () => 'https://router.huggingface.co/v1/chat/completions',
-  },
-  {
-    buildUrl: () => 'https://api-inference.huggingface.co/v1/chat/completions',
-  },
+  { buildUrl: () => 'https://router.huggingface.co/v1/chat/completions' },
 ];
 const AUTH_FAILURE_CODES = new Set([401, 403]);
 export type AIMode = 'plan' | 'agent';
@@ -65,9 +60,9 @@ export interface PresetModel {
  */
 export const PRESET_MODELS: PresetModel[] = [
   {
-    id: 'google/gemma-4-26B-A4B',
-    label: 'Gemma 4 26B (A4B)',
-    description: 'Google Gemma 4 — 26 B sparse MoE, excellent instruction following & JSON output (recommended)',
+    id: 'google/gemma-3-27b-it',
+    label: 'Gemma 3 27B (Best Free)',
+    description: 'Google Gemma 3 — 27B instruction-tuned, top free Gemma on HF router, 128k context, excellent JSON output (recommended)',
     contextTokens: 131072,
     tier: 'quality',
   },
@@ -315,36 +310,47 @@ export function isAIConfigured() {
 }
 
 function buildSystemPrompt(mode: AIMode) {
+  const today = new Date().toISOString().split('T')[0];
   const modeDirective = mode === 'agent'
-    ? 'Use a natural, supportive tone in "summary" while still being concise and practical.'
-    : 'Keep "summary" brief and operational.';
+    ? 'You are executing as an autonomous agent. Be decisive. Create concrete, specific, immediately actionable items. Infer all missing details (times, dates, priorities) rather than asking. Default date is today (' + today + ') unless context implies otherwise.'
+    : 'You are a planning assistant. Keep output concise and execution-focused.';
 
   return [
-    'You are GHCountdown Action AI.',
+    'You are GHCountdown Action AI, an intelligent productivity agent.',
     modeDirective,
-    'Return strict JSON only with this shape:',
+    '',
+    'CRITICAL: Return ONLY raw JSON. No markdown, no code fences, no preamble. The response must start with { and end with }.',
+    '',
+    'Required JSON shape:',
     '{',
-    '  "summary": "short summary",',
+    '  "summary": "1-2 sentence description of what was done or planned",',
     '  "severity": "low|medium|high|critical",',
-    '  "urgencyHours": number|null,',
-    '  "confidence": 0..1,',
+    '  "urgencyHours": number or null,',
+    '  "confidence": 0.0 to 1.0,',
     '  "suggestions": [',
     '    {',
     '      "type": "todo|event|timeBlock",',
-    '      "title": "string",',
-    '      "priority": 1..5,',
-    '      "notes": "string optional",',
-    '      "dueAt": "ISO date-time optional",',
-    '      "startsAt": "ISO date-time optional",',
-    '      "allDay": "boolean optional",',
-    '      "date": "YYYY-MM-DD optional",',
-    '      "startTime": "HH:mm optional",',
-    '      "endTime": "HH:mm optional",',
-    '      "autoTrack": "boolean optional"',
+    '      "title": "specific, actionable title",',
+    '      "priority": 1 to 5 (5=critical, 1=minimal),',
+    '      "notes": "optional context string",',
+    '      "dueAt": "ISO 8601 datetime or null",',
+    '      "startsAt": "ISO 8601 datetime (required for type=event)",',
+    '      "allDay": false,',
+    '      "date": "YYYY-MM-DD (required for type=timeBlock)",',
+    '      "startTime": "HH:mm 24h (required for type=timeBlock)",',
+    '      "endTime": "HH:mm 24h (required for type=timeBlock)",',
+    '      "autoTrack": true',
     '    }',
     '  ]',
     '}',
-    'Infer priority and urgency. Keep suggestions practical and directly actionable.',
+    '',
+    'Rules:',
+    '- Generate 2-5 suggestions that directly address the user request',
+    '- Mix types: use timeBlock for scheduling work sessions, event for deadlines/meetings, todo for tasks',
+    '- All timeBlocks MUST have date, startTime, endTime',
+    '- All events MUST have startsAt as a valid ISO datetime',
+    '- Priority 5 = urgent deadline, 4 = high importance, 3 = normal, 2 = low, 1 = someday',
+    '- Never leave title empty or generic like "Task 1"',
   ].join('\n');
 }
 
@@ -470,7 +476,7 @@ export async function generateActionPlan(
 
   const userPrompt = [
     `Assistant mode: ${mode}`,
-    `Current date-time: ${new Date().toISOString()}`,
+    `Current date: ${new Date().toLocaleDateString('en-CA')} (${new Date().toLocaleDateString('en-US', {weekday:'long'})}), time: ${new Date().toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit'})}`,
     `Existing todos: ${context.todoTitles.join(' | ') || 'none'}`,
     `Upcoming events: ${context.upcomingEventTitles.join(' | ') || 'none'}`,
     `Recent timeline blocks: ${context.recentBlockTitles.join(' | ') || 'none'}`,
