@@ -149,14 +149,14 @@ export function TimelineView() {
 
   async function autoFillFlexBlock(block: TimeBlock, allTodos: Todo[], scheduledIds: Set<string>) {
     const candidates = allTodos.filter(t => t.status === 'today' && !scheduledIds.has(t.id));
-    let winner: Todo | undefined;
-    if ((block.slotType || 'fixed') === 'flex-todo') {
-      winner = [...candidates].sort((a, b) => b.priority - a.priority)[0];
-    } else if ((block.slotType || 'fixed') === 'flex-project') {
-      winner = [...candidates]
-        .filter(t => block.projectId && t.projectId === block.projectId)
-        .sort((a, b) => b.priority - a.priority)[0];
+    let pool = candidates;
+    if ((block.slotType || 'fixed') === 'flex-project') {
+      pool = candidates.filter(t => block.projectId && t.projectId === block.projectId);
     }
+    const winner = pool.reduce<Todo | undefined>(
+      (best, t) => (best === undefined || t.priority > best.priority ? t : best),
+      undefined
+    );
     if (winner) {
       await updateTimeBlock(block.id, { title: winner.title, todoId: winner.id });
       toast.success(`Auto-filled flex slot with "${winner.title}"`);
@@ -574,7 +574,9 @@ export function TimelineView() {
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 mb-1">
                               <h4 className="font-semibold text-sm truncate" style={{ color: block.color }}>
-                                {isFlex ? '⚡ Flex slot' : block.title}
+                                {isFlex ? (
+                                  <><span aria-hidden="true">⚡</span> Flex slot</>
+                                ) : block.title}
                               </h4>
                               {isConflicting && (
                                 <Warning size={12} className="text-red-500 shrink-0" weight="fill" />
