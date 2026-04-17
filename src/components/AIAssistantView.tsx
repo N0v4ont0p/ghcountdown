@@ -209,9 +209,9 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
           await applySuggestion(suggestion);
         }
         toast.success(`Agent executed ${plan.suggestions.length} action(s) automatically.`);
+      } else {
+        toast.success('AI action plan generated.');
       }
-
-      toast.success('AI action plan generated.');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to generate AI plan.';
       toast.error(message);
