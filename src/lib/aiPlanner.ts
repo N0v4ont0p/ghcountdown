@@ -309,49 +309,64 @@ export function isAIConfigured() {
   return Boolean(getAIConfiguration().apiKey);
 }
 
-function buildSystemPrompt(mode: AIMode) {
+function buildSystemPrompt(mode: AIMode): string {
   const today = new Date().toISOString().split('T')[0];
-  const modeDirective = mode === 'agent'
-    ? 'You are executing as an autonomous agent. Be decisive. Create concrete, specific, immediately actionable items. Infer all missing details (times, dates, priorities) rather than asking. Default date is today (' + today + ') unless context implies otherwise.'
-    : 'You are a planning assistant. Keep output concise and execution-focused.';
+  const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
 
-  return [
-    'You are GHCountdown Action AI, an intelligent productivity agent.',
-    modeDirective,
-    '',
-    'CRITICAL: Return ONLY raw JSON. No markdown, no code fences, no preamble. The response must start with { and end with }.',
-    '',
-    'Required JSON shape:',
-    '{',
-    '  "summary": "1-2 sentence description of what was done or planned",',
-    '  "severity": "low|medium|high|critical",',
-    '  "urgencyHours": number or null,',
-    '  "confidence": 0.0 to 1.0,',
-    '  "suggestions": [',
-    '    {',
-    '      "type": "todo|event|timeBlock",',
-    '      "title": "specific, actionable title",',
-    '      "priority": 1 to 5 (5=critical, 1=minimal),',
-    '      "notes": "optional context string",',
-    '      "dueAt": "ISO 8601 datetime or null",',
-    '      "startsAt": "ISO 8601 datetime (required for type=event)",',
-    '      "allDay": false,',
-    '      "date": "YYYY-MM-DD (required for type=timeBlock)",',
-    '      "startTime": "HH:mm 24h (required for type=timeBlock)",',
-    '      "endTime": "HH:mm 24h (required for type=timeBlock)",',
-    '      "autoTrack": true',
-    '    }',
-    '  ]',
-    '}',
-    '',
-    'Rules:',
-    '- Generate 2-5 suggestions that directly address the user request',
-    '- Mix types: use timeBlock for scheduling work sessions, event for deadlines/meetings, todo for tasks',
-    '- All timeBlocks MUST have date, startTime, endTime',
-    '- All events MUST have startsAt as a valid ISO datetime',
-    '- Priority 5 = urgent deadline, 4 = high importance, 3 = normal, 2 = low, 1 = someday',
-    '- Never leave title empty or generic like "Task 1"',
-  ].join('\n');
+  const modeDirective = mode === 'agent'
+    ? 'You are executing as an autonomous agent. Infer all details. Never ask questions.'
+    : 'You are a planning assistant. Be concise.';
+
+  return `You are GHCountdown Action AI. ${modeDirective}
+
+CRITICAL OUTPUT RULE: Your entire response must be a single raw JSON object. 
+No markdown. No code fences. No explanation. Start with { and end with }.
+
+Today is ${today}.
+
+VALID TYPES: "todo", "event", "timeBlock" — no other values are accepted.
+
+FIELD RULES:
+- type "todo": requires title, priority, optional dueAt (ISO datetime string)
+- type "event": requires title, priority, startsAt (ISO datetime string like "${today}T18:00:00.000Z"), allDay (boolean)
+- type "timeBlock": requires title, priority, date (YYYY-MM-DD like "${today}"), startTime (HH:mm like "09:00"), endTime (HH:mm like "11:00"), autoTrack (boolean)
+
+EXAMPLE OF CORRECT OUTPUT (do not copy the content, only the structure):
+{
+  "summary": "Created a deep work block tomorrow morning and a review task.",
+  "severity": "medium",
+  "urgencyHours": 18,
+  "confidence": 0.85,
+  "suggestions": [
+    {
+      "type": "timeBlock",
+      "title": "Deep Work: FTC Code Review",
+      "priority": 4,
+      "date": "${tomorrow}",
+      "startTime": "09:00",
+      "endTime": "11:00",
+      "autoTrack": true,
+      "notes": "Focus on autonomous routine"
+    },
+    {
+      "type": "todo",
+      "title": "Prepare autonomous routine test cases",
+      "priority": 3,
+      "dueAt": "${tomorrow}T23:59:00.000Z",
+      "notes": ""
+    },
+    {
+      "type": "event",
+      "title": "Rowing Practice",
+      "priority": 3,
+      "startsAt": "${tomorrow}T18:00:00.000Z",
+      "allDay": false,
+      "notes": ""
+    }
+  ]
+}
+
+Now respond to the user request below with the same JSON structure.`;
 }
 
 function buildModelCandidates(requestedModel: string) {
@@ -475,13 +490,16 @@ export async function generateActionPlan(
   const systemPrompt = buildSystemPrompt(mode);
 
   const userPrompt = [
-    `Assistant mode: ${mode}`,
-    `Current date: ${new Date().toLocaleDateString('en-CA')} (${new Date().toLocaleDateString('en-US', {weekday:'long'})}), time: ${new Date().toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit'})}`,
+    `Current date: ${new Date().toISOString().split('T')[0]}`,
+    `Day of week: ${new Date().toLocaleDateString('en-US', {weekday:'long'})}`,
+    `Current time: ${new Date().toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit'})}`,
     `Existing todos: ${context.todoTitles.join(' | ') || 'none'}`,
     `Upcoming events: ${context.upcomingEventTitles.join(' | ') || 'none'}`,
-    `Recent timeline blocks: ${context.recentBlockTitles.join(' | ') || 'none'}`,
-    'User request:',
-    prompt,
+    `Recent time blocks: ${context.recentBlockTitles.join(' | ') || 'none'}`,
+    ``,
+    `User request: ${prompt.trim()}`,
+    ``,
+    `REMINDER: Respond with raw JSON only. No markdown. No explanation.`,
   ].join('\n');
 
   const body = await requestWithFallback({
