@@ -20,12 +20,13 @@ export async function getTimeBlocksByTodo(todoId: string): Promise<TimeBlock[]> 
 }
 
 export async function createTimeBlock(
-  data: Omit<TimeBlock, 'id' | 'createdAt' | 'updatedAt'>
+  data: Omit<TimeBlock, 'id' | 'createdAt' | 'updatedAt' | 'locationId'> & { locationId?: string | null }
 ): Promise<TimeBlock> {
   const now = new Date().toISOString();
   const timeBlock: TimeBlock = {
     id: uuidv4(),
     ...data,
+    locationId: data.locationId ?? null,
     createdAt: now,
     updatedAt: now,
   };
@@ -47,6 +48,7 @@ export async function updateTimeBlock(
   const updated: TimeBlock = {
     ...block,
     ...updates,
+    locationId: updates.locationId ?? block.locationId ?? null,
     updatedAt: new Date().toISOString(),
   };
 

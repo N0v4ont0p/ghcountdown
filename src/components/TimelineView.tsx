@@ -21,10 +21,22 @@ import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { scheduleMyDay, PRIORITY_COLORS, withColorAlpha } from '@/lib/scheduleDay';
 import { detectBlockConflicts } from '@/lib/conflictDetection';
+import { EffectiveScheduleEntry, getCurrentLocation, getEffectiveScheduleForDate, getFreeSlotsForDate } from '@/lib/effectiveSchedule';
+import { predictActivity } from '@/lib/habitModel';
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
 const TIMELINE_HOUR_HEIGHT = 80;
 const AUTO_FILL_THRESHOLD_MINUTES = 5;
+
+interface GhostSuggestion {
+  id: string;
+  title: string;
+  confidence: number;
+  startTime: string;
+  endTime: string;
+  color: string;
+  locationId: string | null;
+}
 
 export function TimelineView() {
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -42,6 +54,10 @@ export function TimelineView() {
   const [isScheduling, setIsScheduling] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [blockToDelete, setBlockToDelete] = useState<string | null>(null);
+  const [skeletonEntries, setSkeletonEntries] = useState<EffectiveScheduleEntry[]>([]);
+  const [currentLocationLabel, setCurrentLocationLabel] = useState<string | null>(null);
+  const [ghostDismissedIds, setGhostDismissedIds] = useState<Set<string>>(new Set());
+  const [ghostSuggestions, setGhostSuggestions] = useState<GhostSuggestion[]>([]);
 
   const [formData, setFormData] = useState({
     title: '',
@@ -64,6 +80,48 @@ export function TimelineView() {
   }, [currentDate]);
 
   useEffect(() => {
+    let active = true;
+
+    async function buildGhostSuggestions() {
+      const dateStr = format(currentDate, 'yyyy-MM-dd');
+      const flexSlots = await getFreeSlotsForDate(dateStr);
+
+      const suggestions = await Promise.all(
+        flexSlots.map(async (slot) => {
+          const predictionTime = new Date(`${dateStr}T${slot.startTime}:00`);
+          const prediction = await predictActivity(predictionTime);
+          if (!prediction) return null;
+
+          const id = `${dateStr}:${slot.startTime}:${slot.endTime}:${prediction.label}`;
+          if (ghostDismissedIds.has(id)) return null;
+
+          const occupied = timeBlocks.some((block) => block.startTime < slot.endTime && block.endTime > slot.startTime);
+          if (occupied) return null;
+
+          return {
+            id,
+            title: prediction.label,
+            confidence: prediction.confidence,
+            startTime: slot.startTime,
+            endTime: slot.endTime,
+            color: slot.color,
+            locationId: slot.locationId,
+          } satisfies GhostSuggestion;
+        })
+      );
+
+      if (active) {
+        setGhostSuggestions(suggestions.filter((item): item is GhostSuggestion => Boolean(item)));
+      }
+    }
+
+    void buildGhostSuggestions();
+    return () => {
+      active = false;
+    };
+  }, [currentDate, timeBlocks, ghostDismissedIds]);
+
+  useEffect(() => {
     if (timelineRef.current) {
       const now = new Date();
       const currentHour = now.getHours();
@@ -74,12 +132,14 @@ export function TimelineView() {
 
   async function loadData() {
     const dateStr = format(currentDate, 'yyyy-MM-dd');
-    const [blocks, allTodos, allEvents, allProjects, timer] = await Promise.all([
+    const [blocks, allTodos, allEvents, allProjects, timer, effectiveSchedule, currentLocation] = await Promise.all([
       getTimeBlocksByDate(dateStr),
       getAllTodos(),
       getAllEvents(),
       getAllProjects(),
       getRunningTimer(),
+      getEffectiveScheduleForDate(dateStr),
+      getCurrentLocation(),
     ]);
     
     setTimeBlocks(blocks.sort((a, b) => a.startTime.localeCompare(b.startTime)));
@@ -87,6 +147,8 @@ export function TimelineView() {
     setEvents(allEvents);
     setProjects(allProjects);
     setRunningTimer(timer);
+    setSkeletonEntries(effectiveSchedule);
+    setCurrentLocationLabel(currentLocation ? `${currentLocation.icon} ${currentLocation.name}` : null);
   }
 
   async function checkAutoTracking() {
@@ -384,6 +446,41 @@ export function TimelineView() {
     loadData();
   }
 
+  async function handleAcceptGhost(ghost: GhostSuggestion) {
+    const dateStr = format(currentDate, 'yyyy-MM-dd');
+    try {
+      await createTimeBlock({
+        title: ghost.title,
+        date: dateStr,
+        startTime: ghost.startTime,
+        endTime: ghost.endTime,
+        todoId: null,
+        projectId: null,
+        locationId: ghost.locationId,
+        color: ghost.color,
+        autoTrack: true,
+        slotType: 'fixed',
+      });
+      toast.success(`Added "${ghost.title}" to timeline`);
+      setGhostDismissedIds((prev) => {
+        const next = new Set(prev);
+        next.add(ghost.id);
+        return next;
+      });
+      await loadData();
+    } catch {
+      toast.error('Failed to add suggested habit');
+    }
+  }
+
+  function handleDismissGhost(ghost: GhostSuggestion) {
+    setGhostDismissedIds((prev) => {
+      const next = new Set(prev);
+      next.add(ghost.id);
+      return next;
+    });
+  }
+
   function getBlockStyle(block: TimeBlock) {
     const [startHour, startMin] = block.startTime.split(':').map(Number);
     const [endHour, endMin] = block.endTime.split(':').map(Number);
@@ -490,6 +587,12 @@ export function TimelineView() {
               {isScheduling ? 'Scheduling…' : 'Schedule My Day'}
             </Button>
           )}
+
+          {currentLocationLabel && (
+            <Badge variant="secondary" className="h-8 px-3">
+              Current location: {currentLocationLabel}
+            </Badge>
+          )}
         </div>
       </div>
 
@@ -540,6 +643,86 @@ export function TimelineView() {
               )}
 
               <div className="absolute left-20 right-4 top-0 bottom-0">
+                {skeletonEntries.map((entry) => {
+                  const style = getBlockStyle({
+                    id: entry.id,
+                    title: entry.title,
+                    date: format(currentDate, 'yyyy-MM-dd'),
+                    startTime: entry.startTime,
+                    endTime: entry.endTime,
+                    todoId: null,
+                    projectId: null,
+                    locationId: entry.locationId,
+                    color: entry.color,
+                    autoTrack: false,
+                    slotType: entry.kind === 'flex' ? 'flex-todo' : 'fixed',
+                    createdAt: '',
+                    updatedAt: '',
+                  });
+
+                  return (
+                    <div
+                      key={`skeleton-${entry.id}-${entry.startTime}`}
+                      className="absolute left-2 right-2 rounded-xl border p-2 pointer-events-none"
+                      style={{
+                        top: style.top,
+                        height: style.height,
+                        backgroundColor: withColorAlpha(entry.color, 0.08),
+                        borderColor: entry.color,
+                        opacity: 0.08,
+                        borderStyle: entry.kind === 'flex' ? 'dashed' : 'solid',
+                      }}
+                    >
+                      <p className="text-[11px] font-medium truncate" style={{ color: entry.color }}>
+                        {entry.location ? `${entry.location.icon} ` : ''}{entry.title}
+                      </p>
+                    </div>
+                  );
+                })}
+
+                {ghostSuggestions.map((ghost) => {
+                  const style = getBlockStyle({
+                    id: ghost.id,
+                    title: ghost.title,
+                    date: format(currentDate, 'yyyy-MM-dd'),
+                    startTime: ghost.startTime,
+                    endTime: ghost.endTime,
+                    todoId: null,
+                    projectId: null,
+                    locationId: ghost.locationId,
+                    color: ghost.color,
+                    autoTrack: false,
+                    slotType: 'flex-todo',
+                    createdAt: '',
+                    updatedAt: '',
+                  });
+
+                  return (
+                    <div
+                      key={`ghost-${ghost.id}`}
+                      className="absolute left-2 right-2 rounded-xl border border-dashed p-2 z-10"
+                      style={{
+                        top: style.top,
+                        height: style.height,
+                        backgroundColor: withColorAlpha(ghost.color, 0.3),
+                        borderColor: ghost.color,
+                        opacity: 0.3,
+                      }}
+                    >
+                      <div className="flex items-center justify-between gap-2 h-full">
+                        <div className="min-w-0">
+                          <p className="text-xs font-medium truncate">{ghost.title}</p>
+                          <p className="text-[10px] text-muted-foreground">{ghost.startTime} - {ghost.endTime}</p>
+                        </div>
+                        <div className="flex gap-1">
+                          <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => void handleAcceptGhost(ghost)}>+</Button>
+                          <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => handleDismissGhost(ghost)}>✕</Button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+
                 <AnimatePresence>
                   {timeBlocks.map((block) => {
                     const style = getBlockStyle(block);

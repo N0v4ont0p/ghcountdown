@@ -26,6 +26,8 @@ import {
 } from '@/lib/aiPlanner';
 import { scheduleMyDay } from '@/lib/scheduleDay';
 import { format } from 'date-fns';
+import { getCurrentLocation, getEffectiveScheduleForDate } from '@/lib/effectiveSchedule';
+import { getHabitModel, predictActivity } from '@/lib/habitModel';
 
 const AI_MODE_STORAGE_KEY = 'ghcountdown.ai.defaultMode';
 
@@ -210,6 +212,19 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
       }
 
       const nextEvent = nextEvents[0] ?? null;
+      const [todaySkeleton, currentLocation, habitModel, predictedNow] = await Promise.all([
+        getEffectiveScheduleForDate(today),
+        getCurrentLocation(),
+        getHabitModel(),
+        predictActivity(new Date()),
+      ]);
+
+      const weeklySkeletonSummary = todaySkeleton
+        .map((entry) => `${entry.startTime}-${entry.endTime} ${entry.kind} ${entry.title}${entry.location ? ` @ ${entry.location.name}` : ''}`)
+        .join(' | ');
+      const currentLocationLabel = currentLocation ? `${currentLocation.icon} ${currentLocation.name}` : 'none';
+      const peakFocusHoursToday = habitModel.dailyRhythms.peakFocusHours.map((hour) => `${String(hour).padStart(2, '0')}:00`);
+      const typicalActivitiesNow = predictedNow ? [predictedNow.label] : [];
 
       const plan = await generateActionPlan(prompt.trim(), {
         todoTitles: todos.slice(0, 20).map((todo) => todo.title),
@@ -220,6 +235,10 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
         currentStreak,
         todayFocusMinutes,
         nextEventDateTime: nextEvent ? nextEvent.startsAt : null,
+        weeklySkeletonSummary,
+        currentLocation: currentLocationLabel,
+        peakFocusHoursToday,
+        typicalActivitiesNow,
       }, { mode });
 
       setResult(plan);
@@ -275,13 +294,33 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
         notes: suggestion.notes ?? '',
       });
     } else {
+      const blockDate = suggestion.date ?? new Date().toISOString().split('T')[0];
+      const startTime = suggestion.startTime ?? '09:00';
+      const endTime = suggestion.endTime ?? '10:00';
+      const effectiveSchedule = await getEffectiveScheduleForDate(blockDate);
+      const conflictingFixed = effectiveSchedule.find(
+        (entry) =>
+          entry.kind === 'fixed' &&
+          startTime < entry.endTime &&
+          endTime > entry.startTime
+      );
+
+      if (conflictingFixed) {
+        throw new Error(`AI suggestion overlaps fixed routine: ${conflictingFixed.title} (${conflictingFixed.startTime}-${conflictingFixed.endTime})`);
+      }
+
+      const matchingSlot = effectiveSchedule.find(
+        (entry) => startTime < entry.endTime && endTime > entry.startTime
+      );
+
       await createTimeBlock({
         title: suggestion.title,
-        date: suggestion.date ?? new Date().toISOString().split('T')[0],
-        startTime: suggestion.startTime ?? '09:00',
-        endTime: suggestion.endTime ?? '10:00',
+        date: blockDate,
+        startTime,
+        endTime,
         todoId: null,
         projectId: null,
+        locationId: matchingSlot?.locationId ?? null,
         color: 'oklch(0.60 0.19 250)',
         autoTrack: suggestion.autoTrack !== false,
         slotType: 'fixed',

@@ -32,6 +32,10 @@ interface AIContext {
   currentStreak: number;
   todayFocusMinutes: number;
   nextEventDateTime: string | null;
+  weeklySkeletonSummary: string;
+  currentLocation: string;
+  peakFocusHoursToday: string[];
+  typicalActivitiesNow: string[];
 }
 
 const ENV_HUGGING_FACE_API_KEY = import.meta.env.VITE_HUGGINGFACE_API_KEY;
@@ -191,6 +195,11 @@ Today is ${today}. Tomorrow is ${tomorrow}.
 Always output times in 24-hour HH:mm format. "2pm"=14:00, "9am"=09:00, "noon"=12:00, "midnight"=00:00.
 
 Create 2-5 suggestions that directly address the user request.
+Hard constraints:
+- Never schedule over fixed weekly skeleton commitments.
+- Prefer peak focus hours when suggesting focused work.
+- Respect location constraints when scheduling.
+- Support \"skeleton mode\" requests by proposing changes to routine structure instead of conflicting timeline blocks.
 Mix suggestion types appropriately:
 - Use "timeBlock" to schedule focused work sessions (requires date in YYYY-MM-DD, startTime and endTime in HH:mm 24h format)
 - Use "event" for deadlines, meetings, or appointments (requires startsAt as full ISO datetime e.g. ${today}T18:00:00.000Z)
@@ -445,6 +454,10 @@ export async function generateActionPlan(
     `Current productivity streak: ${context.currentStreak} day${context.currentStreak !== 1 ? 's' : ''}`,
     `Today focused minutes: ${context.todayFocusMinutes}`,
     `Next event: ${context.nextEventDateTime ?? 'none'}`,
+    `Weekly skeleton summary: ${context.weeklySkeletonSummary || 'none'}`,
+    `Current location: ${context.currentLocation || 'unknown'}`,
+    `Peak focus hours today: ${context.peakFocusHoursToday.join(', ') || 'none'}`,
+    `Typical activities now: ${context.typicalActivitiesNow.join(', ') || 'none'}`,
     ``,
     `User request: ${prompt.trim()}`,
   ].join('\n');

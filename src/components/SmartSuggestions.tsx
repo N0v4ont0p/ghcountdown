@@ -5,6 +5,7 @@ import { Warning, CalendarBlank, ListChecks } from '@phosphor-icons/react';
 import { format } from 'date-fns';
 import { getAllTodos } from '@/db/repositories/todosRepo';
 import { getTimeBlocksByDate } from '@/db/repositories/timeBlocksRepo';
+import { detectDrift } from '@/lib/habitModel';
 
 interface Suggestion {
   icon: React.ReactNode;
@@ -66,6 +67,16 @@ export function SmartSuggestions({ onNavigate }: SmartSuggestionsProps) {
           view: 'timeline',
         });
       }
+
+      const driftSignals = await detectDrift();
+      driftSignals.forEach((signal) => {
+        results.push({
+          icon: <Warning size={16} weight="fill" className="text-purple-500 flex-shrink-0 mt-0.5" />,
+          message: signal,
+          action: 'Open Routine',
+          view: 'routine',
+        });
+      });
 
       setSuggestions(results);
     }

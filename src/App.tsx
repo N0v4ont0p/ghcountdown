@@ -14,6 +14,7 @@ import { WeeklyCalendarView } from '@/components/WeeklyCalendarView';
 import { StatisticsView } from '@/components/StatisticsView';
 import { TimeTrackingView } from '@/components/TimeTrackingView';
 import { AIAssistantView } from '@/components/AIAssistantView';
+import { ScheduleSkeletonView } from '@/components/ScheduleSkeletonView';
 import { initDB } from '@/db/core';
 import { seedDatabase } from '@/db/seed';
 import { deleteAllEvents, getNextImportantEvent, getAllEvents } from '@/db/repositories/eventsRepo';
@@ -38,6 +39,7 @@ import { toast } from 'sonner';
 import { getAIConfiguration, updateAIConfiguration } from '@/lib/aiPlanner';
 import { performDailyRollover } from '@/lib/rollover';
 import { escalateOverdueTodos } from '@/lib/overdueCheck';
+import { detectDrift } from '@/lib/habitModel';
 
 function App() {
   const [currentView, setCurrentView] = useState('home');
@@ -92,6 +94,8 @@ function App() {
         if (escalated > 0) {
           toast.warning(`⚠️ ${escalated} overdue todo${escalated !== 1 ? 's' : ''} escalated to critical priority`);
         }
+
+        await detectDrift();
       } catch (error) {
         console.error('Failed to initialize:', error);
       } finally {
@@ -399,6 +403,18 @@ function App() {
                 transition={{ duration: 0.3 }}
               >
                 <TimeTrackingView />
+              </motion.div>
+            )}
+
+            {currentView === 'routine' && (
+              <motion.div
+                key="routine"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                transition={{ duration: 0.3 }}
+              >
+                <ScheduleSkeletonView />
               </motion.div>
             )}
 
