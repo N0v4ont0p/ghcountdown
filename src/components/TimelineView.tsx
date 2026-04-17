@@ -24,6 +24,7 @@ import { detectBlockConflicts } from '@/lib/conflictDetection';
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
 const TIMELINE_HOUR_HEIGHT = 80;
+const AUTO_FILL_THRESHOLD_MINUTES = 5;
 
 export function TimelineView() {
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -141,7 +142,7 @@ export function TimelineView() {
       if (slotType === 'fixed' || block.todoId) continue;
       const [bH, bM] = block.startTime.split(':').map(Number);
       const blockStartMinutes = bH * 60 + bM;
-      if (Math.abs(nowMinutes - blockStartMinutes) <= 5) {
+      if (Math.abs(nowMinutes - blockStartMinutes) <= AUTO_FILL_THRESHOLD_MINUTES) {
         await autoFillFlexBlock(block, allTodos, scheduledIds);
       }
     }
