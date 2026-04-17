@@ -198,7 +198,8 @@ Mix suggestion types appropriately:
 
 Priority scale: 5=critical deadline, 4=high importance, 3=normal, 2=low priority, 1=someday.
 Confidence is 0.0 to 1.0 representing how well you understood the request.
-urgencyHours is how many hours until something is urgent, or null if not time-sensitive.`;
+urgencyHours is how many hours until something is urgent, or null if not time-sensitive.
+You can produce timeBlocks for ANY date, not just today. Use the "date" field to specify which day. If user mentions "this week" produce blocks across Mon-Fri. If they mention "tomorrow" use the tomorrow date given above.`;
 }
 
 function buildModelCandidates(requestedModel: string) {
