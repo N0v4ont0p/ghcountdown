@@ -34,6 +34,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { toast } from 'sonner';
 import { getAIConfiguration, updateAIConfiguration } from '@/lib/aiPlanner';
 import { withColorAlpha } from '@/lib/scheduleDay';
+import { performDailyRollover } from '@/lib/rollover';
 
 function App() {
   const [currentView, setCurrentView] = useState('home');
@@ -79,6 +80,11 @@ function App() {
 
         const blocks = await getTimeBlocksByDate(format(new Date(), 'yyyy-MM-dd'));
         setTodayBlocks(blocks.sort((a, b) => a.startTime.localeCompare(b.startTime)));
+
+        const rolledOver = await performDailyRollover();
+        if (rolledOver.length > 0) {
+          toast.info(`🔄 ${rolledOver.length} unfinished todo${rolledOver.length !== 1 ? 's' : ''} rolled over from yesterday`);
+        }
       } catch (error) {
         console.error('Failed to initialize:', error);
       } finally {
