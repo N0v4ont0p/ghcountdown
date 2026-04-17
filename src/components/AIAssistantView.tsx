@@ -88,7 +88,11 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
     const trimmedApiKey = apiKey.trim();
     updateAIConfiguration({ apiKey: trimmedApiKey });
     updateSettings({ aiApiKey: trimmedApiKey });
-    toast.success(trimmedApiKey ? 'AI credentials saved.' : 'Cleared API key.');
+    if (trimmedApiKey) {
+      toast.success('AI credentials saved.');
+    } else {
+      toast.success('AI key cleared.');
+    }
   }
 
   async function handleGenerate() {
