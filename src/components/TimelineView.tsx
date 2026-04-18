@@ -8,17 +8,18 @@ import { getAllProjects } from '@/db/repositories/projectsRepo';
 import { createTimeEntry, getRunningTimer, updateTimeEntry } from '@/db/repositories/timeRepo';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
-import { Plus, Play, Stop, Trash, Clock, CalendarBlank, CheckSquare, Lightning, Warning } from '@phosphor-icons/react';
+import { Plus, Play, Stop, Trash, Clock, CalendarBlank, CheckSquare, Lightning, Warning, CalendarDots } from '@phosphor-icons/react';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { RoutinePanel } from '@/components/RoutinePanel';
 import { PRIORITY_COLORS, withColorAlpha } from '@/lib/scheduleDay';
 import { detectBlockConflicts } from '@/lib/conflictDetection';
 import { EffectiveScheduleEntry, getCurrentLocation, getEffectiveScheduleForDate, getFreeSlotsForDate } from '@/lib/effectiveSchedule';
@@ -57,6 +58,7 @@ export function TimelineView() {
   const [currentLocationLabel, setCurrentLocationLabel] = useState<string | null>(null);
   const [ghostDismissedIds, setGhostDismissedIds] = useState<Set<string>>(new Set());
   const [ghostSuggestions, setGhostSuggestions] = useState<GhostSuggestion[]>([]);
+  const [isRoutinePanelOpen, setIsRoutinePanelOpen] = useState(false);
 
   const [formData, setFormData] = useState({
     title: '',
@@ -645,6 +647,16 @@ export function TimelineView() {
           <Button onClick={() => setIsDialogOpen(true)} className="gap-2">
             <Plus size={16} weight="bold" />
             Add Block
+          </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setIsRoutinePanelOpen(true)}
+            className="gap-2"
+          >
+            <CalendarDots size={16} />
+            Routine
           </Button>
 
           {unscheduledTodayTodos.length > 0 && (
@@ -1239,6 +1251,18 @@ export function TimelineView() {
         cancelText="Cancel"
         onConfirm={handleDeleteConfirm}
       />
+
+      <Dialog open={isRoutinePanelOpen} onOpenChange={setIsRoutinePanelOpen}>
+        <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Weekly Routine</DialogTitle>
+            <DialogDescription>
+              Your normal week — Timeline uses this to suggest what goes in free slots
+            </DialogDescription>
+          </DialogHeader>
+          <RoutinePanel onClose={() => setIsRoutinePanelOpen(false)} />
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

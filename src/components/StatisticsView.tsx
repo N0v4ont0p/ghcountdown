@@ -2,7 +2,13 @@ import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { 
   Clock, 
   ChartBar, 
@@ -16,14 +22,18 @@ import {
   Trophy,
   ArrowUp,
   ArrowDown,
-  Circle
+  Circle,
+  Play,
+  Stop,
+  Trash
 } from '@phosphor-icons/react';
-import { getAllTimeEntries } from '@/db/repositories/timeRepo';
+import { getAllTimeEntries, createTimeEntry, updateTimeEntry, deleteTimeEntry, getRunningTimer } from '@/db/repositories/timeRepo';
 import { getAllTodos } from '@/db/repositories/todosRepo';
 import { getAllEvents } from '@/db/repositories/eventsRepo';
 import { TimeEntry, Todo, Event } from '@/db/schema';
-import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, eachDayOfInterval, differenceInMinutes, isToday, parseISO, startOfDay, endOfDay } from 'date-fns';
+import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, eachDayOfInterval, differenceInMinutes, differenceInSeconds, isToday, parseISO, startOfDay, endOfDay } from 'date-fns';
 import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
 
 interface StatsSummary {
   totalFocusedTime: number;
@@ -59,19 +69,51 @@ interface ProductivityInsight {
 }
 
 export function StatisticsView() {
-  const [_timeEntries, setTimeEntries] = useState<TimeEntry[]>([]);
-  const [_todos, setTodos] = useState<Todo[]>([]);
+  const [timeEntries, setTimeEntries] = useState<TimeEntry[]>([]);
+  const [todos, setTodos] = useState<Todo[]>([]);
   const [_events, setEvents] = useState<Event[]>([]);
   const [stats, setStats] = useState<StatsSummary | null>(null);
   const [weeklyData, setWeeklyData] = useState<DayStats[]>([]);
   const [hourlyData, setHourlyData] = useState<HourlyStats[]>([]);
   const [insights, setInsights] = useState<ProductivityInsight[]>([]);
   const [selectedPeriod, setSelectedPeriod] = useState<'week' | 'month'>('week');
+  const [selectedTab, setSelectedTab] = useState<'overview' | 'tracker' | 'planned-vs-actual'>('overview');
   const [isLoading, setIsLoading] = useState(true);
+
+  // Tracker state
+  const [runningTimer, setRunningTimer] = useState<TimeEntry | null>(null);
+  const [timerElapsed, setTimerElapsed] = useState(0);
+  const [isTimerDialogOpen, setIsTimerDialogOpen] = useState(false);
+  const [timerDeleteConfirmOpen, setTimerDeleteConfirmOpen] = useState(false);
+  const [timerEntryToDelete, setTimerEntryToDelete] = useState<string | null>(null);
+  const [timerFormData, setTimerFormData] = useState({ todoId: 'none', note: '' });
 
   useEffect(() => {
     loadStatistics();
   }, [selectedPeriod]);
+
+  // Tracker: periodic reload + elapsed timer
+  useEffect(() => {
+    loadTrackerData();
+    const interval = setInterval(loadTrackerData, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    if (!runningTimer) { setTimerElapsed(0); return; }
+    const interval = setInterval(() => {
+      setTimerElapsed(Math.floor((Date.now() - new Date(runningTimer.startAt).getTime()) / 1000));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [runningTimer]);
+
+  async function loadTrackerData() {
+    const [running] = await Promise.all([getRunningTimer()]);
+    setRunningTimer(running);
+    if (running) {
+      setTimerElapsed(Math.floor((Date.now() - new Date(running.startAt).getTime()) / 1000));
+    }
+  }
 
   async function loadStatistics() {
     setIsLoading(true);
@@ -100,6 +142,72 @@ export function StatisticsView() {
     } finally {
       setIsLoading(false);
     }
+  }
+
+  // Tracker action functions
+  async function handleTimerStart() {
+    if (runningTimer) return;
+    try {
+      await createTimeEntry({
+        todoId: timerFormData.todoId !== 'none' ? timerFormData.todoId : null,
+        projectId: null,
+        timeBlockId: null,
+        startAt: new Date().toISOString(),
+        endAt: null,
+        note: timerFormData.note,
+      });
+      toast.success('Timer started');
+      setIsTimerDialogOpen(false);
+      setTimerFormData({ todoId: 'none', note: '' });
+      await loadTrackerData();
+      await loadStatistics();
+    } catch {
+      toast.error('Failed to start timer');
+    }
+  }
+
+  async function handleTimerStop() {
+    if (!runningTimer) return;
+    try {
+      await updateTimeEntry(runningTimer.id, { endAt: new Date().toISOString() });
+      toast.success(`Timer stopped — ${formatDurationSeconds(timerElapsed)}`);
+      await loadTrackerData();
+      await loadStatistics();
+    } catch {
+      toast.error('Failed to stop timer');
+    }
+  }
+
+  async function handleTimerDelete(id: string) {
+    setTimerEntryToDelete(id);
+    setTimerDeleteConfirmOpen(true);
+  }
+
+  async function handleTimerDeleteConfirm() {
+    if (!timerEntryToDelete) return;
+    try {
+      await deleteTimeEntry(timerEntryToDelete);
+      toast.success('Time entry deleted');
+      await loadStatistics();
+    } catch {
+      toast.error('Failed to delete time entry');
+    } finally {
+      setTimerEntryToDelete(null);
+    }
+  }
+
+  function formatDurationSeconds(seconds: number): string {
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = seconds % 60;
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  }
+
+  function getEntryDuration(entry: TimeEntry): number {
+    return differenceInSeconds(
+      entry.endAt ? new Date(entry.endAt) : new Date(),
+      new Date(entry.startAt),
+    );
   }
 
   function calculateStats(entries: TimeEntry[], allTodos: Todo[], allEvents: Event[]): StatsSummary {
@@ -387,7 +495,7 @@ export function StatisticsView() {
       className="max-w-7xl mx-auto space-y-6"
     >
       <div>
-        <h2 className="text-3xl font-semibold mb-2">Statistics & Insights</h2>
+        <h2 className="text-3xl font-semibold mb-2">Stats</h2>
         <p className="text-muted-foreground">Track your productivity patterns and time insights</p>
       </div>
 
@@ -504,13 +612,20 @@ export function StatisticsView() {
         </motion.div>
       </div>
 
-      <Tabs value={selectedPeriod} onValueChange={(v) => setSelectedPeriod(v as 'week' | 'month')} className="w-full">
-        <TabsList className="grid w-full max-w-md grid-cols-2">
-          <TabsTrigger value="week">This Week</TabsTrigger>
-          <TabsTrigger value="month">This Month</TabsTrigger>
+      <Tabs value={selectedTab} onValueChange={(v) => setSelectedTab(v as 'overview' | 'tracker' | 'planned-vs-actual')} className="w-full">
+        <TabsList className="grid w-full max-w-lg grid-cols-3">
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="tracker">Tracker</TabsTrigger>
+          <TabsTrigger value="planned-vs-actual">Planned vs Actual</TabsTrigger>
         </TabsList>
 
-        <TabsContent value={selectedPeriod} className="space-y-6 mt-6">
+        {/* ── Overview ── */}
+        <TabsContent value="overview" className="space-y-6 mt-6">
+          <div className="flex gap-2">
+            <Button size="sm" variant={selectedPeriod === 'week' ? 'default' : 'outline'} onClick={() => setSelectedPeriod('week')}>This Week</Button>
+            <Button size="sm" variant={selectedPeriod === 'month' ? 'default' : 'outline'} onClick={() => setSelectedPeriod('month')}>This Month</Button>
+          </div>
+
           <Card className="p-6">
             <div className="flex items-center justify-between mb-6">
               <div>
@@ -636,7 +751,217 @@ export function StatisticsView() {
               })}
             </div>
           </Card>
+        </TabsContent>
 
+        {/* ── Tracker ── */}
+        <TabsContent value="tracker" className="space-y-4 mt-6">
+          {/* Timer stat cards */}
+          <div className="grid md:grid-cols-3 gap-4">
+            <Card className="p-6">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm text-muted-foreground">Current Session</span>
+                <Clock size={16} className="text-muted-foreground" />
+              </div>
+              <div className="text-3xl font-semibold font-mono tabular-nums">
+                {formatDurationSeconds(timerElapsed)}
+              </div>
+            </Card>
+
+            <Card className="p-6">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm text-muted-foreground">Today</span>
+                <Clock size={16} className="text-muted-foreground" />
+              </div>
+              <div className="text-3xl font-semibold font-mono tabular-nums">
+                {(() => {
+                  const todayStart = startOfDay(new Date()).toISOString();
+                  const todayEnd = endOfDay(new Date()).toISOString();
+                  const todayTotal = timeEntries
+                    .filter(e => e.startAt >= todayStart && e.startAt <= todayEnd && e.endAt)
+                    .reduce((acc, e) => acc + differenceInSeconds(new Date(e.endAt!), new Date(e.startAt)), 0);
+                  return formatDurationSeconds(todayTotal + (runningTimer ? timerElapsed : 0));
+                })()}
+              </div>
+            </Card>
+
+            <Card className="p-6">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm text-muted-foreground">This Week</span>
+                <Clock size={16} className="text-muted-foreground" />
+              </div>
+              <div className="text-3xl font-semibold font-mono tabular-nums">
+                {(() => {
+                  const weekStart = startOfWeek(new Date()).toISOString();
+                  const weekEnd = endOfWeek(new Date()).toISOString();
+                  const weekTotal = timeEntries
+                    .filter(e => e.startAt >= weekStart && e.startAt <= weekEnd && e.endAt)
+                    .reduce((acc, e) => acc + differenceInSeconds(new Date(e.endAt!), new Date(e.startAt)), 0);
+                  return formatDurationSeconds(weekTotal + (runningTimer ? timerElapsed : 0));
+                })()}
+              </div>
+            </Card>
+          </div>
+
+          {/* Timer control */}
+          <Card className="p-6">
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+              <div className="flex-1 w-full">
+                {runningTimer ? (
+                  <div>
+                    <p className="text-sm text-muted-foreground mb-1">Timer running</p>
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                      <p className="font-medium">{runningTimer.note || 'No description'}</p>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-muted-foreground">No timer running</p>
+                )}
+              </div>
+
+              {runningTimer ? (
+                <Button onClick={() => void handleTimerStop()} variant="destructive" className="gap-2 w-full sm:w-auto">
+                  <Stop size={16} weight="fill" />
+                  Stop Timer
+                </Button>
+              ) : (
+                <Dialog open={isTimerDialogOpen} onOpenChange={setIsTimerDialogOpen}>
+                  <DialogTrigger asChild>
+                    <Button className="gap-2 w-full sm:w-auto">
+                      <Play size={16} weight="fill" />
+                      Start Timer
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Start New Timer</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4">
+                      <div>
+                        <Label htmlFor="tracker-todo">Link to Todo (optional)</Label>
+                        <Select
+                          value={timerFormData.todoId}
+                          onValueChange={(val) => setTimerFormData({ ...timerFormData, todoId: val })}
+                        >
+                          <SelectTrigger id="tracker-todo">
+                            <SelectValue placeholder="None" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">None</SelectItem>
+                            {todos.filter(t => t.status !== 'done').map((todo) => (
+                              <SelectItem key={todo.id} value={todo.id}>{todo.title}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div>
+                        <Label htmlFor="tracker-note">Description</Label>
+                        <Textarea
+                          id="tracker-note"
+                          value={timerFormData.note}
+                          onChange={(e) => setTimerFormData({ ...timerFormData, note: e.target.value })}
+                          placeholder="What are you working on?"
+                          rows={3}
+                        />
+                      </div>
+                      <div className="flex justify-end gap-2 pt-4">
+                        <Button variant="outline" onClick={() => setIsTimerDialogOpen(false)}>Cancel</Button>
+                        <Button onClick={() => void handleTimerStart()}>Start Timer</Button>
+                      </div>
+                    </div>
+                  </DialogContent>
+                </Dialog>
+              )}
+            </div>
+          </Card>
+
+          {/* Recent entries */}
+          <div className="space-y-4">
+            <h3 className="text-lg font-semibold">Recent Entries</h3>
+            {timeEntries.length === 0 ? (
+              <Card className="p-12 text-center">
+                <Clock weight="thin" size={64} className="mx-auto mb-4 text-muted-foreground" />
+                <h3 className="text-xl font-semibold mb-2">No Time Entries Yet</h3>
+                <p className="text-muted-foreground mb-4">Start tracking your time to see entries here</p>
+                <Button onClick={() => setIsTimerDialogOpen(true)} className="gap-2">
+                  <Play size={16} weight="fill" />
+                  Start Your First Timer
+                </Button>
+              </Card>
+            ) : (
+              <div className="space-y-2">
+                <AnimatePresence mode="popLayout">
+                  {timeEntries.slice().sort((a, b) => b.startAt.localeCompare(a.startAt)).map((entry) => {
+                    const todo = entry.todoId ? todos.find(t => t.id === entry.todoId) : null;
+                    const duration = getEntryDuration(entry);
+                    const isRunning = !entry.endAt;
+
+                    return (
+                      <motion.div
+                        key={entry.id}
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, x: -100 }}
+                        transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                      >
+                        <Card className={cn(
+                          "p-4 hover:shadow-sm transition-all duration-200 group",
+                          isRunning && "border-green-500 bg-green-50/5"
+                        )}>
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-1">
+                                {isRunning && <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />}
+                                <p className="font-medium">{entry.note || 'No description'}</p>
+                                {isRunning && <Badge variant="outline" className="text-xs">Running</Badge>}
+                              </div>
+                              <div className="flex items-center gap-3 text-sm text-muted-foreground flex-wrap">
+                                <span>{format(new Date(entry.startAt), 'MMM d, h:mm a')}</span>
+                                <span>•</span>
+                                <span className="font-mono font-semibold">
+                                  {isRunning ? formatDurationSeconds(timerElapsed) : formatDurationSeconds(duration)}
+                                </span>
+                                {todo && <><span>•</span><span className="truncate">{todo.title}</span></>}
+                              </div>
+                            </div>
+                            {!isRunning && (
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                onClick={() => void handleTimerDelete(entry.id)}
+                                className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-all text-destructive hover:text-destructive shrink-0"
+                              >
+                                <Trash size={16} />
+                              </Button>
+                            )}
+                          </div>
+                        </Card>
+                      </motion.div>
+                    );
+                  })}
+                </AnimatePresence>
+              </div>
+            )}
+          </div>
+
+          <ConfirmDialog
+            open={timerDeleteConfirmOpen}
+            onOpenChange={(open) => {
+              setTimerDeleteConfirmOpen(open);
+              if (!open) setTimerEntryToDelete(null);
+            }}
+            title="Delete Time Entry?"
+            description="Are you sure you want to delete this time entry? This action cannot be undone."
+            actionType="delete"
+            variant="destructive"
+            confirmText="Delete"
+            cancelText="Cancel"
+            onConfirm={() => void handleTimerDeleteConfirm()}
+          />
+        </TabsContent>
+
+        {/* ── Planned vs Actual ── */}
+        <TabsContent value="planned-vs-actual" className="space-y-4 mt-6">
           <div className="grid gap-4 md:grid-cols-3">
             <Card className="p-6">
               <div className="flex items-center justify-between mb-3">
