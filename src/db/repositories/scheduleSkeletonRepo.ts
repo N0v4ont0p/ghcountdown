@@ -53,5 +53,3 @@ export async function deleteScheduleSkeletonEntry(id: string): Promise<boolean> 
 export async function deleteAllScheduleSkeletonEntries(): Promise<void> {
   await clearStore(STORES.SCHEDULE_SKELETON);
 }
-
-

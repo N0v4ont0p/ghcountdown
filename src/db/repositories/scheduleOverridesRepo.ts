@@ -54,5 +54,3 @@ export async function deleteScheduleOverride(id: string): Promise<boolean> {
 export async function deleteAllScheduleOverrides(): Promise<void> {
   await clearStore(STORES.SCHEDULE_OVERRIDES);
 }
-
-

@@ -53,5 +53,3 @@ export async function deleteLocation(id: string): Promise<boolean> {
 export async function deleteAllLocations(): Promise<void> {
   await clearStore(STORES.LOCATIONS);
 }
-
-

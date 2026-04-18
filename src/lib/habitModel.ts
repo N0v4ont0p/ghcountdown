@@ -395,7 +395,7 @@ export async function detectDrift(): Promise<string[]> {
       const slotKey = `${day}-${timeOfDay(hour)}`;
       if (!flaggedSlots.has(slotKey)) {
         flaggedSlots.add(slotKey);
-        const dayName = DAY_NAMES[day];
+        const dayName = DAY_NAMES[day] ?? 'Unknown';
         signals.push(`Your ${dayName} ${timeOfDay(hour)} have changed — want to update your routine?`);
       }
     }
