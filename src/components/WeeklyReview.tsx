@@ -142,7 +142,7 @@ export function WeeklyReview({ onDismiss }: Props) {
     loadData();
   }, []);
 
-  async function handleKeep(id: string) {
+  function handleKeep(id: string) {
     setDismissedIds(prev => new Set(prev).add(id));
   }
 
