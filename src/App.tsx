@@ -22,7 +22,7 @@ import { WeeklyReview } from '@/components/WeeklyReview';
 import { initDB } from '@/db/core';
 import { seedDatabase } from '@/db/seed';
 import { deleteAllEvents, getNextImportantEvent, getAllEvents } from '@/db/repositories/eventsRepo';
-import { deleteAllTodos, getAllTodos } from '@/db/repositories/todosRepo';
+import { deleteAllTodos, getAllTodos, updateTodo } from '@/db/repositories/todosRepo';
 import { getSettings, updateSettings } from '@/db/repositories/settingsRepo';
 import { deleteAllProjects } from '@/db/repositories/projectsRepo';
 import { deleteAllTimeEntries, getAllTimeEntries } from '@/db/repositories/timeRepo';
@@ -31,6 +31,7 @@ import { getAllGoals, getActiveGoals, createGoal, updateGoal, deleteGoal, delete
 import { Event, Todo, TimeBlock, Settings, Goal } from '@/db/schema';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Sun, Moon, Monitor, DownloadSimple, UploadSimple, Trash, Sparkle, X, MagnifyingGlass, Plus, CalendarBlank, CheckSquare, Warning, Target, ArrowRight } from '@phosphor-icons/react';
 import { format } from 'date-fns';
 import { useTheme } from '@/hooks/use-theme';
@@ -502,7 +503,10 @@ function App() {
                   <p className="text-muted-foreground">Your next important event is counting down</p>
                 </div>
 
-                {/* 1. Morning briefing */}
+                {/* 1. Countdown hero — first thing visible */}
+                <CountdownHero event={nextEvent} />
+
+                {/* 2. Morning briefing */}
                 {morningBriefing && (
                   <motion.div
                     initial={{ opacity: 0, y: -10 }}
@@ -537,10 +541,7 @@ function App() {
                   />
                 </div>
 
-                {/* 5. Countdown hero */}
-                <CountdownHero event={nextEvent} />
-
-                {/* 6. Deadline pressure strip */}
+                {/* 5. Deadline pressure strip */}
                 <DeadlinePressureStrip events={upcomingEvents} />
 
                 {/* 6. Smart suggestions + AI nudges */}
@@ -589,17 +590,33 @@ function App() {
                     )}
                   </Card>
                   <Card className="p-4">
-                    <h3 className="font-semibold mb-3 flex items-center gap-2 text-sm">
-                      <CheckSquare size={16} />
-                      Today's Tasks
-                    </h3>
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="font-semibold flex items-center gap-2 text-sm">
+                        <CheckSquare size={16} />
+                        Today's Tasks
+                      </h3>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-6 px-2 text-xs gap-1"
+                        onClick={() => setIsQuickCaptureOpen(true)}
+                      >
+                        <Plus size={12} /> Add
+                      </Button>
+                    </div>
                     {todos.filter(t => t.status === 'today').length === 0 ? (
                       <p className="text-sm text-muted-foreground text-center py-4">No tasks for today</p>
                     ) : (
                       <div className="space-y-2">
                         {todos.filter(t => t.status === 'today').slice(0, 5).map(todo => (
                           <div key={todo.id} className="flex items-center gap-2 text-sm">
-                            <div className="w-3.5 h-3.5 rounded-full border-2 border-muted-foreground flex-shrink-0" />
+                            <Checkbox
+                              className="flex-shrink-0"
+                              onCheckedChange={async () => {
+                                await updateTodo(todo.id, { status: 'done' });
+                                await loadHomeData();
+                              }}
+                            />
                             <span className="flex-1 truncate">{todo.title}</span>
                             <span className="text-xs text-muted-foreground shrink-0">P{todo.priority}</span>
                           </div>
