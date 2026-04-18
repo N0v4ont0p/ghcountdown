@@ -351,6 +351,16 @@ export function StatisticsView() {
     return `${hours}h ${mins}m`;
   }
 
+  if (!isLoading && stats && stats.totalFocusedTime === 0 && weeklyData.every(d => d.focusTime === 0)) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full gap-3">
+        <ChartBar weight="thin" size={48} className="text-muted-foreground" />
+        <h3 className="text-lg font-semibold">No data yet</h3>
+        <p className="text-sm text-muted-foreground">Start tracking time to see insights</p>
+      </div>
+    );
+  }
+
   if (isLoading || !stats) {
     return (
       <div className="flex items-center justify-center h-full">

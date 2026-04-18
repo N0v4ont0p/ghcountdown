@@ -316,7 +316,7 @@ export function TimelineView() {
           autoTrack: formData.autoTrack,
           slotType: formData.slotType,
         });
-        toast.success('Time block updated!');
+        toast.success('Time block updated');
       } else {
         await createTimeBlock({
           title: formData.title,
@@ -329,7 +329,7 @@ export function TimelineView() {
           autoTrack: formData.autoTrack,
           slotType: formData.slotType,
         });
-        toast.success('Time block created!');
+        toast.success('Time block created');
       }
       
       setIsDialogOpen(false);
@@ -362,7 +362,7 @@ export function TimelineView() {
     if (!block.todoId) return;
     try {
       await updateTodo(block.todoId, { status: 'done' });
-      toast.success('Todo marked as done!');
+      toast.success('Todo marked as done');
       loadData();
     } catch {
       toast.error('Failed to complete todo');
@@ -863,53 +863,46 @@ export function TimelineView() {
           </div>
         </Card>
 
-        <div className="space-y-4 overflow-y-auto">
-          <Card className="p-4">
-            <h3 className="font-semibold mb-3 flex items-center gap-2">
-              <Clock size={18} />
-              Quick Stats
-            </h3>
-            <div className="space-y-2">
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Time blocks:</span>
-                <span className="font-semibold">{timeBlocks.length}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Auto-tracking:</span>
-                <span className="font-semibold">{timeBlocks.filter(b => b.autoTrack).length}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Events today:</span>
-                <span className="font-semibold">{todayEvents.length}</span>
-              </div>
+        <div className="space-y-3 overflow-y-auto">
+          {/* 1. Today's progress bar */}
+          <Card className="p-3">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-xs font-medium">Today's Progress</span>
+              <span className="text-xs text-muted-foreground">
+                {todayTodos.length - unscheduledTodayTodos.length}/{todayTodos.length} scheduled
+              </span>
+            </div>
+            <div className="w-full bg-muted rounded-full h-1.5">
+              <div
+                className="bg-primary rounded-full h-1.5 transition-all"
+                style={{
+                  width: todayTodos.length > 0
+                    ? `${((todayTodos.length - unscheduledTodayTodos.length) / todayTodos.length) * 100}%`
+                    : '0%',
+                }}
+              />
             </div>
           </Card>
 
-          {runningTimer && (
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-            >
-              <Card className="p-4 border-primary bg-primary/5">
-                <div className="flex items-center gap-2 mb-2">
-                  <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
-                  <h3 className="font-semibold text-sm">Timer Running</h3>
-                </div>
-                <p className="text-xs text-muted-foreground">{runningTimer.note}</p>
-              </Card>
-            </motion.div>
+          {/* 2. Current location badge */}
+          {currentLocationLabel && (
+            <div className="px-1">
+              <Badge variant="secondary" className="h-7 px-3 text-xs w-full justify-center">
+                📍 {currentLocationLabel}
+              </Badge>
+            </div>
           )}
 
-          <Card className="p-4">
-            <h3 className="font-semibold mb-1">Today's Todos</h3>
+          {/* 3. Drag to schedule chips */}
+          <Card className="p-3">
             {todayTodos.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-4">No todos for today</p>
+              <p className="text-sm text-muted-foreground text-center py-3">No todos for today</p>
             ) : unscheduledTodayTodos.length === 0 ? (
               <p className="text-sm text-green-500 text-center py-3 font-medium">All tasks scheduled ✓</p>
             ) : (
               <>
-                <p className="text-xs text-muted-foreground mb-3">Drag to schedule →</p>
-                <div className="space-y-2">
+                <p className="text-xs text-muted-foreground mb-2">Drag to schedule →</p>
+                <div className="space-y-1.5">
                   {unscheduledTodayTodos.map((todo, index) => (
                     <motion.div
                       key={todo.id}
@@ -946,6 +939,40 @@ export function TimelineView() {
               </>
             )}
           </Card>
+
+          {/* 4. Quick stats */}
+          <Card className="p-3">
+            <h3 className="font-semibold mb-2 flex items-center gap-2 text-sm">
+              <Clock size={16} />
+              Quick Stats
+            </h3>
+            <div className="space-y-1.5">
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Time blocks:</span>
+                <span className="font-semibold">{timeBlocks.length}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Auto-tracking:</span>
+                <span className="font-semibold">{timeBlocks.filter(b => b.autoTrack).length}</span>
+              </div>
+            </div>
+          </Card>
+
+          {/* 5. Running timer */}
+          {runningTimer && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+            >
+              <Card className="p-3 border-primary bg-primary/5">
+                <div className="flex items-center gap-2 mb-1">
+                  <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+                  <h3 className="font-semibold text-sm">Timer Running</h3>
+                </div>
+                <p className="text-xs text-muted-foreground">{runningTimer.note}</p>
+              </Card>
+            </motion.div>
+          )}
         </div>
       </div>
 

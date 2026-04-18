@@ -175,7 +175,7 @@ export function WeeklyCalendarView() {
       endTime,
     });
 
-    toast.success('Time block moved!');
+    toast.success('Time block moved');
     loadData();
     setDraggedBlock(null);
   }
@@ -206,7 +206,7 @@ export function WeeklyCalendarView() {
           color: formData.color,
           autoTrack: formData.autoTrack,
         });
-        toast.success('Time block updated!');
+        toast.success('Time block updated');
       } else {
         await createTimeBlock({
           title: formData.title,
@@ -219,7 +219,7 @@ export function WeeklyCalendarView() {
           autoTrack: formData.autoTrack,
           slotType: 'fixed',
         });
-        toast.success('Time block created!');
+        toast.success('Time block created');
       }
       
       setIsDialogOpen(false);
@@ -235,7 +235,7 @@ export function WeeklyCalendarView() {
 
     try {
       await deleteTimeBlock(deleteBlockId);
-      toast.success('Time block deleted!');
+      toast.success('Time block deleted');
       setDeleteConfirmOpen(false);
       setDeleteBlockId(null);
       resetForm();
@@ -274,7 +274,7 @@ export function WeeklyCalendarView() {
     }
     
     await Promise.all(blocksToCreate);
-    toast.success(`Applied "${preset.name}" to ${blocksToCreate.length} days`);
+    toast.success(`Applied "${preset.name}" to ${blocksToCreate.length} day${blocksToCreate.length !== 1 ? 's' : ''}`);
     setIsPresetDialogOpen(false);
     loadData();
   }

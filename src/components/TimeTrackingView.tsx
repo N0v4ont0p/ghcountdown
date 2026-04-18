@@ -79,7 +79,7 @@ export function TimeTrackingView() {
         note: formData.note,
       });
       
-      toast.success('Timer started!');
+      toast.success('Timer started');
       setIsDialogOpen(false);
       setFormData({ todoId: 'none', note: '' });
       loadData();
@@ -96,7 +96,7 @@ export function TimeTrackingView() {
         endAt: new Date().toISOString(),
       });
       
-      toast.success(`Timer stopped! Duration: ${formatDuration(elapsedTime)}`);
+      toast.success(`Timer stopped — ${formatDuration(elapsedTime)}`);
       loadData();
     } catch (error) {
       toast.error('Failed to stop timer');

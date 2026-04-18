@@ -15,18 +15,20 @@ import { StatisticsView } from '@/components/StatisticsView';
 import { TimeTrackingView } from '@/components/TimeTrackingView';
 import { AIAssistantView } from '@/components/AIAssistantView';
 import { ScheduleSkeletonView } from '@/components/ScheduleSkeletonView';
+import { QuickCapture } from '@/components/QuickCapture';
+import { UniversalSearch } from '@/components/UniversalSearch';
 import { initDB } from '@/db/core';
 import { seedDatabase } from '@/db/seed';
 import { deleteAllEvents, getNextImportantEvent, getAllEvents } from '@/db/repositories/eventsRepo';
 import { deleteAllTodos, getAllTodos } from '@/db/repositories/todosRepo';
 import { getSettings, updateSettings } from '@/db/repositories/settingsRepo';
 import { deleteAllProjects } from '@/db/repositories/projectsRepo';
-import { deleteAllTimeEntries } from '@/db/repositories/timeRepo';
-import { deleteAllTimeBlocks, getTimeBlocksByDate } from '@/db/repositories/timeBlocksRepo';
+import { deleteAllTimeEntries, getAllTimeEntries } from '@/db/repositories/timeRepo';
+import { deleteAllTimeBlocks, getTimeBlocksByDate, getAllTimeBlocks } from '@/db/repositories/timeBlocksRepo';
 import { Event, Todo, TimeBlock, Settings } from '@/db/schema';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Sun, Moon, Monitor, DownloadSimple, UploadSimple, Trash, Sparkle } from '@phosphor-icons/react';
+import { Sun, Moon, Monitor, DownloadSimple, UploadSimple, Trash, Sparkle, X, MagnifyingGlass, Plus, CalendarBlank, CheckSquare, Warning } from '@phosphor-icons/react';
 import { format } from 'date-fns';
 import { useTheme } from '@/hooks/use-theme';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -35,7 +37,7 @@ import { exportAllData, downloadJSON, exportTimeEntriesCSV, exportEventsCSV, exp
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { toast } from 'sonner';
-import { getAIConfiguration, updateAIConfiguration } from '@/lib/aiPlanner';
+import { getAIConfiguration, updateAIConfiguration, generateActionPlan } from '@/lib/aiPlanner';
 import { performDailyRollover } from '@/lib/rollover';
 import { escalateOverdueTodos } from '@/lib/overdueCheck';
 import { detectDrift } from '@/lib/habitModel';
@@ -44,15 +46,22 @@ function App() {
   const [currentView, setCurrentView] = useState('home');
   const [nextEvent, setNextEvent] = useState<Event | null>(null);
   const [upcomingEvents, setUpcomingEvents] = useState<Event[]>([]);
-  const [, setTodos] = useState<Todo[]>([]);
+  const [todos, setTodos] = useState<Todo[]>([]);
   const [todayBlocks, setTodayBlocks] = useState<TimeBlock[]>([]);
   const [nowTick, setNowTick] = useState(new Date());
   const [settings, setSettings] = useState<Settings | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isAIPopupOpen, setIsAIPopupOpen] = useState(false);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [isQuickCaptureOpen, setIsQuickCaptureOpen] = useState(false);
+  const [morningBriefing, setMorningBriefing] = useState<string | null>(null);
+  const [aiNudges, setAiNudges] = useState<string[]>([]);
+  const [dataVersion, setDataVersion] = useState(0);
   const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false);
   const [bulkDeleteTarget, setBulkDeleteTarget] = useState<'events' | 'todos' | 'projects' | 'timeEntries' | 'timeBlocks' | 'all' | null>(null);
   const { theme, setTheme, resolvedTheme } = useTheme();
+
+  function invalidateCache() { setDataVersion(v => v + 1); }
 
   useEffect(() => {
     async function initialize() {
@@ -95,6 +104,15 @@ function App() {
         }
 
         await detectDrift();
+
+        // Morning briefing — only between 5am and 11am, once per day
+        const hour = new Date().getHours();
+        const today = new Date().toISOString().split('T')[0];
+        const lastBriefing = localStorage.getItem('lastBriefingDate');
+        if (lastBriefing !== today && hour >= 5 && hour <= 11) {
+          localStorage.setItem('lastBriefingDate', today);
+          generateMorningBriefing();
+        }
       } catch (error) {
         console.error('Failed to initialize:', error);
       } finally {
@@ -111,12 +129,20 @@ function App() {
     return () => clearInterval(id);
   }, []);
 
-  // Global Cmd/Ctrl+K shortcut to open AI popup
+  // Global keyboard shortcuts
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         e.preventDefault();
         setIsAIPopupOpen(true);
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key === 'f') {
+        e.preventDefault();
+        setIsSearchOpen(true);
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key === 'n') {
+        e.preventDefault();
+        setIsQuickCaptureOpen(true);
       }
     };
     window.addEventListener('keydown', handler);
@@ -127,7 +153,7 @@ function App() {
     if (currentView === 'home') {
       loadHomeData();
     }
-  }, [currentView]);
+  }, [currentView, dataVersion]);
 
   async function loadHomeData() {
     const appSettings = await getSettings();
@@ -141,17 +167,89 @@ function App() {
     setUpcomingEvents(upcoming);
     
     const allTodos = await getAllTodos();
-    setTodos(allTodos.filter(t => t.status !== 'done'));
+    const activeTodos = allTodos.filter(t => t.status !== 'done');
+    setTodos(activeTodos);
 
     const blocks = await getTimeBlocksByDate(format(new Date(), 'yyyy-MM-dd'));
     setTodayBlocks(blocks.sort((a, b) => a.startTime.localeCompare(b.startTime)));
+
+    void generateNudges(upcoming, activeTodos);
+  }
+
+  async function generateMorningBriefing() {
+    try {
+      const config = getAIConfiguration();
+      if (!config.apiKey) return;
+      const allTodos = await getAllTodos();
+      const allEvents = await getAllEvents();
+      const todayTodos = allTodos.filter(t => t.status === 'today');
+      const urgentEvents = allEvents
+        .filter(e => {
+          const h = (new Date(e.startsAt).getTime() - Date.now()) / 3600000;
+          return h > 0 && h <= 48;
+        })
+        .slice(0, 3);
+      const briefingPrompt = [
+        'Generate a short morning briefing (2-3 sentences max).',
+        `Today\'s tasks: ${todayTodos.map(t => `${t.title}(P${t.priority})`).join(', ') || 'none'}`,
+        `Upcoming deadlines: ${urgentEvents.map(e => `${e.title} in ${Math.round((new Date(e.startsAt).getTime() - Date.now()) / 3600000)}h`).join(', ') || 'none'}`,
+        'Be specific, concise, and encouraging. Do not invent tasks.',
+        'Return only the summary string in the JSON summary field. Leave suggestions array empty.',
+      ].join(' ');
+      const plan = await generateActionPlan(briefingPrompt, {
+        todoTitles: todayTodos.map(t => t.title),
+        upcomingEventTitles: urgentEvents.map(e => e.title),
+        recentBlockTitles: [],
+        unscheduledTodayTodos: [],
+        overdueTodos: [],
+        currentStreak: 0,
+        todayFocusMinutes: 0,
+        nextEventDateTime: urgentEvents[0]?.startsAt ?? null,
+        weeklySkeletonSummary: '',
+        currentLocation: '',
+        peakFocusHoursToday: [],
+        typicalActivitiesNow: [],
+      }, { mode: 'plan' });
+      if (plan.summary) setMorningBriefing(plan.summary);
+    } catch {
+      // Silent fail — briefing is optional
+    }
+  }
+
+  async function generateNudges(freshUpcoming: Event[], freshTodos: Todo[]) {
+    const nudges: string[] = [];
+    const now = Date.now();
+
+    for (const evt of freshUpcoming.filter(e => e.priority === 5)) {
+      const hoursUntil = (new Date(evt.startsAt).getTime() - now) / 3600000;
+      if (hoursUntil <= 72 && hoursUntil > 0) {
+        const allBlocks = await getAllTimeBlocks();
+        const firstWord = evt.title.toLowerCase().split(' ')[0];
+        const hasPrep = allBlocks.some(b => b.title.toLowerCase().includes(firstWord));
+        if (!hasPrep) nudges.push(`"${evt.title}" is in ${Math.round(hoursUntil)}h — no prep blocks scheduled`);
+      }
+    }
+
+    const highInbox = freshTodos.filter(t => t.status === 'inbox' && t.priority >= 4);
+    if (highInbox.length >= 3) {
+      nudges.push(`${highInbox.length} high-priority tasks still in inbox`);
+    }
+
+    if (new Date().getHours() >= 14) {
+      const todayStr = new Date().toISOString().split('T')[0];
+      const entries = await getAllTimeEntries();
+      const tracked = entries.filter(e => e.startAt.startsWith(todayStr) && e.endAt);
+      if (tracked.length === 0) nudges.push('No focus sessions tracked today');
+    }
+
+    setAiNudges(nudges);
   }
 
   async function handleExportJSON() {
     try {
       const data = await exportAllData();
       downloadJSON(data, `ghcountdown-backup-${new Date().toISOString().split('T')[0]}.json`);
-      toast.success('Data exported successfully!');
+      toast.success('Data exported');
     } catch (error) {
       console.error('Export failed:', error);
       toast.error('Failed to export data');
@@ -161,7 +259,7 @@ function App() {
   async function handleExportTimeCSV() {
     try {
       await exportTimeEntriesCSV();
-      toast.success('Time entries exported!');
+      toast.success('Time entries exported');
     } catch (error) {
       console.error('Export failed:', error);
       toast.error('Failed to export time entries');
@@ -171,7 +269,7 @@ function App() {
   async function handleExportEventsCSV() {
     try {
       await exportEventsCSV();
-      toast.success('Events exported!');
+      toast.success('Events exported');
     } catch (error) {
       console.error('Export failed:', error);
       toast.error('Failed to export events');
@@ -181,7 +279,7 @@ function App() {
   async function handleExportTodosCSV() {
     try {
       await exportTodosCSV();
-      toast.success('Todos exported!');
+      toast.success('Todos exported');
     } catch (error) {
       console.error('Export failed:', error);
       toast.error('Failed to export todos');
@@ -201,11 +299,11 @@ function App() {
         const text = await file.text();
         const data: ExportData = JSON.parse(text);
         await importAllData(data);
-        toast.success('Data imported successfully! Refreshing...');
+        toast.success('Data imported — refreshing...');
         setTimeout(() => window.location.reload(), 1500);
       } catch (error) {
         console.error('Import failed:', error);
-        toast.error('Failed to import data. Please check the file format.');
+        toast.error('Import failed — check the file format');
       }
     };
 
@@ -329,19 +427,109 @@ function App() {
                   <p className="text-muted-foreground">Your next important event is counting down</p>
                 </div>
 
-                <CountdownHero event={nextEvent} />
+                {/* 1. Morning briefing */}
+                {morningBriefing && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="glass-card rounded-2xl p-4 border-l-4 border-l-primary flex items-start justify-between gap-3"
+                  >
+                    <div className="flex items-start gap-2">
+                      <Sparkle size={16} weight="fill" className="text-primary mt-0.5 flex-shrink-0" />
+                      <p className="text-sm leading-relaxed">{morningBriefing}</p>
+                    </div>
+                    <button
+                      onClick={() => setMorningBriefing(null)}
+                      className="text-muted-foreground hover:text-foreground flex-shrink-0"
+                    >
+                      <X size={14} />
+                    </button>
+                  </motion.div>
+                )}
 
-                <RightNowCard
-                  blocks={todayBlocks}
-                  now={nowTick}
-                  onNavigateTimeline={() => setCurrentView('timeline')}
-                />
-
-                <DeadlinePressureStrip events={upcomingEvents} />
-
+                {/* 2. Momentum strip */}
                 <MomentumStrip />
 
-                <SmartSuggestions onNavigate={setCurrentView} />
+                {/* 3. Right Now card — visually prominent */}
+                <div className="rounded-2xl overflow-hidden shadow-lg" style={{ borderLeft: '4px solid var(--primary)' }}>
+                  <RightNowCard
+                    blocks={todayBlocks}
+                    now={nowTick}
+                    onNavigateTimeline={() => setCurrentView('timeline')}
+                  />
+                </div>
+
+                {/* 4. Countdown hero */}
+                <CountdownHero event={nextEvent} />
+
+                {/* 5. Deadline pressure strip */}
+                <DeadlinePressureStrip events={upcomingEvents} />
+
+                {/* 6. Smart suggestions + AI nudges */}
+                <div className="space-y-3">
+                  <SmartSuggestions onNavigate={setCurrentView} />
+                  {aiNudges.length > 0 && (
+                    <Card className="p-4 border-yellow-500/30 bg-yellow-500/5">
+                      <div className="space-y-2">
+                        {aiNudges.map((nudge, i) => (
+                          <div key={i} className="flex items-center gap-2 text-sm">
+                            <Warning size={14} className="text-yellow-500 shrink-0" />
+                            <span>{nudge}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </Card>
+                  )}
+                </div>
+
+                {/* 7. Two-column: upcoming events | today's tasks */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <Card className="p-4">
+                    <h3 className="font-semibold mb-3 flex items-center gap-2 text-sm">
+                      <CalendarBlank size={16} />
+                      Upcoming Events
+                    </h3>
+                    {upcomingEvents.length === 0 ? (
+                      <p className="text-sm text-muted-foreground text-center py-4">No upcoming events</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {upcomingEvents.slice(0, 5).map(evt => (
+                          <div key={evt.id} className="flex items-center gap-2 text-sm">
+                            <div
+                              className="w-1 h-8 rounded-full flex-shrink-0"
+                              style={{ backgroundColor: `var(--priority-${evt.priority}, oklch(0.65 0.18 40))` }}
+                            />
+                            <div className="flex-1 min-w-0">
+                              <p className="font-medium truncate">{evt.title}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {format(new Date(evt.startsAt), 'MMM d, h:mm a')}
+                              </p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </Card>
+                  <Card className="p-4">
+                    <h3 className="font-semibold mb-3 flex items-center gap-2 text-sm">
+                      <CheckSquare size={16} />
+                      Today's Tasks
+                    </h3>
+                    {todos.filter(t => t.status === 'today').length === 0 ? (
+                      <p className="text-sm text-muted-foreground text-center py-4">No tasks for today</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {todos.filter(t => t.status === 'today').slice(0, 5).map(todo => (
+                          <div key={todo.id} className="flex items-center gap-2 text-sm">
+                            <div className="w-3.5 h-3.5 rounded-full border-2 border-muted-foreground flex-shrink-0" />
+                            <span className="flex-1 truncate">{todo.title}</span>
+                            <span className="text-xs text-muted-foreground shrink-0">P{todo.priority}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </Card>
+                </div>
               </motion.div>
             )}
 
@@ -680,17 +868,33 @@ function App() {
         </main>
       </div>
 
-      <Button
-        type="button"
-        onClick={() => setIsAIPopupOpen(true)}
-        className="fixed bottom-6 right-6 z-40 rounded-full shadow-lg px-4"
-      >
-        <Sparkle size={16} className="mr-2" />
-        AI Assistant
-        <kbd className="ml-2 text-[10px] opacity-70 font-mono bg-white/20 rounded px-1 py-0.5">
-          {typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(navigator.platform) ? '⌘K' : 'Ctrl+K'}
-        </kbd>
-      </Button>
+      <div className="fixed bottom-6 right-6 z-40 flex flex-col gap-2 items-end">
+        <div className="flex gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setIsSearchOpen(true)}
+            className="text-xs gap-1.5 rounded-full shadow"
+          >
+            <MagnifyingGlass size={13} /> ⌘F
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setIsQuickCaptureOpen(true)}
+            className="text-xs gap-1.5 rounded-full shadow"
+          >
+            <Plus size={13} /> ⌘N
+          </Button>
+        </div>
+        <Button
+          onClick={() => setIsAIPopupOpen(true)}
+          className="rounded-full shadow-lg px-4 gap-2"
+        >
+          <Sparkle size={16} />
+          AI <span className="text-xs opacity-70">⌘K</span>
+        </Button>
+      </div>
 
       <Dialog open={isAIPopupOpen} onOpenChange={setIsAIPopupOpen}>
         <DialogContent className="sm:max-w-2xl max-h-[88vh] overflow-y-auto">
@@ -715,6 +919,14 @@ function App() {
         cancelText="Cancel"
         onConfirm={handleBulkDeleteConfirm}
       />
+
+      <QuickCapture open={isQuickCaptureOpen} onClose={() => setIsQuickCaptureOpen(false)} />
+      <UniversalSearch
+        open={isSearchOpen}
+        onClose={() => setIsSearchOpen(false)}
+        onNavigate={setCurrentView}
+      />
+
       <Toaster />
     </div>
   );

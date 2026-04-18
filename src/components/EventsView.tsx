@@ -150,7 +150,7 @@ export function EventsView() {
           tags,
           notes: formData.notes,
         });
-        toast.success('Event updated!');
+        toast.success('Event updated');
       } else {
         await createEvent({
           title: formData.title,
@@ -160,7 +160,7 @@ export function EventsView() {
           tags,
           notes: formData.notes,
         });
-        toast.success('Event created!');
+        toast.success('Event created');
       }
       
       setIsDialogOpen(false);
@@ -354,12 +354,12 @@ export function EventsView() {
 
       {filteredEvents.length === 0 ? (
         <Card className="p-12 text-center">
-          <CalendarBlank weight="thin" size={64} className="mx-auto mb-4 text-muted-foreground" />
-          <h3 className="text-xl font-semibold mb-2">No Events Yet</h3>
-          <p className="text-muted-foreground mb-4">
+          <CalendarBlank weight="thin" size={48} className="mx-auto mb-4 text-muted-foreground" />
+          <h3 className="text-lg font-semibold mb-2">No events yet</h3>
+          <p className="text-sm text-muted-foreground mb-4">
             {searchQuery || filterPriority !== 'all'
               ? 'No events match your filters'
-              : 'Create your first event to get started'}
+              : 'Add your first event to get started'}
           </p>
           {!searchQuery && filterPriority === 'all' && (
             <Button onClick={() => setIsDialogOpen(true)} className="gap-2">
