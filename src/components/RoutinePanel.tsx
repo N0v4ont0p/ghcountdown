@@ -155,7 +155,7 @@ export function RoutinePanel({ onClose: _onClose }: RoutinePanelProps) {
     setIsGenerating(true);
     try {
       const result = await generateActionPlan(
-        'Create weekly routine skeleton entries. User description: ' + aiPrompt,
+        'Create a weekly routine schedule. For each recurring activity produce a time block with the activity as the title, startTime and endTime in HH:mm 24-hour format. In the notes field write the days this activity happens as a comma separated list, for example: monday,wednesday,friday or weekdays or daily. User description: ' + aiPrompt,
         {
           todoTitles: [],
           upcomingEventTitles: [],
@@ -172,11 +172,15 @@ export function RoutinePanel({ onClose: _onClose }: RoutinePanelProps) {
         },
       );
 
+      const timeBlocks = result.suggestions.filter(s => s.type === 'timeBlock');
+
+      if (timeBlocks.length === 0) {
+        throw new Error('empty response — no time blocks returned');
+      }
+
       let created = 0;
-      for (const suggestion of result.suggestions) {
-        if (suggestion.type !== 'timeBlock') continue;
-        const combined = `${suggestion.title} ${suggestion.notes ?? ''}`;
-        const days = detectDays(combined);
+      for (const suggestion of timeBlocks) {
+        const days = detectDays(suggestion.notes ?? suggestion.title);
         const start = suggestion.startTime ?? '09:00';
         const end = suggestion.endTime ?? '10:00';
         await createScheduleSkeletonEntry({
@@ -198,7 +202,14 @@ export function RoutinePanel({ onClose: _onClose }: RoutinePanelProps) {
       await loadEntries();
       toast.success('Routine built');
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'AI generation failed');
+      const msg = err instanceof Error ? err.message : '';
+      if (msg.toLowerCase().includes('empty')) {
+        toast.error(
+          'Try being more specific — e.g. "school 8am-3pm weekdays, rowing Mon Wed Fri 6-8pm, homework 4-6pm weekdays"'
+        );
+      } else {
+        toast.error(msg || 'AI generation failed');
+      }
     } finally {
       setIsGenerating(false);
     }
