@@ -22,6 +22,7 @@ import {
   Trophy,
   ArrowUp,
   ArrowDown,
+  Minus,
   Circle,
   Play,
   Stop,
@@ -34,6 +35,7 @@ import { TimeEntry, Todo, Event } from '@/db/schema';
 import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, eachDayOfInterval, differenceInMinutes, differenceInSeconds, isToday, parseISO, startOfDay, endOfDay } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
+import { computeWeeklySnapshots, computeTrajectory, TrajectoryResult } from '@/lib/weeklyTrajectory';
 
 interface StatsSummary {
   totalFocusedTime: number;
@@ -76,6 +78,7 @@ export function StatisticsView() {
   const [weeklyData, setWeeklyData] = useState<DayStats[]>([]);
   const [hourlyData, setHourlyData] = useState<HourlyStats[]>([]);
   const [insights, setInsights] = useState<ProductivityInsight[]>([]);
+  const [trajectory, setTrajectory] = useState<TrajectoryResult | null>(null);
   const [selectedPeriod, setSelectedPeriod] = useState<'week' | 'month'>('week');
   const [selectedTab, setSelectedTab] = useState<'overview' | 'tracker' | 'planned-vs-actual'>('overview');
   const [isLoading, setIsLoading] = useState(true);
@@ -137,6 +140,9 @@ export function StatisticsView() {
       
       const generatedInsights = generateInsights(summary, entries, allTodos);
       setInsights(generatedInsights);
+
+      const snapshots = computeWeeklySnapshots(entries, allTodos);
+      setTrajectory(computeTrajectory(snapshots));
     } catch (error) {
       console.error('Failed to load statistics:', error);
     } finally {
@@ -621,6 +627,87 @@ export function StatisticsView() {
 
         {/* ── Overview ── */}
         <TabsContent value="overview" className="space-y-6 mt-6">
+          {/* Trajectory section */}
+          {trajectory && (
+            trajectory.hasEnoughData ? (
+              <Card className="p-6">
+                <div className="mb-4">
+                  <h3 className="text-lg font-semibold flex items-center gap-2">
+                    <TrendUp size={20} className="text-primary" weight="duotone" />
+                    Trajectory
+                  </h3>
+                  <p className="text-sm text-muted-foreground mt-0.5">
+                    How you're trending — recent 3 weeks vs prior 3 weeks
+                  </p>
+                </div>
+                <div className="grid grid-cols-3 gap-3">
+                  {/* Focus trend */}
+                  <div className="rounded-xl bg-muted/40 p-4 text-center">
+                    {trajectory.focusTrend.direction === 'up' ? (
+                      <ArrowUp size={28} className="text-green-500 mx-auto mb-1" weight="bold" />
+                    ) : trajectory.focusTrend.direction === 'down' ? (
+                      <ArrowDown size={28} className="text-red-500 mx-auto mb-1" weight="bold" />
+                    ) : (
+                      <Minus size={28} className="text-muted-foreground mx-auto mb-1" weight="bold" />
+                    )}
+                    <p className="text-sm font-medium">Focus Time</p>
+                    <p className={cn(
+                      "text-xs mt-1",
+                      trajectory.focusTrend.direction === 'up' && "text-green-600 dark:text-green-400",
+                      trajectory.focusTrend.direction === 'down' && "text-red-600 dark:text-red-400",
+                      trajectory.focusTrend.direction === 'flat' && "text-muted-foreground",
+                    )}>
+                      {trajectory.focusTrend.direction === 'flat'
+                        ? 'Holding steady'
+                        : `${trajectory.focusTrend.direction === 'up' ? '+' : '-'}${trajectory.focusTrend.percentChange}% vs 3 wks ago`}
+                    </p>
+                  </div>
+                  {/* Tasks trend */}
+                  <div className="rounded-xl bg-muted/40 p-4 text-center">
+                    {trajectory.tasksTrend.direction === 'up' ? (
+                      <ArrowUp size={28} className="text-green-500 mx-auto mb-1" weight="bold" />
+                    ) : trajectory.tasksTrend.direction === 'down' ? (
+                      <ArrowDown size={28} className="text-red-500 mx-auto mb-1" weight="bold" />
+                    ) : (
+                      <Minus size={28} className="text-muted-foreground mx-auto mb-1" weight="bold" />
+                    )}
+                    <p className="text-sm font-medium">Tasks</p>
+                    <p className={cn(
+                      "text-xs mt-1",
+                      trajectory.tasksTrend.direction === 'up' && "text-green-600 dark:text-green-400",
+                      trajectory.tasksTrend.direction === 'down' && "text-red-600 dark:text-red-400",
+                      trajectory.tasksTrend.direction === 'flat' && "text-muted-foreground",
+                    )}>
+                      {trajectory.tasksTrend.direction === 'flat'
+                        ? 'Holding steady'
+                        : `${trajectory.tasksTrend.direction === 'up' ? '+' : '-'}${trajectory.tasksTrend.percentChange}% vs 3 wks ago`}
+                    </p>
+                  </div>
+                  {/* Personal best */}
+                  <div className="rounded-xl bg-muted/40 p-4 text-center">
+                    <Trophy size={28} className="text-yellow-500 mx-auto mb-1" weight="duotone" />
+                    <p className="text-sm font-medium">Best Week</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {trajectory.personalBestWeek
+                        ? formatDuration(trajectory.personalBestWeek.totalFocusMinutes)
+                        : '—'}
+                    </p>
+                    {trajectory.personalBestWeek && (
+                      <p className="text-xs text-muted-foreground">
+                        w/o {format(parseISO(trajectory.personalBestWeek.weekStart), 'MMM d')}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </Card>
+            ) : (
+              <Card className="p-5 flex items-center gap-3 text-muted-foreground">
+                <TrendUp size={24} className="opacity-40 shrink-0" />
+                <p className="text-sm">Track for 4 weeks to see your trajectory.</p>
+              </Card>
+            )
+          )}
+
           <div className="flex gap-2">
             <Button size="sm" variant={selectedPeriod === 'week' ? 'default' : 'outline'} onClick={() => setSelectedPeriod('week')}>This Week</Button>
             <Button size="sm" variant={selectedPeriod === 'month' ? 'default' : 'outline'} onClick={() => setSelectedPeriod('month')}>This Month</Button>
