@@ -986,6 +986,27 @@ export function TimelineView() {
                         P{todo.priority}
                       </Badge>
                       <span className="text-sm truncate flex-1">{todo.title}</span>
+                      {todo.cognitiveLoad && (
+                        <span
+                          className="w-2 h-2 rounded-full shrink-0"
+                          style={{
+                            backgroundColor:
+                              todo.cognitiveLoad === 'high'
+                                ? 'oklch(0.58 0.20 20)'
+                                : todo.cognitiveLoad === 'medium'
+                                ? 'oklch(0.75 0.18 75)'
+                                : 'oklch(0.65 0.17 145)',
+                          }}
+                          aria-label={`Cognitive load: ${todo.cognitiveLoad}`}
+                          title={
+                            todo.cognitiveLoad === 'high'
+                              ? 'Deep work'
+                              : todo.cognitiveLoad === 'medium'
+                              ? 'Medium effort'
+                              : 'Easy'
+                          }
+                        />
+                      )}
                     </motion.div>
                   ))}
                 </div>

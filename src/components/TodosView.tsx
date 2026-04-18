@@ -37,6 +37,7 @@ export function TodosView() {
     dueAt: '',
     priority: 3 as 1 | 2 | 3 | 4 | 5,
     projectId: 'none',
+    cognitiveLoad: null as 'high' | 'medium' | 'low' | null,
   });
 
   const [projectFormData, setProjectFormData] = useState({
@@ -64,6 +65,7 @@ export function TodosView() {
       dueAt: '',
       priority: 3,
       projectId: selectedProjectId || 'none',
+      cognitiveLoad: null,
     });
   }
 
@@ -83,6 +85,7 @@ export function TodosView() {
         priority: formData.priority,
         projectId: formData.projectId !== 'none' ? formData.projectId : null,
         eventId: null,
+        cognitiveLoad: formData.cognitiveLoad,
       });
       
       toast.success('Todo created');
@@ -502,6 +505,41 @@ export function TodosView() {
                       value={formData.dueAt}
                       onChange={(e) => setFormData({ ...formData, dueAt: e.target.value })}
                     />
+                  </div>
+
+                  <div>
+                    <Label>Mental effort (optional)</Label>
+                    <div className="flex gap-2 mt-2">
+                      {([
+                        { value: 'low', label: 'Easy', color: 'oklch(0.65 0.17 145)' },
+                        { value: 'medium', label: 'Medium', color: 'oklch(0.75 0.18 75)' },
+                        { value: 'high', label: 'Deep work', color: 'oklch(0.58 0.20 20)' },
+                      ] as const).map(({ value, label, color }) => (
+                        <button
+                          key={value}
+                          type="button"
+                          onClick={() =>
+                            setFormData({
+                              ...formData,
+                              cognitiveLoad: formData.cognitiveLoad === value ? null : value,
+                            })
+                          }
+                          className={cn(
+                            'flex-1 rounded-full border px-3 py-1.5 text-sm font-medium transition-all',
+                            formData.cognitiveLoad === value
+                              ? 'border-transparent text-white scale-105'
+                              : 'border-border text-foreground hover:scale-105'
+                          )}
+                          style={
+                            formData.cognitiveLoad === value
+                              ? { backgroundColor: color }
+                              : {}
+                          }
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
                   </div>
 
                   <div className="flex justify-end gap-2 pt-4">
