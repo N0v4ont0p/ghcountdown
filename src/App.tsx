@@ -2,13 +2,8 @@ import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Toaster } from '@/components/ui/sonner';
 import { Sidebar } from '@/components/Sidebar';
-import { CountdownHero } from '@/components/CountdownHero';
-import { RightNowCard } from '@/components/RightNowCard';
-import { DeadlinePressureStrip } from '@/components/DeadlinePressureStrip';
 import { MomentumStrip } from '@/components/MomentumStrip';
-import { GoalsProgressCard } from '@/components/GoalsProgressCard';
 import { GoalsSettingsCard } from '@/components/GoalsSettingsCard';
-import { SmartSuggestions } from '@/components/SmartSuggestions';
 import { EventsView } from '@/components/EventsView';
 import { TodosView } from '@/components/TodosView';
 import { TimelineView } from '@/components/TimelineView';
@@ -32,7 +27,7 @@ import { Event, Todo, TimeBlock, Settings, Goal } from '@/db/schema';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Sun, Moon, Monitor, DownloadSimple, UploadSimple, Trash, Sparkle, X, MagnifyingGlass, Plus, CalendarBlank, CheckSquare, Warning, Target, ArrowRight } from '@phosphor-icons/react';
+import { Sun, Moon, Monitor, DownloadSimple, UploadSimple, Trash, Sparkle, X, MagnifyingGlass, Plus } from '@phosphor-icons/react';
 import { format } from 'date-fns';
 import { useTheme } from '@/hooks/use-theme';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -71,6 +66,7 @@ function App() {
   const [showWeeklyReview, setShowWeeklyReview] = useState(false);
   const [weeklyIntention, setWeeklyIntention] = useState(() => localStorage.getItem('weeklyIntention') ?? '');
   const [activeGoals, setActiveGoals] = useState<Goal[]>([]);
+  const [countdownTick, setCountdownTick] = useState(Date.now());
   const { theme, setTheme, resolvedTheme } = useTheme();
 
   function invalidateCache() { setDataVersion(v => v + 1); }
@@ -155,6 +151,12 @@ function App() {
   // Tick every minute so the "RIGHT NOW" card updates automatically
   useEffect(() => {
     const id = setInterval(() => setNowTick(new Date()), 60_000);
+    return () => clearInterval(id);
+  }, []);
+
+  // Tick every second for the countdown hero
+  useEffect(() => {
+    const id = setInterval(() => setCountdownTick(Date.now()), 1000);
     return () => clearInterval(id);
   }, []);
 
@@ -460,6 +462,24 @@ function App() {
     }
   }
 
+  // Home view derived values
+  const countdownTimeLeft = nextEvent ? (() => {
+    const diff = new Date(nextEvent.startsAt).getTime() - countdownTick;
+    if (diff <= 0) return null;
+    return {
+      days: Math.floor(diff / (1000 * 60 * 60 * 24)),
+      hours: Math.floor((diff / (1000 * 60 * 60)) % 24),
+      minutes: Math.floor((diff / 1000 / 60) % 60),
+      seconds: Math.floor((diff / 1000) % 60),
+    };
+  })() : null;
+
+  const currentHHMM = format(nowTick, 'HH:mm');
+  const activeBlock = todayBlocks.find(b => b.startTime <= currentHHMM && currentHHMM < b.endTime) ?? null;
+  const nextUpcomingBlock = !activeBlock
+    ? (todayBlocks.find(b => b.startTime > currentHHMM) ?? null)
+    : null;
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-screen">
@@ -496,187 +516,353 @@ function App() {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -20 }}
                 transition={{ duration: 0.3 }}
-                className="max-w-6xl mx-auto space-y-8"
+                className="max-w-6xl mx-auto flex flex-col gap-8"
               >
-                <div>
-                  <h2 className="text-3xl font-semibold mb-2">Welcome Back</h2>
-                  <p className="text-muted-foreground">Your next important event is counting down</p>
-                </div>
-
-                {/* 1. Countdown hero — first thing visible */}
-                <CountdownHero event={nextEvent} />
-
-                {/* 2. Morning briefing */}
-                {morningBriefing && (
-                  <motion.div
-                    initial={{ opacity: 0, y: -10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="glass-card rounded-2xl p-4 border-l-4 border-l-primary flex items-start justify-between gap-3"
-                  >
-                    <div className="flex items-start gap-2">
-                      <Sparkle size={16} weight="fill" className="text-primary mt-0.5 flex-shrink-0" />
-                      <p className="text-sm leading-relaxed">{morningBriefing}</p>
-                    </div>
-                    <button
-                      onClick={() => setMorningBriefing(null)}
-                      className="text-muted-foreground hover:text-foreground flex-shrink-0"
-                    >
-                      <X size={14} />
-                    </button>
-                  </motion.div>
-                )}
-
-                {/* 2. Momentum strip */}
-                <MomentumStrip />
-
-                {/* 3. Goals progress — only shown if active goals exist */}
-                {activeGoals.length > 0 && <GoalsProgressCard />}
-
-                {/* 4. Right Now card — visually prominent */}
-                <div className="rounded-2xl overflow-hidden shadow-lg" style={{ borderLeft: '4px solid var(--primary)' }}>
-                  <RightNowCard
-                    blocks={todayBlocks}
-                    now={nowTick}
-                    onNavigateTimeline={() => setCurrentView('timeline')}
-                  />
-                </div>
-
-                {/* 5. Deadline pressure strip */}
-                <DeadlinePressureStrip events={upcomingEvents} />
-
-                {/* 6. Smart suggestions + AI nudges */}
-                <div className="space-y-3">
-                  <SmartSuggestions onNavigate={setCurrentView} />
-                  {aiNudges.length > 0 && (
-                    <Card className="p-4 border-yellow-500/30 bg-yellow-500/5">
-                      <div className="space-y-2">
-                        {aiNudges.map((nudge, i) => (
-                          <div key={i} className="flex items-center gap-2 text-sm">
-                            <Warning size={14} className="text-yellow-500 shrink-0" />
-                            <span>{nudge}</span>
-                          </div>
-                        ))}
+                {/* ── COUNTDOWN HERO ── */}
+                <div className="glass-card rounded-3xl p-8 md:p-12 relative overflow-hidden">
+                  {nextEvent ? (
+                    <>
+                      <div
+                        className="absolute top-0 left-0 right-0 h-1"
+                        style={{ backgroundColor: `var(--priority-${nextEvent.priority})` }}
+                      />
+                      <div className="text-center mb-8">
+                        <p className="text-xs uppercase tracking-widest text-muted-foreground mb-3">Counting down to</p>
+                        <h1 className="text-3xl md:text-5xl font-bold tracking-tight mb-3">{nextEvent.title}</h1>
+                        <p className="text-sm text-muted-foreground">
+                          {format(new Date(nextEvent.startsAt), 'EEEE, MMMM d, yyyy • h:mm a')}
+                        </p>
                       </div>
-                    </Card>
+                      {countdownTimeLeft ? (
+                        <div className="grid grid-cols-4 gap-4 md:gap-10">
+                          {[
+                            { label: 'Days', value: countdownTimeLeft.days },
+                            { label: 'Hours', value: countdownTimeLeft.hours },
+                            { label: 'Minutes', value: countdownTimeLeft.minutes },
+                            { label: 'Seconds', value: countdownTimeLeft.seconds },
+                          ].map(({ label, value }, i) => (
+                            <motion.div
+                              key={label}
+                              initial={{ opacity: 0, scale: 0.85 }}
+                              animate={{ opacity: 1, scale: 1 }}
+                              transition={{ delay: 0.1 + i * 0.05 }}
+                              className="text-center"
+                            >
+                              <div className="text-5xl md:text-7xl font-bold tabular-nums text-primary tracking-tighter">
+                                {String(value).padStart(2, '0')}
+                              </div>
+                              <div className="text-xs text-muted-foreground uppercase tracking-wide mt-1">
+                                {label}
+                              </div>
+                            </motion.div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-center text-muted-foreground py-4">This event has passed</p>
+                      )}
+                    </>
+                  ) : (
+                    <div className="text-center py-4">
+                      <h2 className="text-2xl font-semibold mb-2">No upcoming events</h2>
+                      <p className="text-muted-foreground text-sm">
+                        Add an important event to start counting down
+                      </p>
+                    </div>
                   )}
                 </div>
 
-                {/* 7. Two-column: upcoming events | today's tasks */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  <Card className="p-4">
-                    <h3 className="font-semibold mb-3 flex items-center gap-2 text-sm">
-                      <CalendarBlank size={16} />
-                      Upcoming Events
-                    </h3>
-                    {upcomingEvents.length === 0 ? (
-                      <p className="text-sm text-muted-foreground text-center py-4">No upcoming events</p>
-                    ) : (
-                      <div className="space-y-2">
-                        {upcomingEvents.slice(0, 5).map(evt => (
-                          <div key={evt.id} className="flex items-center gap-2 text-sm">
-                            <div
-                              className="w-1 h-8 rounded-full flex-shrink-0"
-                              style={{ backgroundColor: `var(--priority-${evt.priority}, oklch(0.65 0.18 40))` }}
-                            />
-                            <div className="flex-1 min-w-0">
-                              <p className="font-medium truncate">{evt.title}</p>
-                              <p className="text-xs text-muted-foreground">
-                                {format(new Date(evt.startsAt), 'MMM d, h:mm a')}
-                              </p>
-                            </div>
+                {/* ── MAIN CONTENT: asymmetric two-column grid ── */}
+                <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 lg:gap-8">
+
+                  {/* LEFT COLUMN — action-oriented */}
+                  <div className="lg:col-span-3 flex flex-col gap-6">
+
+                    {/* Right Now — no card border */}
+                    <motion.div
+                      initial={{ opacity: 0, y: 12 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.1 }}
+                      className="rounded-2xl px-4 py-5 bg-muted/30"
+                    >
+                      <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-3">
+                        Right Now
+                      </p>
+                      {activeBlock ? (
+                        <div className="flex items-start gap-3">
+                          <span
+                            className="animate-pulse w-2.5 h-2.5 rounded-full mt-1.5 flex-shrink-0"
+                            style={{ backgroundColor: activeBlock.color }}
+                          />
+                          <div>
+                            <p className="text-xl font-semibold leading-tight">{activeBlock.title}</p>
+                            <p className="text-sm text-muted-foreground mt-0.5">
+                              {activeBlock.startTime}–{activeBlock.endTime}
+                              {(() => {
+                                const [eh, em] = activeBlock.endTime.split(':').map(Number);
+                                const remain = (eh * 60 + em) - (nowTick.getHours() * 60 + nowTick.getMinutes());
+                                return remain > 0 ? ` · ${remain} min remaining` : '';
+                              })()}
+                            </p>
                           </div>
-                        ))}
-                      </div>
-                    )}
-                  </Card>
-                  <Card className="p-4">
-                    <div className="flex items-center justify-between mb-3">
-                      <h3 className="font-semibold flex items-center gap-2 text-sm">
-                        <CheckSquare size={16} />
-                        Today's Tasks
-                      </h3>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-6 px-2 text-xs gap-1"
-                        onClick={() => setIsQuickCaptureOpen(true)}
-                      >
-                        <Plus size={12} /> Add
-                      </Button>
-                    </div>
-                    {todos.filter(t => t.status === 'today').length === 0 ? (
-                      <p className="text-sm text-muted-foreground text-center py-4">No tasks for today</p>
-                    ) : (
-                      <div className="space-y-2">
-                        {todos.filter(t => t.status === 'today').slice(0, 5).map(todo => (
-                          <div key={todo.id} className="flex items-center gap-2 text-sm">
-                            <Checkbox
-                              className="flex-shrink-0"
-                              onCheckedChange={async () => {
-                                await updateTodo(todo.id, { status: 'done' });
-                                await loadHomeData();
+                        </div>
+                      ) : nextUpcomingBlock ? (
+                        <div className="flex items-start gap-3">
+                          <span
+                            className="w-2.5 h-2.5 rounded-full mt-1.5 flex-shrink-0 opacity-40"
+                            style={{ backgroundColor: nextUpcomingBlock.color }}
+                          />
+                          <div>
+                            <p className="text-sm text-muted-foreground">Up next</p>
+                            <p className="text-xl font-semibold leading-tight">{nextUpcomingBlock.title}</p>
+                            <p className="text-sm text-muted-foreground mt-0.5">
+                              {nextUpcomingBlock.startTime}
+                              {' · '}
+                              {(() => {
+                                const [sh, sm] = nextUpcomingBlock.startTime.split(':').map(Number);
+                                const inMin = (sh * 60 + sm) - (nowTick.getHours() * 60 + nowTick.getMinutes());
+                                return inMin >= 60
+                                  ? `in ${Math.floor(inMin / 60)}h${inMin % 60 > 0 ? ` ${inMin % 60}m` : ''}`
+                                  : `in ${inMin}m`;
+                              })()}
+                            </p>
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="text-xl font-semibold">
+                          Free time
+                          <span className="ml-2 text-sm font-normal text-muted-foreground">
+                            No more blocks today
+                          </span>
+                        </p>
+                      )}
+                    </motion.div>
+
+                    {/* Today's Schedule — colored pill timeline */}
+                    <motion.div
+                      initial={{ opacity: 0, y: 12 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.15 }}
+                    >
+                      <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-3">
+                        Today's Schedule
+                      </p>
+                      {todayBlocks.length > 0 ? (
+                        <div className="flex flex-wrap gap-1.5">
+                          {todayBlocks.map(block => (
+                            <button
+                              key={block.id}
+                              type="button"
+                              onClick={() => setCurrentView('timeline')}
+                              className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-opacity hover:opacity-80"
+                              style={{
+                                backgroundColor: `${block.color}28`,
+                                color: block.color,
+                                border: `1px solid ${block.color}50`,
                               }}
-                            />
-                            <span className="flex-1 truncate">{todo.title}</span>
-                            <span className="text-xs text-muted-foreground shrink-0">P{todo.priority}</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </Card>
-                </div>
+                            >
+                              <span className="tabular-nums">{block.startTime}</span>
+                              <span>{block.title}</span>
+                            </button>
+                          ))}
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setCurrentView('timeline')}
+                          className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+                        >
+                          Nothing scheduled — Schedule My Day →
+                        </button>
+                      )}
+                    </motion.div>
 
-                {/* 8. Goals Progress */}
-                {goals.filter(g => g.status === 'active').length > 0 && (
-                  <Card className="p-4">
-                    <h3 className="font-semibold mb-3 flex items-center gap-2 text-sm">
-                      <Target size={16} />
-                      Goals Progress
-                    </h3>
-                    <div className="space-y-3">
-                      {goals.filter(g => g.status === 'active').slice(0, 5).map(goal => {
-                        const linked = todos.filter(t => t.goalId === goal.id);
-                        const done = linked.filter(t => t.status === 'done').length;
-                        const pct = linked.length > 0 ? Math.round((done / linked.length) * 100) : 0;
-                        return (
-                          <div key={goal.id}>
-                            <div className="flex justify-between mb-1">
-                              <span className="text-sm font-medium truncate">{goal.title}</span>
-                              <span className="text-xs text-muted-foreground shrink-0 ml-2">{done}/{linked.length} tasks</span>
-                            </div>
-                            <div className="w-full bg-muted rounded-full h-1.5">
-                              <div
-                                className="bg-primary rounded-full h-1.5 transition-all"
-                                style={{ width: `${pct}%` }}
+                    {/* Focus Tasks — priority 4 & 5 only, max 4 */}
+                    <motion.div
+                      initial={{ opacity: 0, y: 12 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.2 }}
+                    >
+                      <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-3">
+                        Focus Tasks
+                      </p>
+                      {todos.filter(t => t.status === 'today' && t.priority >= 4).length === 0 ? (
+                        <p className="text-sm text-muted-foreground">No high-priority tasks for today</p>
+                      ) : (
+                        <div className="flex flex-col gap-2">
+                          {todos.filter(t => t.status === 'today' && t.priority >= 4).slice(0, 4).map(todo => (
+                            <div
+                              key={todo.id}
+                              className="flex items-center gap-3 rounded-lg px-3 py-2 bg-muted/20"
+                              style={todo.priority === 5 ? { borderLeft: '3px solid var(--destructive)' } : {}}
+                            >
+                              <Checkbox
+                                className="flex-shrink-0"
+                                onCheckedChange={async () => {
+                                  await updateTodo(todo.id, { status: 'done' });
+                                  await loadHomeData();
+                                }}
                               />
+                              <span className="flex-1 text-sm truncate">{todo.title}</span>
+                              <span className="text-xs text-muted-foreground shrink-0">P{todo.priority}</span>
                             </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </Card>
-                )}
+                          ))}
+                        </div>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setCurrentView('todos')}
+                        className="mt-3 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                      >
+                        See all tasks →
+                      </button>
+                    </motion.div>
+                  </div>
 
-                {/* 9. Weekly intention card */}
-                {weeklyIntention && (
-                  <Card className="p-4 border-l-4 border-l-primary/50">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex-1">
-                        <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-1.5">
-                          This week's intention
+                  {/* RIGHT COLUMN — context and insight */}
+                  <div className="lg:col-span-2 flex flex-col gap-5">
+
+                    {/* Morning briefing — blockquote style */}
+                    {morningBriefing && (
+                      <motion.div
+                        initial={{ opacity: 0, x: 10 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: 0.1 }}
+                        className="relative rounded-xl pl-4 pr-8 py-3 bg-primary/5 border-l-2 border-l-primary"
+                      >
+                        <Sparkle size={13} weight="fill" className="text-primary absolute top-3 right-3" />
+                        <p className="text-sm leading-relaxed">{morningBriefing}</p>
+                        <button
+                          type="button"
+                          onClick={() => setMorningBriefing(null)}
+                          className="absolute top-2 right-2 text-muted-foreground hover:text-foreground"
+                        >
+                          <X size={13} />
+                        </button>
+                      </motion.div>
+                    )}
+
+                    {/* Weekly intention */}
+                    {weeklyIntention && (
+                      <motion.div
+                        initial={{ opacity: 0, x: 10 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: 0.12 }}
+                        className="rounded-xl pl-4 py-3 pr-3 bg-muted/40 border-l-2 border-l-primary/40"
+                      >
+                        <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-1">
+                          This week
                         </p>
                         <p className="text-sm leading-relaxed">{weeklyIntention}</p>
-                      </div>
-                      <button
-                        className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 shrink-0 mt-0.5"
-                        onClick={() => setShowWeeklyReview(true)}
+                        <button
+                          type="button"
+                          className="mt-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                          onClick={() => setShowWeeklyReview(true)}
+                        >
+                          Review →
+                        </button>
+                      </motion.div>
+                    )}
+
+                    {/* Goals progress — thin rows, no card border */}
+                    {activeGoals.length > 0 && (
+                      <motion.div
+                        initial={{ opacity: 0, x: 10 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: 0.15 }}
+                        className="flex flex-col gap-3"
                       >
-                        <ArrowRight size={12} />
-                        Review
-                      </button>
-                    </div>
-                  </Card>
-                )}
+                        <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+                          Goals
+                        </p>
+                        {activeGoals.slice(0, 4).map(goal => {
+                          const linked = todos.filter(t => t.goalId === goal.id);
+                          const done = linked.filter(t => t.status === 'done').length;
+                          const pct = linked.length > 0 ? Math.round((done / linked.length) * 100) : 0;
+                          return (
+                            <div key={goal.id}>
+                              <div className="flex items-center gap-2 mb-1">
+                                <span
+                                  className="w-2 h-2 rounded-full flex-shrink-0"
+                                  style={{ backgroundColor: goal.color }}
+                                />
+                                <span className="text-sm flex-1 truncate">{goal.title}</span>
+                                <span className="text-xs text-muted-foreground">{pct}%</span>
+                              </div>
+                              <div className="w-full bg-muted rounded-full h-1 overflow-hidden">
+                                <div
+                                  className="rounded-full h-1 transition-all duration-500"
+                                  style={{ width: `${pct}%`, backgroundColor: goal.color }}
+                                />
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </motion.div>
+                    )}
+
+                    {/* Upcoming events — max 3, minimal rows */}
+                    {upcomingEvents.length > 0 && (
+                      <motion.div
+                        initial={{ opacity: 0, x: 10 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: 0.2 }}
+                        className="flex flex-col gap-1"
+                      >
+                        <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-1">
+                          Upcoming
+                        </p>
+                        {upcomingEvents.slice(0, 3).map(evt => (
+                          <button
+                            key={evt.id}
+                            type="button"
+                            onClick={() => setCurrentView('events')}
+                            className="flex items-center gap-2 text-sm text-left hover:bg-muted/40 rounded-lg px-2 py-1.5 transition-colors"
+                          >
+                            <span
+                              className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+                              style={{ backgroundColor: `var(--priority-${evt.priority})` }}
+                            />
+                            <span className="flex-1 truncate">{evt.title}</span>
+                            <span className="text-xs text-muted-foreground shrink-0">
+                              {format(new Date(evt.startsAt), 'MMM d')}
+                            </span>
+                            {evt.priority >= 4 && (
+                              <span className={`text-xs px-1.5 py-0.5 rounded font-medium shrink-0 ${evt.priority === 5 ? 'bg-destructive/15 text-destructive' : 'bg-yellow-500/15 text-yellow-600 dark:text-yellow-400'}`}>
+                                P{evt.priority}
+                              </span>
+                            )}
+                          </button>
+                        ))}
+                      </motion.div>
+                    )}
+
+                    {/* AI nudges — max 2 */}
+                    {aiNudges.length > 0 && (
+                      <motion.div
+                        initial={{ opacity: 0, x: 10 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: 0.25 }}
+                        className="flex flex-col gap-1.5"
+                      >
+                        {aiNudges.slice(0, 2).map((nudge, i) => (
+                          <div key={i} className="flex items-start gap-2 text-xs text-muted-foreground">
+                            <Sparkle size={12} weight="fill" className="text-yellow-500 mt-0.5 flex-shrink-0" />
+                            <span>{nudge}</span>
+                          </div>
+                        ))}
+                      </motion.div>
+                    )}
+
+                    {/* Momentum — compact inline stats */}
+                    <motion.div
+                      initial={{ opacity: 0, x: 10 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: 0.28 }}
+                    >
+                      <MomentumStrip compact />
+                    </motion.div>
+                  </div>
+                </div>
               </motion.div>
             )}
 
