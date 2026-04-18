@@ -73,6 +73,8 @@ export function computeTrend(values: number[]): TrendResult {
   const second = avg(secondHalf);
 
   if (first === 0 && second === 0) return { direction: 'flat', percentChange: 0 };
+  // When first half is zero but second is positive, treat as full growth
+  if (first === 0) return { direction: second > 0 ? 'up' : 'flat', percentChange: second > 0 ? 100 : 0 };
 
   const percentChange = first === 0 ? 100 : Math.round(((second - first) / Math.abs(first)) * 100);
 

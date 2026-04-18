@@ -150,17 +150,6 @@ export async function scheduleMyDay(
     currentHour = Math.max(9, now.getHours());
   }
 
-  // Track which project cluster we last placed, so we try to keep clusters consecutive
-  const getNextAvailableHour = (preferredHours: number[], fallbackStart: number): number | undefined => {
-    // First try peak/preferred hours
-    const peak = preferredHours.find(h => !occupiedHours.has(h));
-    if (peak !== undefined) return peak;
-    // Then fall back to chronological search
-    let h = fallbackStart;
-    while (h < 24 && occupiedHours.has(h)) h++;
-    return h < 24 ? h : undefined;
-  };
-
   let created = 0;
   let slotCursor = currentHour;
 
