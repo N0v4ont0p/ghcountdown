@@ -5,6 +5,7 @@ export interface AISuggestion {
   type: 'todo' | 'event' | 'timeBlock';
   title: string;
   priority: 1 | 2 | 3 | 4 | 5;
+  cognitiveLoad: 'high' | 'medium' | 'low' | null;
   notes?: string;
   dueAt?: string | null;
   startsAt?: string;
@@ -92,6 +93,11 @@ function normalizeSeverity(value: unknown): AISeverity {
   return 'medium';
 }
 
+function normalizeCognitiveLoad(value: unknown): 'high' | 'medium' | 'low' | null {
+  if (value === 'high' || value === 'medium' || value === 'low') return value;
+  return null;
+}
+
 function normalizeClockValue(value: unknown, fallback: string): string {
   if (typeof value !== 'string') return fallback;
   const normalized = value.trim();
@@ -153,6 +159,7 @@ function normalizeSuggestion(raw: any): AISuggestion | null {
     type,
     title: raw.title.trim(),
     priority: normalizePriority(raw.priority),
+    cognitiveLoad: normalizeCognitiveLoad(raw.cognitiveLoad),
     notes: typeof raw.notes === 'string' ? raw.notes.trim() : undefined,
     dueAt: toIsoDateTimeOrNull(raw.dueAt),
     startsAt,
@@ -208,6 +215,7 @@ Mix suggestion types appropriately:
 - Use "todo" for tasks and action items (optional dueAt as full ISO datetime)
 
 Priority scale: 5=critical deadline, 4=high importance, 3=normal, 2=low priority, 1=someday.
+Cognitive load scale for every todo/timeBlock suggestion: "high" (writing, coding, problem-solving, deep analysis), "medium" (reading, planning, reviewing), "low" (admin, replies, organizing, simple errands). Always include cognitiveLoad in every suggestion.
 Confidence is 0.0 to 1.0 representing how well you understood the request.
 urgencyHours is how many hours until something is urgent, or null if not time-sensitive.
 You can produce timeBlocks for ANY date, not just today. Use the "date" field to specify which day. If user mentions "this week" produce blocks across Mon-Fri. If they mention "tomorrow" use the tomorrow date given above.`;
@@ -390,6 +398,7 @@ function validateAndRepairResult(
       type,
       title: s.title.trim(),
       priority,
+      cognitiveLoad: normalizeCognitiveLoad(s.cognitiveLoad),
       notes: typeof s.notes === 'string' ? s.notes.trim() : undefined,
       dueAt: s.dueAt ? (isNaN(new Date(s.dueAt).getTime()) ? null : new Date(s.dueAt).toISOString()) : null,
       startsAt: startsAt || new Date().toISOString(),

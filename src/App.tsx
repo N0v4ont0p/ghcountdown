@@ -18,6 +18,7 @@ import { QuickCapture } from '@/components/QuickCapture';
 import { UniversalSearch } from '@/components/UniversalSearch';
 import { EveningFlow } from '@/components/EveningFlow';
 import { MorningFlow } from '@/components/MorningFlow';
+import { WeeklyReview } from '@/components/WeeklyReview';
 import { initDB } from '@/db/core';
 import { seedDatabase } from '@/db/seed';
 import { deleteAllEvents, getNextImportantEvent, getAllEvents } from '@/db/repositories/eventsRepo';
@@ -30,7 +31,7 @@ import { getAllGoals, getActiveGoals, createGoal, updateGoal, deleteGoal, delete
 import { Event, Todo, TimeBlock, Settings, Goal } from '@/db/schema';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Sun, Moon, Monitor, DownloadSimple, UploadSimple, Trash, Sparkle, X, MagnifyingGlass, Plus, CalendarBlank, CheckSquare, Warning, Target } from '@phosphor-icons/react';
+import { Sun, Moon, Monitor, DownloadSimple, UploadSimple, Trash, Sparkle, X, MagnifyingGlass, Plus, CalendarBlank, CheckSquare, Warning, Target, ArrowRight } from '@phosphor-icons/react';
 import { format } from 'date-fns';
 import { useTheme } from '@/hooks/use-theme';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -43,6 +44,7 @@ import { getAIConfiguration, updateAIConfiguration, generateActionPlan } from '@
 import { performDailyRollover } from '@/lib/rollover';
 import { escalateOverdueTodos } from '@/lib/overdueCheck';
 import { detectDrift } from '@/lib/habitModel';
+import { weeklyReviewKey } from '@/lib/weeklyTrajectory';
 
 function App() {
   const [currentView, setCurrentView] = useState('home');
@@ -65,9 +67,19 @@ function App() {
   const [showMorningFlow, setShowMorningFlow] = useState(false);
   const [goals, setGoals] = useState<Goal[]>([]);
   const [newGoalTitle, setNewGoalTitle] = useState('');
+  const [showWeeklyReview, setShowWeeklyReview] = useState(false);
+  const [weeklyIntention, setWeeklyIntention] = useState(() => localStorage.getItem('weeklyIntention') ?? '');
+  const [activeGoals, setActiveGoals] = useState<Goal[]>([]);
   const { theme, setTheme, resolvedTheme } = useTheme();
 
   function invalidateCache() { setDataVersion(v => v + 1); }
+
+  // Sync weeklyIntention from localStorage whenever the review modal closes
+  useEffect(() => {
+    if (!showWeeklyReview) {
+      setWeeklyIntention(localStorage.getItem('weeklyIntention') ?? '');
+    }
+  }, [showWeeklyReview]);
 
   useEffect(() => {
     async function initialize() {
@@ -162,6 +174,25 @@ function App() {
     return () => window.removeEventListener('focus', checkEveningFlow);
   }, []);
 
+  // Weekly review — trigger Sunday ≥18:00 or Monday <11:00, once per review window
+  useEffect(() => {
+    function checkWeeklyReview() {
+      const now = new Date();
+      const day = now.getDay(); // 0 = Sunday, 1 = Monday
+      const hour = now.getHours();
+      const isTriggerTime = (day === 0 && hour >= 18) || (day === 1 && hour < 11);
+      if (!isTriggerTime) return;
+      const key = weeklyReviewKey(now);
+      if (localStorage.getItem('weeklyReviewKey') !== key) {
+        setShowWeeklyReview(true);
+      }
+    }
+
+    checkWeeklyReview();
+    window.addEventListener('focus', checkWeeklyReview);
+    return () => window.removeEventListener('focus', checkWeeklyReview);
+  }, []);
+
   // Global keyboard shortcuts
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -208,6 +239,7 @@ function App() {
 
     const allGoals = await getAllGoals();
     setGoals(allGoals);
+    setActiveGoals(allGoals.filter(g => g.status === 'active'));
 
     void generateNudges(upcoming, activeTodos);
   }
@@ -604,6 +636,27 @@ function App() {
                           </div>
                         );
                       })}
+                    </div>
+                  </Card>
+                )}
+
+                {/* 9. Weekly intention card */}
+                {weeklyIntention && (
+                  <Card className="p-4 border-l-4 border-l-primary/50">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1">
+                        <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-1.5">
+                          This week's intention
+                        </p>
+                        <p className="text-sm leading-relaxed">{weeklyIntention}</p>
+                      </div>
+                      <button
+                        className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 shrink-0 mt-0.5"
+                        onClick={() => setShowWeeklyReview(true)}
+                      >
+                        <ArrowRight size={12} />
+                        Review
+                      </button>
                     </div>
                   </Card>
                 )}
@@ -1038,6 +1091,11 @@ function App() {
         )}
         {showEveningFlow && (
           <EveningFlow onDismiss={() => setShowEveningFlow(false)} />
+        )}
+        {showWeeklyReview && (
+          <WeeklyReview
+            onDismiss={() => setShowWeeklyReview(false)}
+          />
         )}
       </AnimatePresence>
 

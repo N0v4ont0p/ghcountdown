@@ -1,159 +1,339 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { ArrowUp, ArrowDown, Minus, TrendUp } from '@phosphor-icons/react';
-import { getWeeklySnapshots, computeTrend, WeeklySnapshot, TrendResult } from '@/lib/growthMetrics';
-import { format, parseISO } from 'date-fns';
+import { Card } from '@/components/ui/card';
+import { Textarea } from '@/components/ui/textarea';
+import {
+  format,
+  startOfWeek,
+  endOfWeek,
+  subWeeks,
+  parseISO,
+  differenceInMinutes,
+} from 'date-fns';
+import { getAllTimeEntries } from '@/db/repositories/timeRepo';
+import { getAllTodos, updateTodo, deleteTodo } from '@/db/repositories/todosRepo';
+import { getActiveGoals } from '@/db/repositories/goalsRepo';
+import { Todo, Goal } from '@/db/schema';
+import { Clock, CheckCircle, CalendarBlank, Target, ArrowRight } from '@phosphor-icons/react';
+import { weeklyReviewKey } from '@/lib/weeklyTrajectory';
 
-interface WeeklyReviewProps {
-  onClose?: () => void;
+interface Props {
+  onDismiss: () => void;
 }
 
-export function WeeklyReview({ onClose }: WeeklyReviewProps) {
-  const [snapshots, setSnapshots] = useState<WeeklySnapshot[]>([]);
-  const [completionTrend, setCompletionTrend] = useState<TrendResult | null>(null);
-  const [focusTrend, setFocusTrend] = useState<TrendResult | null>(null);
+interface WeekSummary {
+  totalFocusMinutes: number;
+  tasksCompleted: number;
+  activeDays: number;
+}
+
+interface GoalCheck {
+  goal: Goal;
+  completedThisWeek: number;
+  totalLinked: number;
+}
+
+function buildSummarySentence(summary: WeekSummary): string {
+  const hours = Math.floor(summary.totalFocusMinutes / 60);
+  const mins = summary.totalFocusMinutes % 60;
+  const focusStr = hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
+
+  if (summary.totalFocusMinutes >= 120) {
+    return `A strong week — ${focusStr} of focused work and ${summary.tasksCompleted} task${summary.tasksCompleted !== 1 ? 's' : ''} completed across ${summary.activeDays} active day${summary.activeDays !== 1 ? 's' : ''}.`;
+  }
+  if (summary.totalFocusMinutes >= 30) {
+    return `A steady week — ${summary.tasksCompleted} task${summary.tasksCompleted !== 1 ? 's' : ''} done and ${focusStr} of focused time over ${summary.activeDays} day${summary.activeDays !== 1 ? 's' : ''}.`;
+  }
+  if (summary.tasksCompleted > 0) {
+    return `A lighter week — ${summary.tasksCompleted} task${summary.tasksCompleted !== 1 ? 's' : ''} completed. Fresh start next week.`;
+  }
+  return `A quiet week — nothing tracked. Next week is a fresh page.`;
+}
+
+export function WeeklyReview({ onDismiss }: Props) {
+  const [summary, setSummary] = useState<WeekSummary>({
+    totalFocusMinutes: 0,
+    tasksCompleted: 0,
+    activeDays: 0,
+  });
+  const [weekRange, setWeekRange] = useState({ start: new Date(), end: new Date() });
+  const [openLoops, setOpenLoops] = useState<Todo[]>([]);
+  const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
+  const [goalChecks, setGoalChecks] = useState<GoalCheck[]>([]);
+  const [intention, setIntention] = useState(
+    () => localStorage.getItem('weeklyIntention') ?? '',
+  );
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    async function load() {
-      setIsLoading(true);
+    const now = new Date();
+    const lastWeekStart = startOfWeek(subWeeks(now, 1));
+    const lastWeekEnd = endOfWeek(subWeeks(now, 1));
+    setWeekRange({ start: lastWeekStart, end: lastWeekEnd });
+
+    async function loadData() {
       try {
-        const data = await getWeeklySnapshots(8);
-        setSnapshots(data);
-        setCompletionTrend(computeTrend(data.map((s) => s.todosCompleted)));
-        setFocusTrend(computeTrend(data.map((s) => s.minutesTracked)));
+        const [entries, todos, goals] = await Promise.all([
+          getAllTimeEntries(),
+          getAllTodos(),
+          getActiveGoals(),
+        ]);
+
+        // --- Week summary ---
+        const weekEntries = entries.filter(e => {
+          if (!e.endAt) return false;
+          const s = parseISO(e.startAt);
+          return s >= lastWeekStart && s <= lastWeekEnd;
+        });
+
+        const totalFocusMinutes = Math.round(
+          weekEntries.reduce((sum, e) => {
+            if (e.endAt) {
+              return sum + Math.max(0, differenceInMinutes(parseISO(e.endAt), parseISO(e.startAt)));
+            }
+            return sum;
+          }, 0),
+        );
+
+        const completedLastWeek = todos.filter(t => {
+          if (t.status !== 'done') return false;
+          const updated = parseISO(t.updatedAt);
+          return updated >= lastWeekStart && updated <= lastWeekEnd;
+        });
+
+        const activeDaySet = new Set([
+          ...weekEntries.map(e => format(parseISO(e.startAt), 'yyyy-MM-dd')),
+          ...completedLastWeek.map(t => format(parseISO(t.updatedAt), 'yyyy-MM-dd')),
+        ]);
+
+        setSummary({
+          totalFocusMinutes,
+          tasksCompleted: completedLastWeek.length,
+          activeDays: activeDaySet.size,
+        });
+
+        // --- Open loops: today/inbox with a past due date ---
+        const pastDue = todos.filter(t => {
+          if (t.status !== 'today' && t.status !== 'inbox') return false;
+          if (!t.dueAt) return false;
+          return parseISO(t.dueAt) < now;
+        });
+        setOpenLoops(pastDue);
+
+        // --- Goals check: active goals with any linked todos ---
+        const goalData: GoalCheck[] = goals
+          .map(goal => {
+            const linked = todos.filter(t => t.goalId === goal.id);
+            const completedThisWeek = linked.filter(t => {
+              if (t.status !== 'done') return false;
+              const updated = parseISO(t.updatedAt);
+              return updated >= lastWeekStart && updated <= lastWeekEnd;
+            }).length;
+            return { goal, completedThisWeek, totalLinked: linked.length };
+          })
+          .filter(g => g.totalLinked > 0);
+
+        setGoalChecks(goalData);
       } finally {
         setIsLoading(false);
       }
     }
-    void load();
+    loadData();
   }, []);
 
-  function TrendIcon({ trend }: { trend: TrendResult }) {
-    if (trend.direction === 'up') return <ArrowUp className="text-green-500" size={16} weight="bold" />;
-    if (trend.direction === 'down') return <ArrowDown className="text-red-500" size={16} weight="bold" />;
-    return <Minus className="text-muted-foreground" size={16} />;
+  function handleKeep(id: string) {
+    setDismissedIds(prev => new Set(prev).add(id));
   }
 
-  const lastWeek = snapshots[snapshots.length - 1];
-  const prevWeek = snapshots[snapshots.length - 2];
+  async function handleSomeday(id: string) {
+    await updateTodo(id, { status: 'someday' });
+    setDismissedIds(prev => new Set(prev).add(id));
+  }
+
+  async function handleDelete(id: string) {
+    await deleteTodo(id);
+    setDismissedIds(prev => new Set(prev).add(id));
+  }
+
+  function handleClose() {
+    localStorage.setItem('weeklyIntention', intention);
+    localStorage.setItem('weeklyReviewKey', weeklyReviewKey());
+    onDismiss();
+  }
+
+  const visibleLoops = openLoops.filter(t => !dismissedIds.has(t.id));
+  const summarySentence = buildSummarySentence(summary);
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="space-y-4"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex items-center justify-center"
+      style={{ backgroundColor: 'rgba(0,0,0,0.75)' }}
     >
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <TrendUp size={20} className="text-primary" />
-          <h2 className="text-xl font-semibold">Weekly Review</h2>
-        </div>
-        {onClose && (
-          <Button variant="ghost" size="sm" onClick={onClose}>
-            Done
-          </Button>
-        )}
-      </div>
+      <motion.div
+        initial={{ opacity: 0, scale: 0.96, y: 16 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.96 }}
+        transition={{ duration: 0.3 }}
+        className="bg-background rounded-2xl shadow-2xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto"
+      >
+        <div className="p-8 space-y-7">
+          {/* Header */}
+          <div>
+            <h1 className="text-3xl font-semibold text-foreground">Weekly Review</h1>
+            <p className="text-sm text-muted-foreground mt-1">
+              {format(weekRange.start, 'MMM d')} – {format(weekRange.end, 'MMM d, yyyy')}
+            </p>
+          </div>
 
-      {isLoading ? (
-        <p className="text-sm text-muted-foreground">Loading…</p>
-      ) : (
-        <>
-          {/* Last week summary */}
-          {lastWeek && (
-            <Card className="p-4">
-              <h3 className="font-medium mb-3 text-sm text-muted-foreground">
-                Last week ({format(parseISO(lastWeek.weekStart), 'MMM d')})
-              </h3>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <p className="text-2xl font-bold">{lastWeek.todosCompleted}</p>
-                  <p className="text-xs text-muted-foreground">todos completed</p>
-                  {prevWeek && (
-                    <p className="text-xs text-muted-foreground mt-1">
-                      vs {prevWeek.todosCompleted} prev week
+          {isLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+            </div>
+          ) : (
+            <>
+              {/* Week summary */}
+              <div className="space-y-3">
+                <h2 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+                  Last week
+                </h2>
+                <div className="flex gap-3 flex-wrap">
+                  <div className="flex-1 min-w-[110px] rounded-xl bg-muted/50 p-3 text-center">
+                    <Clock size={18} className="mx-auto mb-1 text-primary" weight="duotone" />
+                    <p className="text-2xl font-bold">
+                      {Math.floor(summary.totalFocusMinutes / 60)}h{' '}
+                      {summary.totalFocusMinutes % 60}m
                     </p>
-                  )}
-                </div>
-                <div>
-                  <p className="text-2xl font-bold">
-                    {Math.round(lastWeek.minutesTracked / 60)}h
-                  </p>
-                  <p className="text-xs text-muted-foreground">focus time tracked</p>
-                  {prevWeek && (
-                    <p className="text-xs text-muted-foreground mt-1">
-                      vs {Math.round(prevWeek.minutesTracked / 60)}h prev week
-                    </p>
-                  )}
-                </div>
-              </div>
-            </Card>
-          )}
-
-          {/* Trend indicators */}
-          {(completionTrend || focusTrend) && (
-            <Card className="p-4">
-              <h3 className="font-medium mb-3 text-sm">8-Week Trends</h3>
-              <div className="space-y-2">
-                {completionTrend && (
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm">Task completion</span>
-                    <div className="flex items-center gap-1.5">
-                      <TrendIcon trend={completionTrend} />
-                      <span className="text-sm font-medium">
-                        {completionTrend.percentChange > 0 ? '+' : ''}
-                        {completionTrend.percentChange}%
-                      </span>
-                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">focus time</p>
                   </div>
-                )}
-                {focusTrend && (
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm">Focus time</span>
-                    <div className="flex items-center gap-1.5">
-                      <TrendIcon trend={focusTrend} />
-                      <span className="text-sm font-medium">
-                        {focusTrend.percentChange > 0 ? '+' : ''}
-                        {focusTrend.percentChange}%
-                      </span>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </Card>
-          )}
-
-          {/* 8-week bar chart (simple) */}
-          <Card className="p-4">
-            <h3 className="font-medium mb-3 text-sm">Completed todos per week</h3>
-            <div className="flex items-end gap-1 h-16">
-              {snapshots.map((s, i) => {
-                const max = Math.max(...snapshots.map((x) => x.todosCompleted), 1);
-                const heightPct = (s.todosCompleted / max) * 100;
-                const isLast = i === snapshots.length - 1;
-                return (
-                  <div key={s.weekStart} className="flex-1 flex flex-col items-center gap-1">
-                    <div
-                      className={`w-full rounded-sm transition-all ${isLast ? 'bg-primary' : 'bg-primary/30'}`}
-                      style={{ height: `${Math.max(heightPct, 4)}%` }}
-                      title={`${format(parseISO(s.weekStart), 'MMM d')}: ${s.todosCompleted} todos`}
+                  <div className="flex-1 min-w-[110px] rounded-xl bg-muted/50 p-3 text-center">
+                    <CheckCircle
+                      size={18}
+                      className="mx-auto mb-1 text-green-500"
+                      weight="duotone"
                     />
+                    <p className="text-2xl font-bold">{summary.tasksCompleted}</p>
+                    <p className="text-xs text-muted-foreground mt-1">tasks done</p>
                   </div>
-                );
-              })}
-            </div>
-            <div className="flex justify-between mt-1">
-              <span className="text-[10px] text-muted-foreground">
-                {snapshots[0] ? format(parseISO(snapshots[0].weekStart), 'MMM d') : ''}
-              </span>
-              <span className="text-[10px] text-muted-foreground">This week</span>
-            </div>
-          </Card>
-        </>
-      )}
+                  <div className="flex-1 min-w-[110px] rounded-xl bg-muted/50 p-3 text-center">
+                    <CalendarBlank
+                      size={18}
+                      className="mx-auto mb-1 text-blue-500"
+                      weight="duotone"
+                    />
+                    <p className="text-2xl font-bold">{summary.activeDays}</p>
+                    <p className="text-xs text-muted-foreground mt-1">active days</p>
+                  </div>
+                </div>
+                <p className="text-sm text-muted-foreground leading-relaxed italic">
+                  {summarySentence}
+                </p>
+              </div>
+
+              {/* Open loops */}
+              <div className="space-y-3">
+                <h2 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+                  Open loops
+                </h2>
+                {visibleLoops.length === 0 ? (
+                  <p className="text-sm text-green-600 dark:text-green-400">
+                    No overdue items — clean slate ✓
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    {visibleLoops.map(todo => (
+                      <div
+                        key={todo.id}
+                        className="flex items-center gap-2 py-1"
+                      >
+                        <span className="flex-1 text-sm truncate">{todo.title}</span>
+                        {todo.dueAt && (
+                          <span className="text-xs text-red-500 shrink-0">
+                            due {format(parseISO(todo.dueAt), 'MMM d')}
+                          </span>
+                        )}
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="text-xs h-7 px-2 shrink-0"
+                          onClick={() => void handleKeep(todo.id)}
+                        >
+                          Keep
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="text-xs h-7 px-2 shrink-0"
+                          onClick={() => void handleSomeday(todo.id)}
+                        >
+                          Someday
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-xs h-7 px-2 shrink-0 text-destructive hover:text-destructive"
+                          onClick={() => void handleDelete(todo.id)}
+                        >
+                          Delete
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Goals check */}
+              {goalChecks.length > 0 && (
+                <div className="space-y-3">
+                  <h2 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+                    Goals
+                  </h2>
+                  <div className="space-y-2">
+                    {goalChecks.map(g => (
+                      <Card key={g.goal.id} className="p-3 flex items-center gap-3">
+                        <div
+                          className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                          style={{ backgroundColor: g.goal.color }}
+                        />
+                        <Target size={14} className="text-muted-foreground shrink-0" />
+                        <span className="flex-1 text-sm font-medium truncate">
+                          {g.goal.title}
+                        </span>
+                        <span className="text-sm text-muted-foreground shrink-0">
+                          {g.completedThisWeek}/{g.totalLinked} done
+                        </span>
+                      </Card>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Next week intention */}
+              <div className="space-y-3">
+                <h2 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+                  What matters most next week?
+                </h2>
+                <Textarea
+                  value={intention}
+                  onChange={e => setIntention(e.target.value)}
+                  placeholder="One thing, or a few. Write it down."
+                  rows={3}
+                  className="resize-none"
+                />
+              </div>
+
+              {/* Close button */}
+              <Button className="w-full" size="lg" onClick={handleClose}>
+                <ArrowRight size={16} className="mr-2" />
+                Close the week
+              </Button>
+            </>
+          )}
+        </div>
+      </motion.div>
     </motion.div>
   );
 }

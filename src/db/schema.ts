@@ -39,12 +39,12 @@ export interface Todo {
   status: 'inbox' | 'today' | 'done' | 'someday';
   dueAt: string | null;
   priority: 1 | 2 | 3 | 4 | 5;
+  cognitiveLoad: 'high' | 'medium' | 'low' | null;
   projectId: string | null;
   eventId: string | null;
   goalId: string | null;
   locationId: string | null;
   estimatedMinutes: number | null;
-  cognitiveLoad: 1 | 2 | 3 | null;
   createdAt: string;
   updatedAt: string;
 }

@@ -20,8 +20,7 @@ import { format } from 'date-fns';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { RoutinePanel } from '@/components/RoutinePanel';
-import { PRIORITY_COLORS, withColorAlpha, computeDayLoadMinutes } from '@/lib/schedulingUtils';
-import { scheduleMyDay } from '@/lib/schedulingUtils';
+import { PRIORITY_COLORS, withColorAlpha, scheduleMyDay, DAY_CAPACITY_MINUTES, DEFAULT_TODO_MINUTES } from '@/lib/schedulingUtils';
 import { detectBlockConflicts } from '@/lib/conflictDetection';
 import { EffectiveScheduleEntry, getCurrentLocation, getEffectiveScheduleForDate, getFreeSlotsForDate } from '@/lib/effectiveSchedule';
 import { predictActivity } from '@/lib/habitModel';
@@ -427,17 +426,11 @@ export function TimelineView() {
     setIsScheduling(true);
     try {
       const dateStr = format(currentDate, 'yyyy-MM-dd');
-      const result = await scheduleMyDay(dateStr, unscheduledTodayTodos, timeBlocks);
-      if (result.created === 0) {
+      const created = await scheduleMyDay(dateStr, unscheduledTodayTodos, timeBlocks);
+      if (created === 0) {
         toast.info('All todos are already scheduled!');
       } else {
-        if (result.wasOverloaded) {
-          toast.warning(
-            `Day is overloaded — scheduled only the top 5 highest-priority tasks (${result.created} added).`
-          );
-        } else {
-          toast.success(`Scheduled ${result.created} todo${result.created !== 1 ? 's' : ''} for today`);
-        }
+        toast.success(`Scheduled ${created} todo${created !== 1 ? 's' : ''} for today`);
         loadData();
       }
     } catch {
@@ -575,20 +568,29 @@ export function TimelineView() {
     return ids;
   }, [timeBlocks, currentDate]);
 
-  const dayLoadMinutes = useMemo(
-    () => computeDayLoadMinutes(timeBlocks, unscheduledTodayTodos),
-    [timeBlocks, unscheduledTodayTodos]
-  );
-  const isDayOverloaded = dayLoadMinutes > 8 * 60;
-  const dayLoadHours = Math.round(dayLoadMinutes / 60 * 10) / 10;
+  // Daily workload estimate: sum block durations + DEFAULT_TODO_MINUTES per unscheduled todo
+  const totalWorkloadMinutes = useMemo(() => {
+    const blockMinutes = timeBlocks.reduce((sum, block) => {
+      const [sH, sM] = block.startTime.split(':').map(Number);
+      const [eH, eM] = block.endTime.split(':').map(Number);
+      return sum + Math.max(0, (eH * 60 + eM) - (sH * 60 + sM));
+    }, 0);
+    const unscheduledMinutes = unscheduledTodayTodos.length * DEFAULT_TODO_MINUTES;
+    return blockMinutes + unscheduledMinutes;
+  }, [timeBlocks, unscheduledTodayTodos]);
+
+  const isOverloaded = totalWorkloadMinutes > DAY_CAPACITY_MINUTES;
+  const warningMessage = isOverloaded
+    ? `${(totalWorkloadMinutes / 60).toFixed(1)} h of work planned — over the 8 h baseline`
+    : null;
 
   return (
     <div className="max-w-7xl mx-auto h-[calc(100vh-6rem)]">
-      {isDayOverloaded && (
+      {warningMessage && (
         <div className="mb-3 flex items-center gap-2 rounded-lg px-4 py-2 bg-yellow-500/15 border border-yellow-500/40 text-yellow-700 dark:text-yellow-400">
           <Warning size={16} weight="fill" />
           <span className="text-sm font-medium">
-            Today has {dayLoadHours}h of work in ~8h of productive time.
+            {warningMessage}
           </span>
         </div>
       )}
@@ -671,6 +673,13 @@ export function TimelineView() {
           )}
         </div>
       </div>
+
+      {warningMessage && (
+        <div className="mb-4 flex items-center gap-2 rounded-lg border border-yellow-400/60 bg-yellow-400/10 px-4 py-2 text-sm text-yellow-700 dark:text-yellow-300">
+          <Warning size={16} weight="fill" className="shrink-0 text-yellow-500" />
+          {warningMessage}
+        </div>
+      )}
 
       <div className="grid grid-cols-[1fr_300px] gap-6 h-[calc(100%-5rem)]">
         <Card className="relative overflow-hidden">
@@ -1007,6 +1016,27 @@ export function TimelineView() {
                         P{todo.priority}
                       </Badge>
                       <span className="text-sm truncate flex-1">{todo.title}</span>
+                      {todo.cognitiveLoad && (
+                        <span
+                          className="w-2 h-2 rounded-full shrink-0"
+                          style={{
+                            backgroundColor:
+                              todo.cognitiveLoad === 'high'
+                                ? 'oklch(0.58 0.20 20)'
+                                : todo.cognitiveLoad === 'medium'
+                                ? 'oklch(0.75 0.18 75)'
+                                : 'oklch(0.65 0.17 145)',
+                          }}
+                          aria-label={`Cognitive load: ${todo.cognitiveLoad}`}
+                          title={
+                            todo.cognitiveLoad === 'high'
+                              ? 'Deep work'
+                              : todo.cognitiveLoad === 'medium'
+                              ? 'Medium effort'
+                              : 'Easy'
+                          }
+                        />
+                      )}
                     </motion.div>
                   ))}
                 </div>
