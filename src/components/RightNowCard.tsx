@@ -4,7 +4,7 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Clock, ArrowRight } from '@phosphor-icons/react';
 import { format } from 'date-fns';
-import { withColorAlpha } from '@/lib/scheduleDay';
+import { withColorAlpha } from '@/lib/schedulingUtils';
 import { TimeBlock } from '@/db/schema';
 
 export interface RightNowCardProps {

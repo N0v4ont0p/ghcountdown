@@ -24,7 +24,7 @@ import {
   getAIConfiguration,
   updateAIConfiguration,
 } from '@/lib/aiPlanner';
-import { scheduleMyDay } from '@/lib/scheduleDay';
+import { scheduleMyDay } from '@/lib/schedulingUtils';
 import { format } from 'date-fns';
 import { getCurrentLocation, getEffectiveScheduleForDate } from '@/lib/effectiveSchedule';
 import { getHabitModel, predictActivity } from '@/lib/habitModel';
