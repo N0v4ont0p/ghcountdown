@@ -36,6 +36,7 @@ interface AIContext {
   currentLocation: string;
   peakFocusHoursToday: string[];
   typicalActivitiesNow: string[];
+  activeGoals?: string[];
 }
 
 const ENV_HUGGING_FACE_API_KEY = import.meta.env.VITE_HUGGINGFACE_API_KEY;

@@ -20,7 +20,7 @@ import { format } from 'date-fns';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { RoutinePanel } from '@/components/RoutinePanel';
-import { PRIORITY_COLORS, withColorAlpha, computeDayLoadMinutes } from '@/lib/scheduleDay';
+import { PRIORITY_COLORS, withColorAlpha, computeDayLoadMinutes } from '@/lib/schedulingUtils';
 import { scheduleMyDay } from '@/lib/schedulingUtils';
 import { detectBlockConflicts } from '@/lib/conflictDetection';
 import { EffectiveScheduleEntry, getCurrentLocation, getEffectiveScheduleForDate, getFreeSlotsForDate } from '@/lib/effectiveSchedule';

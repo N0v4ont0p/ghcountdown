@@ -16,6 +16,7 @@ import { getAllEvents, createEvent } from '@/db/repositories/eventsRepo';
 import { getAllTimeBlocks, createTimeBlock, getTimeBlocksByDate } from '@/db/repositories/timeBlocksRepo';
 import { getAllTimeEntries } from '@/db/repositories/timeRepo';
 import { updateSettings } from '@/db/repositories/settingsRepo';
+import { getAllGoals } from '@/db/repositories/goalsRepo';
 import {
   AIMode,
   AIAssistantResult,
@@ -24,7 +25,7 @@ import {
   getAIConfiguration,
   updateAIConfiguration,
 } from '@/lib/aiPlanner';
-import { scheduleMyDay } from '@/lib/scheduleDay';
+import { scheduleMyDay } from '@/lib/schedulingUtils';
 import { format } from 'date-fns';
 import { getCurrentLocation, getEffectiveScheduleForDate } from '@/lib/effectiveSchedule';
 import { getHabitModel, predictActivity } from '@/lib/habitModel';
@@ -134,9 +135,9 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
         ]);
         const scheduledIds = new Set(todayBlocks.map(b => b.todoId).filter(Boolean) as string[]);
         const unscheduled = todayTodos.filter(t => !scheduledIds.has(t.id));
-        const count = await scheduleMyDay(today, unscheduled, todayBlocks);
-        if (count > 0) {
-          toast.success(`Scheduled ${count} todo${count !== 1 ? 's' : ''} for today`);
+        const result = await scheduleMyDay(today, unscheduled, todayBlocks);
+        if (result.created > 0) {
+          toast.success(`Scheduled ${result.created} todo${result.created !== 1 ? 's' : ''} for today`);
         } else {
           toast.info('All todos are already scheduled');
         }
@@ -156,12 +157,14 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
     setIsGenerating(true);
     try {
       const today = format(new Date(), 'yyyy-MM-dd');
-      const [todos, events, blocks, entries] = await Promise.all([
+      const [todos, events, blocks, entries, allGoals] = await Promise.all([
         getAllTodos(),
         getAllEvents(),
         getAllTimeBlocks(),
         getAllTimeEntries(),
+        getAllGoals(),
       ]);
+      const activeGoals = allGoals.filter(g => g.status === 'active');
 
       const now = Date.now();
 
@@ -225,6 +228,7 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
       const currentLocationLabel = currentLocation ? `${currentLocation.icon} ${currentLocation.name}` : 'none';
       const peakFocusHoursToday = habitModel.dailyRhythms.peakFocusHours.map((hour) => `${String(hour).padStart(2, '0')}:00`);
       const typicalActivitiesNow = predictedNow ? [predictedNow.label] : [];
+      const activeGoalTitles = activeGoals.map(g => g.title);
 
       const plan = await generateActionPlan(prompt.trim(), {
         todoTitles: todos.slice(0, 20).map((todo) => todo.title),
@@ -239,6 +243,7 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
         currentLocation: currentLocationLabel,
         peakFocusHoursToday,
         typicalActivitiesNow,
+        activeGoals: activeGoalTitles,
       }, { mode });
 
       setResult(plan);

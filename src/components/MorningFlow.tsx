@@ -6,7 +6,7 @@ import { getAllTodos } from '@/db/repositories/todosRepo';
 import { getTimeBlocksByDate } from '@/db/repositories/timeBlocksRepo';
 import { scheduleMyDay } from '@/lib/schedulingUtils';
 import { Todo, TimeBlock } from '@/db/schema';
-import { PRIORITY_COLORS } from '@/lib/scheduleDay';
+import { PRIORITY_COLORS } from '@/lib/schedulingUtils';
 
 interface Props {
   briefing: string | null;

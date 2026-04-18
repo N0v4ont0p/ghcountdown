@@ -8,7 +8,7 @@ import { getAllTodos, updateTodo } from '@/db/repositories/todosRepo';
 import { getTimeBlocksByDate } from '@/db/repositories/timeBlocksRepo';
 import { getEffectiveScheduleForDate } from '@/lib/effectiveSchedule';
 import { Todo } from '@/db/schema';
-import { PRIORITY_COLORS } from '@/lib/scheduleDay';
+import { PRIORITY_COLORS } from '@/lib/schedulingUtils';
 
 interface Props {
   onDismiss: () => void;

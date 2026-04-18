@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Todo, Project } from '@/db/schema';
+import { Todo, Project, Goal } from '@/db/schema';
 import { getAllTodos, createTodo, updateTodo, deleteTodo } from '@/db/repositories/todosRepo';
 import { getAllProjects, createProject, deleteProject } from '@/db/repositories/projectsRepo';
 import { getAllTimeEntries, updateTimeEntry } from '@/db/repositories/timeRepo';
+import { getAllGoals } from '@/db/repositories/goalsRepo';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
@@ -22,6 +23,7 @@ import { cn } from '@/lib/utils';
 export function TodosView() {
   const [todos, setTodos] = useState<Todo[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
+  const [goals, setGoals] = useState<Goal[]>([]);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isProjectDialogOpen, setIsProjectDialogOpen] = useState(false);
   const [currentTab, setCurrentTab] = useState<'inbox' | 'today' | 'projects'>('inbox');
@@ -37,6 +39,7 @@ export function TodosView() {
     dueAt: '',
     priority: 3 as 1 | 2 | 3 | 4 | 5,
     projectId: 'none',
+    goalId: 'none',
   });
 
   const [projectFormData, setProjectFormData] = useState({
@@ -49,12 +52,14 @@ export function TodosView() {
   }, []);
 
   async function loadData() {
-    const [allTodos, allProjects] = await Promise.all([
+    const [allTodos, allProjects, allGoals] = await Promise.all([
       getAllTodos(),
       getAllProjects(),
+      getAllGoals(),
     ]);
     setTodos(allTodos);
     setProjects(allProjects);
+    setGoals(allGoals);
   }
 
   function resetForm() {
@@ -64,6 +69,7 @@ export function TodosView() {
       dueAt: '',
       priority: 3,
       projectId: selectedProjectId || 'none',
+      goalId: 'none',
     });
   }
 
@@ -82,6 +88,7 @@ export function TodosView() {
         dueAt: formData.dueAt || null,
         priority: formData.priority,
         projectId: formData.projectId !== 'none' ? formData.projectId : null,
+        goalId: formData.goalId !== 'none' ? formData.goalId : null,
         eventId: null,
       });
       
@@ -488,6 +495,26 @@ export function TodosView() {
                         {projects.map((project) => (
                           <SelectItem key={project.id} value={project.id}>
                             {project.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div>
+                    <Label htmlFor="goalId">Goal (optional)</Label>
+                    <Select
+                      value={formData.goalId}
+                      onValueChange={(val) => setFormData({ ...formData, goalId: val })}
+                    >
+                      <SelectTrigger id="goalId">
+                        <SelectValue placeholder="None" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">None</SelectItem>
+                        {goals.filter(g => g.status === 'active').map((goal) => (
+                          <SelectItem key={goal.id} value={goal.id}>
+                            {goal.title}
                           </SelectItem>
                         ))}
                       </SelectContent>
