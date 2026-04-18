@@ -20,7 +20,7 @@ import { format } from 'date-fns';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { RoutinePanel } from '@/components/RoutinePanel';
-import { PRIORITY_COLORS, withColorAlpha, scheduleMyDay, DAY_CAPACITY_MINUTES } from '@/lib/schedulingUtils';
+import { PRIORITY_COLORS, withColorAlpha, scheduleMyDay, DAY_CAPACITY_MINUTES, DEFAULT_TODO_MINUTES } from '@/lib/schedulingUtils';
 import { detectBlockConflicts } from '@/lib/conflictDetection';
 import { EffectiveScheduleEntry, getCurrentLocation, getEffectiveScheduleForDate, getFreeSlotsForDate } from '@/lib/effectiveSchedule';
 import { predictActivity } from '@/lib/habitModel';
@@ -568,14 +568,14 @@ export function TimelineView() {
     return ids;
   }, [timeBlocks, currentDate]);
 
-  // Daily workload estimate: sum block durations + 60 min per unscheduled todo
+  // Daily workload estimate: sum block durations + DEFAULT_TODO_MINUTES per unscheduled todo
   const totalWorkloadMinutes = useMemo(() => {
     const blockMinutes = timeBlocks.reduce((sum, block) => {
       const [sH, sM] = block.startTime.split(':').map(Number);
       const [eH, eM] = block.endTime.split(':').map(Number);
       return sum + Math.max(0, (eH * 60 + eM) - (sH * 60 + sM));
     }, 0);
-    const unscheduledMinutes = unscheduledTodayTodos.length * 60;
+    const unscheduledMinutes = unscheduledTodayTodos.length * DEFAULT_TODO_MINUTES;
     return blockMinutes + unscheduledMinutes;
   }, [timeBlocks, unscheduledTodayTodos]);
 

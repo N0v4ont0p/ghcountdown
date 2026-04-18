@@ -29,7 +29,7 @@ export function withColorAlpha(color: string, alpha: number): string {
 export const DAY_CAPACITY_MINUTES = 480;
 
 /** Default estimated duration per todo when no explicit estimate exists (minutes). */
-const DEFAULT_TODO_MINUTES = 60;
+export const DEFAULT_TODO_MINUTES = 60;
 
 /**
  * Compute a combined score for a todo used to rank it under capacity constraints.
@@ -103,8 +103,10 @@ export async function scheduleMyDay(
   let todosToSchedule = unscheduledTodos;
   const MAX_TODOS_UNDER_CAP = 5;
   if (totalIfAll > DAY_CAPACITY_MINUTES) {
-    const ranked = [...unscheduledTodos].sort((a, b) => todoScore(b) - todoScore(a));
-    todosToSchedule = ranked.slice(0, MAX_TODOS_UNDER_CAP);
+    // Pre-compute scores once to avoid redundant calls during sort
+    const scored = unscheduledTodos.map(t => ({ todo: t, score: todoScore(t) }));
+    scored.sort((a, b) => b.score - a.score);
+    todosToSchedule = scored.slice(0, MAX_TODOS_UNDER_CAP).map(s => s.todo);
     toast.warning(
       `Day would exceed 8 hours — scheduling top ${MAX_TODOS_UNDER_CAP} tasks only. ` +
       `${unscheduledTodos.length - MAX_TODOS_UNDER_CAP} task(s) skipped.`
@@ -144,9 +146,9 @@ export async function scheduleMyDay(
   }
 
   // Partition todos by cognitive load and sort each group for minimal context switching
-  const highLoad = sortGroup(todosToSchedule.filter(t => t.cognitiveLoad === 'high'));
-  const medLoad  = sortGroup(todosToSchedule.filter(t => t.cognitiveLoad === 'medium' || t.cognitiveLoad === null));
-  const lowLoad  = sortGroup(todosToSchedule.filter(t => t.cognitiveLoad === 'low'));
+  const highLoad    = sortGroup(todosToSchedule.filter(t => t.cognitiveLoad === 'high'));
+  const mediumLoad  = sortGroup(todosToSchedule.filter(t => t.cognitiveLoad === 'medium' || t.cognitiveLoad === null));
+  const lowLoad     = sortGroup(todosToSchedule.filter(t => t.cognitiveLoad === 'low'));
 
   let created = 0;
 
@@ -184,7 +186,7 @@ export async function scheduleMyDay(
   }
 
   // 3. Medium / unset cognitive load → any remaining hour (peak preferred)
-  for (const todo of medLoad) {
+  for (const todo of mediumLoad) {
     const slot = pickSlot(allCandidates);
     if (slot !== undefined) await assignTodo(todo, slot);
   }
