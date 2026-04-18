@@ -15,7 +15,7 @@ import {
   getAllScheduleSkeletonEntries,
   updateScheduleSkeletonEntry,
 } from '@/db/repositories/scheduleSkeletonRepo';
-import { generateActionPlan } from '@/lib/aiPlanner';
+import { getAIConfiguration } from '@/lib/aiPlanner';
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -154,47 +154,117 @@ export function RoutinePanel({ onClose: _onClose }: RoutinePanelProps) {
     if (!aiPrompt.trim()) return;
     setIsGenerating(true);
     try {
-      const result = await generateActionPlan(
-        'Create a weekly routine schedule. For each recurring activity produce a time block with the activity as the title, startTime and endTime in HH:mm 24-hour format. In the notes field write the days this activity happens as a comma separated list, for example: monday,wednesday,friday or weekdays or daily. User description: ' + aiPrompt,
-        {
-          todoTitles: [],
-          upcomingEventTitles: [],
-          recentBlockTitles: [],
-          unscheduledTodayTodos: [],
-          overdueTodos: [],
-          currentStreak: 0,
-          todayFocusMinutes: 0,
-          nextEventDateTime: null,
-          weeklySkeletonSummary: '',
-          currentLocation: '',
-          peakFocusHoursToday: [],
-          typicalActivitiesNow: [],
-        },
-      );
+      const config = getAIConfiguration();
 
-      const timeBlocks = result.suggestions.filter(s => s.type === 'timeBlock');
+      const systemPrompt =
+        'You extract weekly schedule information and return it as a JSON object. ' +
+        'Return ONLY a raw JSON object with a single key "entries" whose value is an array. ' +
+        'Each item in the array has these exact fields:\n' +
+        '- title: string, the activity name\n' +
+        '- days: array of numbers (0=Sun,1=Mon,2=Tue,3=Wed,4=Thu,5=Fri,6=Sat)\n' +
+        '- startTime: string in HH:mm format\n' +
+        '- endTime: string in HH:mm format\n' +
+        '- kind: either "fixed" or "flex"\n\n' +
+        'Example output:\n' +
+        '{"entries":[' +
+        '{"title":"School","days":[1,2,3,4,5],"startTime":"08:00","endTime":"15:00","kind":"fixed"},' +
+        '{"title":"Rowing","days":[1,3,5],"startTime":"18:00","endTime":"20:00","kind":"fixed"}' +
+        ']}';
 
-      if (timeBlocks.length === 0) {
-        throw new Error('empty response — no time blocks returned');
+      const requestBody = JSON.stringify({
+        model: 'openai/gpt-oss-120b:cerebras',
+        temperature: 0.1,
+        max_tokens: 2000,
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: aiPrompt },
+        ],
+      });
+
+      const requestHeaders: Record<string, string> = {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${config.apiKey}`,
+      };
+
+      const endpointUrl = 'https://router.huggingface.co/v1/chat/completions';
+
+      let responseJson: unknown = null;
+
+      const electronAPI = typeof window !== 'undefined' && (window as any).electronAPI;
+      if (electronAPI?.aiRequest) {
+        const raw: { ok: boolean; status: number; body: string } = await electronAPI.aiRequest({
+          url: endpointUrl,
+          method: 'POST',
+          headers: requestHeaders,
+          body: requestBody,
+        });
+        if (!raw.ok) {
+          throw new Error(`AI request failed (HTTP ${raw.status})`);
+        }
+        try { responseJson = JSON.parse(raw.body); } catch { /* non-JSON */ }
+      } else {
+        const response = await fetch(endpointUrl, {
+          method: 'POST',
+          headers: requestHeaders,
+          body: requestBody,
+        });
+        if (!response.ok) {
+          throw new Error(`AI request failed (HTTP ${response.status})`);
+        }
+        try { responseJson = await response.json(); } catch { /* non-JSON */ }
+      }
+
+      const content: string =
+        (responseJson as any)?.choices?.[0]?.message?.content ?? '';
+
+      let parsed: unknown = null;
+      try { parsed = JSON.parse(content); } catch { /* invalid JSON */ }
+
+      const entriesRaw = (parsed as any)?.entries;
+      if (!Array.isArray(entriesRaw) || entriesRaw.length === 0) {
+        toast.error('Could not parse routine — check your API key is set in Settings');
+        return;
       }
 
       let created = 0;
-      for (const suggestion of timeBlocks) {
-        const days = detectDays(suggestion.notes ?? suggestion.title);
-        const start = suggestion.startTime ?? '09:00';
-        const end = suggestion.endTime ?? '10:00';
+      for (const item of entriesRaw) {
+        if (!item || typeof item.title !== 'string' || !item.title.trim()) continue;
+        const days: number[] = Array.isArray(item.days)
+          ? item.days.filter((d: unknown) => typeof d === 'number' && d >= 0 && d <= 6)
+          : [1, 2, 3, 4, 5];
+        const startTime = typeof item.startTime === 'string' && /^\d{2}:\d{2}$/.test(item.startTime)
+          ? item.startTime
+          : '09:00';
+        const endTime = typeof item.endTime === 'string' && /^\d{2}:\d{2}$/.test(item.endTime)
+          ? item.endTime
+          : '10:00';
+        const kind: 'fixed' | 'flex' = item.kind === 'flex' ? 'flex' : 'fixed';
+
+        // Simple hash of title to pick a stable color
+        let hash = 0;
+        for (let i = 0; i < item.title.length; i++) {
+          hash = (hash * 31 + item.title.charCodeAt(i)) >>> 0;
+        }
+        const color = DEFAULT_COLORS[hash % DEFAULT_COLORS.length];
+
         await createScheduleSkeletonEntry({
-          title: suggestion.title,
+          title: item.title.trim(),
           locationId: null,
-          daysOfWeek: days,
-          startTime: start,
-          endTime: end,
-          kind: 'fixed',
-          color: DEFAULT_COLORS[created % DEFAULT_COLORS.length],
-          notes: suggestion.notes ?? '',
+          daysOfWeek: days.length > 0 ? days : [1, 2, 3, 4, 5],
+          startTime,
+          endTime,
+          kind,
+          color,
+          notes: '',
           active: true,
         });
         created++;
+      }
+
+      if (created === 0) {
+        toast.error('Could not parse routine — check your API key is set in Settings');
+        return;
       }
 
       setIsAIOpen(false);
@@ -203,13 +273,7 @@ export function RoutinePanel({ onClose: _onClose }: RoutinePanelProps) {
       toast.success('Routine built');
     } catch (err) {
       const msg = err instanceof Error ? err.message : '';
-      if (msg.toLowerCase().includes('empty')) {
-        toast.error(
-          'Try being more specific — e.g. "school 8am-3pm weekdays, rowing Mon Wed Fri 6-8pm, homework 4-6pm weekdays"'
-        );
-      } else {
-        toast.error(msg || 'AI generation failed');
-      }
+      toast.error(msg || 'Could not parse routine — check your API key is set in Settings');
     } finally {
       setIsGenerating(false);
     }
