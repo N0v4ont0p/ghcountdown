@@ -105,7 +105,7 @@ export async function scheduleMyDay(
 
   // Partition todos by cognitive load and sort each group for minimal context switching
   const highLoad = sortGroup(unscheduledTodos.filter(t => t.cognitiveLoad === 'high'));
-  const medLoad  = sortGroup(unscheduledTodos.filter(t => t.cognitiveLoad === 'medium' || t.cognitiveLoad == null));
+  const medLoad  = sortGroup(unscheduledTodos.filter(t => t.cognitiveLoad === 'medium' || t.cognitiveLoad === null));
   const lowLoad  = sortGroup(unscheduledTodos.filter(t => t.cognitiveLoad === 'low'));
 
   let created = 0;

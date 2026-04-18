@@ -214,7 +214,7 @@ Mix suggestion types appropriately:
 - Use "todo" for tasks and action items (optional dueAt as full ISO datetime)
 
 Priority scale: 5=critical deadline, 4=high importance, 3=normal, 2=low priority, 1=someday.
-Cognitive load scale for every todo/timeBlock suggestion: "high" (writing, coding, problem-solving, deep analysis), "medium" (reading, planning, reviewing), "low" (admin, replies, organising, simple errands). Always include cognitiveLoad in every suggestion.
+Cognitive load scale for every todo/timeBlock suggestion: "high" (writing, coding, problem-solving, deep analysis), "medium" (reading, planning, reviewing), "low" (admin, replies, organizing, simple errands). Always include cognitiveLoad in every suggestion.
 Confidence is 0.0 to 1.0 representing how well you understood the request.
 urgencyHours is how many hours until something is urgent, or null if not time-sensitive.
 You can produce timeBlocks for ANY date, not just today. Use the "date" field to specify which day. If user mentions "this week" produce blocks across Mon-Fri. If they mention "tomorrow" use the tomorrow date given above.`;
