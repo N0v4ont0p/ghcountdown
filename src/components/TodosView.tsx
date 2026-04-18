@@ -14,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
-import { Plus, Trash, Folder, CheckCircle, Tray, CalendarCheck } from '@phosphor-icons/react';
+import { Plus, Trash, Folder, CheckCircle, Tray, CalendarCheck, Cloud } from '@phosphor-icons/react';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -121,8 +121,27 @@ export function TodosView() {
   async function handleDeleteConfirm() {
     if (!todoToDelete) return;
     try {
+      const { pushUndo } = await import('@/lib/undoHistory');
+      const { getTodoById } = await import('@/db/repositories/todosRepo');
+      const todoData = await getTodoById(todoToDelete);
+      if (todoData) pushUndo({ type: 'deleteTodo', data: todoData, ts: Date.now() });
       await deleteTodo(todoToDelete);
-      toast.success('Todo deleted');
+      toast.success('Todo deleted', {
+        duration: 5000,
+        action: {
+          label: 'Undo',
+          onClick: async () => {
+            const { canUndo, popUndo } = await import('@/lib/undoHistory');
+            if (canUndo()) {
+              const entry = popUndo()!;
+              const { add } = await import('@/db/core');
+              const { STORES } = await import('@/db/schema');
+              await add(STORES.TODOS, entry.data);
+              await loadData();
+            }
+          },
+        },
+      });
       await loadData();
     } catch (error) {
       toast.error('Failed to delete todo');
@@ -183,6 +202,7 @@ export function TodosView() {
       return aOv - bOv;
     });
   const doneTodos = todos.filter(t => t.status === 'done');
+  const someDayTodos = todos.filter(t => t.status === 'someday');
 
   function getTodosByProject(projectId: string) {
     return todos.filter(t => t.projectId === projectId && t.status !== 'done');
@@ -306,6 +326,15 @@ export function TodosView() {
               {todayTodos.length > 0 && (
                 <Badge variant="secondary" className="ml-1 h-5 min-w-5 px-1">
                   {todayTodos.length}
+                </Badge>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="someday" className="gap-2">
+              <Cloud size={16} />
+              Someday
+              {someDayTodos.length > 0 && (
+                <Badge variant="secondary" className="ml-1 h-5 min-w-5 px-1">
+                  {someDayTodos.length}
                 </Badge>
               )}
             </TabsTrigger>
@@ -513,6 +542,22 @@ export function TodosView() {
           ) : (
             <AnimatePresence mode="popLayout">
               {todayTodos.map((todo) => (
+                <TodoItem key={todo.id} todo={todo} showProject />
+              ))}
+            </AnimatePresence>
+          )}
+        </TabsContent>
+
+        <TabsContent value="someday" className="space-y-3 mt-0">
+          {someDayTodos.length === 0 ? (
+            <Card className="p-12 text-center">
+              <Cloud weight="thin" size={48} className="mx-auto mb-4 text-muted-foreground" />
+              <h3 className="text-lg font-semibold mb-2">Your idea list is empty</h3>
+              <p className="text-sm text-muted-foreground">Capture ideas without committing</p>
+            </Card>
+          ) : (
+            <AnimatePresence mode="popLayout">
+              {someDayTodos.map((todo) => (
                 <TodoItem key={todo.id} todo={todo} showProject />
               ))}
             </AnimatePresence>

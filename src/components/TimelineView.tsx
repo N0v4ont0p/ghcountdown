@@ -348,8 +348,26 @@ export function TimelineView() {
   async function handleDeleteConfirm() {
     if (!blockToDelete) return;
     try {
+      const { pushUndo } = await import('@/lib/undoHistory');
+      const blockData = timeBlocks.find(b => b.id === blockToDelete);
+      if (blockData) pushUndo({ type: 'deleteTimeBlock', data: blockData, ts: Date.now() });
       await deleteTimeBlock(blockToDelete);
-      toast.success('Time block deleted');
+      toast.success('Time block deleted', {
+        duration: 5000,
+        action: {
+          label: 'Undo',
+          onClick: async () => {
+            const { canUndo, popUndo } = await import('@/lib/undoHistory');
+            if (canUndo()) {
+              const entry = popUndo()!;
+              const { add } = await import('@/db/core');
+              const { STORES } = await import('@/db/schema');
+              await add(STORES.TIME_BLOCKS, entry.data);
+              await loadData();
+            }
+          },
+        },
+      });
       await loadData();
     } catch (error) {
       toast.error('Failed to delete time block');
@@ -422,16 +440,31 @@ export function TimelineView() {
 
   async function handleChipKeyDown(e: React.KeyboardEvent, todo: Todo) {
     if (e.key !== 'Enter' && e.key !== ' ') return;
-    e.preventDefault(); // prevent page scroll on Space, form submit on Enter
+    e.preventDefault();
     const dateStr = format(currentDate, 'yyyy-MM-dd');
     try {
-      const count = await scheduleMyDay(dateStr, [todo], timeBlocks);
-      if (count > 0) {
-        toast.success(`Scheduled "${todo.title}"`);
-        loadData();
-      } else {
+      const occupiedSet = new Set(timeBlocks.map(b => parseInt(b.startTime.split(':')[0])));
+      const candidateHours = [9, 10, 14, 15, 11, 13, 16, 17, 8, 18];
+      const slot = candidateHours.find(h => !occupiedSet.has(h));
+      if (slot === undefined) {
         toast.error('No available time slots for this todo');
+        return;
       }
+      const startTime = `${String(slot).padStart(2, '0')}:00`;
+      const endTime = `${String(slot + 1).padStart(2, '0')}:00`;
+      await createTimeBlock({
+        title: todo.title,
+        date: dateStr,
+        startTime,
+        endTime,
+        todoId: todo.id,
+        projectId: todo.projectId ?? null,
+        color: PRIORITY_COLORS[todo.priority] ?? PRIORITY_COLORS[3],
+        autoTrack: todo.priority >= 4,
+        slotType: 'fixed',
+      });
+      toast.success(`Scheduled "${todo.title}"`);
+      loadData();
     } catch {
       toast.error('Failed to schedule todo');
     }
@@ -607,6 +640,13 @@ export function TimelineView() {
 
       <div className="grid grid-cols-[1fr_300px] gap-6 h-[calc(100%-5rem)]">
         <Card className="relative overflow-hidden">
+          {timeBlocks.length === 0 && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 z-10 pointer-events-none">
+              <CalendarBlank weight="thin" size={48} className="text-muted-foreground" />
+              <h3 className="text-lg font-semibold">No blocks today</h3>
+              <p className="text-sm text-muted-foreground">Drag a task or add a block to get started</p>
+            </div>
+          )}
           <div
             ref={timelineRef}
             className="h-full overflow-y-auto overflow-x-hidden relative"
