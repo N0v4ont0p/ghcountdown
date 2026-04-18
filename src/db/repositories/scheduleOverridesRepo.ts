@@ -55,10 +55,4 @@ export async function deleteAllScheduleOverrides(): Promise<void> {
   await clearStore(STORES.SCHEDULE_OVERRIDES);
 }
 
-export const getAll = getAllScheduleOverrides;
-export const getById = getScheduleOverrideById;
-export const getByDate = getScheduleOverridesByDate;
-export const create = createScheduleOverride;
-export const update = updateScheduleOverride;
-export const deleteAll = deleteAllScheduleOverrides;
-export { deleteScheduleOverride as delete };
+

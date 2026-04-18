@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import { Event, STORES } from '../schema';
-import { clearStore, getAll, getByKey, put, remove, getAllByIndex } from '../core';
+import { clearStore, getAll, getByKey, put, remove } from '../core';
 
 export async function getAllEvents(): Promise<Event[]> {
   return getAll<Event>(STORES.EVENTS);

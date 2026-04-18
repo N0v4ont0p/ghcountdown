@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { motion, AnimatePresence, Reorder } from 'framer-motion';
-import { TimeBlock, Todo, Event, Project } from '@/db/schema';
-import { getAllTimeBlocks, createTimeBlock, updateTimeBlock, deleteTimeBlock, getTimeBlocksByDate } from '@/db/repositories/timeBlocksRepo';
+import { motion, AnimatePresence } from 'framer-motion';
+import { TimeBlock, TimeEntry, Todo, Event, Project } from '@/db/schema';
+import { createTimeBlock, updateTimeBlock, deleteTimeBlock, getTimeBlocksByDate } from '@/db/repositories/timeBlocksRepo';
 import { getAllTodos, updateTodo } from '@/db/repositories/todosRepo';
 import { getAllEvents } from '@/db/repositories/eventsRepo';
 import { getAllProjects } from '@/db/repositories/projectsRepo';
@@ -15,8 +15,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
-import { Plus, Play, Stop, Trash, Pencil, Clock, CalendarBlank, CheckSquare, Lightning, Warning } from '@phosphor-icons/react';
-import { format, startOfDay, endOfDay, parse, differenceInMinutes } from 'date-fns';
+import { Plus, Play, Stop, Trash, Clock, CalendarBlank, CheckSquare, Lightning, Warning } from '@phosphor-icons/react';
+import { format } from 'date-fns';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { scheduleMyDay, PRIORITY_COLORS, withColorAlpha } from '@/lib/scheduleDay';
@@ -46,10 +46,9 @@ export function TimelineView() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingBlock, setEditingBlock] = useState<TimeBlock | null>(null);
-  const [runningTimer, setRunningTimer] = useState<any>(null);
+  const [runningTimer, setRunningTimer] = useState<TimeEntry | null>(null);
   const [currentTime, setCurrentTime] = useState(new Date());
   const timelineRef = useRef<HTMLDivElement>(null);
-  const [dragStart, setDragStart] = useState<{ hour: number; minute: number } | null>(null);
   const [dragOverHour, setDragOverHour] = useState<number | null>(null);
   const [isScheduling, setIsScheduling] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);

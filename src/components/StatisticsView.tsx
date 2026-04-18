@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { 
   Clock, 
@@ -15,7 +14,6 @@ import {
   Timer,
   Flame,
   Trophy,
-  ListChecks,
   ArrowUp,
   ArrowDown,
   Circle
@@ -24,7 +22,7 @@ import { getAllTimeEntries } from '@/db/repositories/timeRepo';
 import { getAllTodos } from '@/db/repositories/todosRepo';
 import { getAllEvents } from '@/db/repositories/eventsRepo';
 import { TimeEntry, Todo, Event } from '@/db/schema';
-import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, eachDayOfInterval, differenceInMinutes, isToday, isThisWeek, isThisMonth, parseISO, startOfDay, endOfDay } from 'date-fns';
+import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, eachDayOfInterval, differenceInMinutes, isToday, parseISO, startOfDay, endOfDay } from 'date-fns';
 import { cn } from '@/lib/utils';
 
 interface StatsSummary {
@@ -61,9 +59,9 @@ interface ProductivityInsight {
 }
 
 export function StatisticsView() {
-  const [timeEntries, setTimeEntries] = useState<TimeEntry[]>([]);
-  const [todos, setTodos] = useState<Todo[]>([]);
-  const [events, setEvents] = useState<Event[]>([]);
+  const [_timeEntries, setTimeEntries] = useState<TimeEntry[]>([]);
+  const [_todos, setTodos] = useState<Todo[]>([]);
+  const [_events, setEvents] = useState<Event[]>([]);
   const [stats, setStats] = useState<StatsSummary | null>(null);
   const [weeklyData, setWeeklyData] = useState<DayStats[]>([]);
   const [hourlyData, setHourlyData] = useState<HourlyStats[]>([]);

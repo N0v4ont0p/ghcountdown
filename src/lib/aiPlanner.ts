@@ -117,6 +117,7 @@ function safeJsonParse(value: string): unknown {
   }
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function extractFirstJsonObject(text: string): unknown {
   const trimmed = text.trim();
   const direct = safeJsonParse(trimmed);
@@ -199,7 +200,7 @@ Hard constraints:
 - Never schedule over fixed weekly skeleton commitments.
 - Prefer peak focus hours when suggesting focused work.
 - Respect location constraints when scheduling.
-- Support \"skeleton mode\" requests by proposing changes to routine structure instead of conflicting timeline blocks.
+- Support "skeleton mode" requests by proposing changes to routine structure instead of conflicting timeline blocks.
 Mix suggestion types appropriately:
 - Use "timeBlock" to schedule focused work sessions (requires date in YYYY-MM-DD, startTime and endTime in HH:mm 24h format)
 - Use "event" for deadlines, meetings, or appointments (requires startsAt as full ISO datetime e.g. ${today}T18:00:00.000Z)
@@ -318,9 +319,10 @@ async function requestWithFallback(params: {
   throw new Error(`AI request failed after ${attempts} attempt(s). Last error: ${finalError}`);
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function validateAndRepairResult(
   raw: any,
-  prompt: string
+  _prompt: string
 ): { valid: boolean; result?: AIAssistantResult; error?: string } {
   if (!raw || typeof raw !== 'object') {
     return { valid: false, error: 'Response is not a JSON object' };

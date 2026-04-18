@@ -26,9 +26,8 @@ import { deleteAllTimeBlocks, getTimeBlocksByDate } from '@/db/repositories/time
 import { Event, Todo, TimeBlock, Settings } from '@/db/schema';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Plus, CalendarBlank, Sun, Moon, Monitor, DownloadSimple, UploadSimple, Trash, Sparkle } from '@phosphor-icons/react';
+import { Sun, Moon, Monitor, DownloadSimple, UploadSimple, Trash, Sparkle } from '@phosphor-icons/react';
 import { format } from 'date-fns';
-import { Badge } from '@/components/ui/badge';
 import { useTheme } from '@/hooks/use-theme';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
@@ -45,7 +44,7 @@ function App() {
   const [currentView, setCurrentView] = useState('home');
   const [nextEvent, setNextEvent] = useState<Event | null>(null);
   const [upcomingEvents, setUpcomingEvents] = useState<Event[]>([]);
-  const [todos, setTodos] = useState<Todo[]>([]);
+  const [, setTodos] = useState<Todo[]>([]);
   const [todayBlocks, setTodayBlocks] = useState<TimeBlock[]>([]);
   const [nowTick, setNowTick] = useState(new Date());
   const [settings, setSettings] = useState<Settings | null>(null);

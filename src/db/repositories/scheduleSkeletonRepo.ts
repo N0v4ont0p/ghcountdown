@@ -54,9 +54,4 @@ export async function deleteAllScheduleSkeletonEntries(): Promise<void> {
   await clearStore(STORES.SCHEDULE_SKELETON);
 }
 
-export const getAll = getAllScheduleSkeletonEntries;
-export const getById = getScheduleSkeletonEntryById;
-export const create = createScheduleSkeletonEntry;
-export const update = updateScheduleSkeletonEntry;
-export const deleteAll = deleteAllScheduleSkeletonEntries;
-export { deleteScheduleSkeletonEntry as delete };
+

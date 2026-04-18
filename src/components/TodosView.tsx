@@ -24,7 +24,7 @@ export function TodosView() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isProjectDialogOpen, setIsProjectDialogOpen] = useState(false);
   const [currentTab, setCurrentTab] = useState<'inbox' | 'today' | 'projects'>('inbox');
-  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const [selectedProjectId, _setSelectedProjectId] = useState<string | null>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [todoToDelete, setTodoToDelete] = useState<string | null>(null);
   const [deleteProjectConfirmOpen, setDeleteProjectConfirmOpen] = useState(false);

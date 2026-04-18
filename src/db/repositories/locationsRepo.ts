@@ -54,9 +54,4 @@ export async function deleteAllLocations(): Promise<void> {
   await clearStore(STORES.LOCATIONS);
 }
 
-export const getAll = getAllLocations;
-export const getById = getLocationById;
-export const create = createLocation;
-export const update = updateLocation;
-export const deleteAll = deleteAllLocations;
-export { deleteLocation as delete };
+

@@ -294,7 +294,112 @@ export async function predictActivity(date = new Date()): Promise<{ label: strin
   return { label: prediction.label, confidence: prediction.confidence };
 }
 
+const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'] as const;
+const DRIFT_THRESHOLD = 0.6;
+const MIN_CELL_WEIGHT = 10;
+
+function timeOfDay(hour: number): 'mornings' | 'afternoons' | 'evenings' {
+  if (hour >= 18) return 'evenings';
+  if (hour >= 12) return 'afternoons';
+  return 'mornings';
+}
+
 export async function detectDrift(): Promise<string[]> {
-  // Intentionally returns no drift signals for now per current product requirement.
-  return [];
+  const now = Date.now();
+  const recentCutoff = now - 7 * 24 * 60 * 60 * 1000;
+  const historicalStart = now - 37 * 24 * 60 * 60 * 1000;
+
+  const [entries, todos, blocks] = await Promise.all([
+    getAllTimeEntries(),
+    getAllTodos(),
+    getAllTimeBlocks(),
+  ]);
+  const todoById = new Map(todos.map((todo) => [todo.id, todo]));
+
+  const recentWeights = new Map<number, Map<string, number>>();
+  const historicalWeights = new Map<number, Map<string, number>>();
+
+  function accumulate(
+    target: Map<number, Map<string, number>>,
+    day: number,
+    hour: number,
+    label: string,
+    minutes: number
+  ) {
+    const key = day * 24 + hour;
+    const m = target.get(key) ?? new Map<string, number>();
+    m.set(label, (m.get(label) ?? 0) + minutes);
+    target.set(key, m);
+  }
+
+  for (const entry of entries) {
+    const startMs = new Date(entry.startAt).getTime();
+    if (!Number.isFinite(startMs)) continue;
+    const endMs = entry.endAt ? new Date(entry.endAt).getTime() : now;
+    const durationMinutes = Math.max(0, (endMs - startMs) / 60000);
+    if (durationMinutes < MIN_ENTRY_MINUTES) continue;
+
+    const start = new Date(entry.startAt);
+    const label = toLabelFromEntry(entry, todoById);
+
+    if (startMs >= recentCutoff) {
+      accumulate(recentWeights, start.getDay(), start.getHours(), label, durationMinutes);
+    } else if (startMs >= historicalStart) {
+      accumulate(historicalWeights, start.getDay(), start.getHours(), label, durationMinutes);
+    }
+  }
+
+  for (const block of blocks) {
+    const startMs = new Date(`${block.date}T${block.startTime}:00`).getTime();
+    if (!Number.isFinite(startMs)) continue;
+    const [sH, sM] = block.startTime.split(':').map(Number);
+    const [eH, eM] = block.endTime.split(':').map(Number);
+    const durationMinutes = Math.max(0, (eH * 60 + eM) - (sH * 60 + sM));
+    if (durationMinutes < MIN_ENTRY_MINUTES) continue;
+
+    const start = new Date(`${block.date}T${block.startTime}:00`);
+    const label = extractLabel(block.title);
+    const adjusted = durationMinutes * BLOCK_WEIGHT_FACTOR;
+
+    if (startMs >= recentCutoff) {
+      accumulate(recentWeights, start.getDay(), start.getHours(), label, adjusted);
+    } else if (startMs >= historicalStart) {
+      accumulate(historicalWeights, start.getDay(), start.getHours(), label, adjusted);
+    }
+  }
+
+  const flaggedSlots = new Set<string>();
+  const signals: string[] = [];
+
+  for (const [key, recentMap] of recentWeights.entries()) {
+    const day = Math.floor(key / 24);
+    const hour = key % 24;
+
+    const recentTotal = Array.from(recentMap.values()).reduce((a, b) => a + b, 0);
+    if (recentTotal < MIN_CELL_WEIGHT) continue;
+
+    const recentSorted = Array.from(recentMap.entries()).sort((a, b) => b[1] - a[1]);
+    const recentDominant = recentSorted[0];
+    if (!recentDominant || recentDominant[1] / recentTotal < DRIFT_THRESHOLD) continue;
+
+    const historicalMap = historicalWeights.get(key);
+    if (!historicalMap) continue;
+
+    const historicalTotal = Array.from(historicalMap.values()).reduce((a, b) => a + b, 0);
+    if (historicalTotal < MIN_CELL_WEIGHT) continue;
+
+    const historicalDominant = Array.from(historicalMap.entries()).sort((a, b) => b[1] - a[1])[0];
+    if (!historicalDominant) continue;
+
+    if (recentDominant[0] !== historicalDominant[0]) {
+      const slotKey = `${day}-${timeOfDay(hour)}`;
+      if (!flaggedSlots.has(slotKey)) {
+        flaggedSlots.add(slotKey);
+        const dayName = DAY_NAMES[day];
+        signals.push(`Your ${dayName} ${timeOfDay(hour)} have changed — want to update your routine?`);
+      }
+    }
+  }
+
+  return signals;
 }
