@@ -10,11 +10,8 @@ import { SmartSuggestions } from '@/components/SmartSuggestions';
 import { EventsView } from '@/components/EventsView';
 import { TodosView } from '@/components/TodosView';
 import { TimelineView } from '@/components/TimelineView';
-import { WeeklyCalendarView } from '@/components/WeeklyCalendarView';
 import { StatisticsView } from '@/components/StatisticsView';
-import { TimeTrackingView } from '@/components/TimeTrackingView';
 import { AIAssistantView } from '@/components/AIAssistantView';
-import { ScheduleSkeletonView } from '@/components/ScheduleSkeletonView';
 import { QuickCapture } from '@/components/QuickCapture';
 import { UniversalSearch } from '@/components/UniversalSearch';
 import { initDB } from '@/db/core';
@@ -569,42 +566,6 @@ function App() {
               </motion.div>
             )}
 
-            {currentView === 'weekly' && (
-              <motion.div
-                key="weekly"
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -20 }}
-                transition={{ duration: 0.3 }}
-              >
-                <WeeklyCalendarView />
-              </motion.div>
-            )}
-
-            {currentView === 'time-tracking' && (
-              <motion.div
-                key="time-tracking"
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -20 }}
-                transition={{ duration: 0.3 }}
-              >
-                <TimeTrackingView />
-              </motion.div>
-            )}
-
-            {currentView === 'routine' && (
-              <motion.div
-                key="routine"
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -20 }}
-                transition={{ duration: 0.3 }}
-              >
-                <ScheduleSkeletonView />
-              </motion.div>
-            )}
-
             {currentView === 'statistics' && (
               <motion.div
                 key="statistics"
@@ -614,18 +575,6 @@ function App() {
                 transition={{ duration: 0.3 }}
               >
                 <StatisticsView />
-              </motion.div>
-            )}
-
-            {currentView === 'ai-assistant' && (
-              <motion.div
-                key="ai-assistant"
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -20 }}
-                transition={{ duration: 0.3 }}
-              >
-                <AIAssistantView />
               </motion.div>
             )}
 

@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { House, CalendarBlank, ListChecks, Clock, Gear, CalendarCheck, ChartBar, Timer, Sparkle, CalendarDots } from '@phosphor-icons/react';
+import { House, CalendarBlank, ListChecks, Clock, Gear, ChartBar } from '@phosphor-icons/react';
 import { cn } from '@/lib/utils';
 import logoUrl from '@/assets/logo.svg';
 
@@ -10,14 +10,10 @@ interface SidebarProps {
 
 const navItems = [
   { id: 'home', label: 'Home', icon: House },
-  { id: 'routine', label: 'Routine', icon: CalendarDots },
   { id: 'timeline', label: 'Timeline', icon: Clock },
-  { id: 'weekly', label: 'Weekly', icon: CalendarCheck },
   { id: 'todos', label: 'Todos', icon: ListChecks },
   { id: 'events', label: 'Events', icon: CalendarBlank },
-  { id: 'time-tracking', label: 'Time Tracking', icon: Timer },
-  { id: 'statistics', label: 'Statistics', icon: ChartBar },
-  { id: 'ai-assistant', label: 'AI Assistant', icon: Sparkle },
+  { id: 'statistics', label: 'Stats', icon: ChartBar },
   { id: 'settings', label: 'Settings', icon: Gear },
 ];
 
