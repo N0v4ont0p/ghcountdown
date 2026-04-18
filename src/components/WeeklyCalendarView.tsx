@@ -317,7 +317,7 @@ export function WeeklyCalendarView() {
     return hourIndex * HOUR_HEIGHT + (minutes / 60) * HOUR_HEIGHT;
   }
 
-  const todayDayIndex = weekDays.findIndex(day => isToday(day));
+  const _todayDayIndex = weekDays.findIndex(day => isToday(day));
   const currentTimePos = getCurrentTimePosition();
 
   const WEEKLY_CAPACITY_HOURS = 40;
@@ -509,8 +509,8 @@ export function WeeklyCalendarView() {
                     <AnimatePresence>
                       {dayBlocks.map((block) => {
                         const { top, height } = getBlockPosition(block);
-                        const todo = block.todoId ? todos.find(t => t.id === block.todoId) : null;
-                        const project = block.projectId ? projects.find(p => p.id === block.projectId) : null;
+                        const _todo = block.todoId ? todos.find(t => t.id === block.todoId) : null;
+                        const _project = block.projectId ? projects.find(p => p.id === block.projectId) : null;
 
                         return (
                           <motion.div

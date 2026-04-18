@@ -19,11 +19,12 @@ export async function getTodosByProject(projectId: string): Promise<Todo[]> {
 }
 
 export async function createTodo(
-  data: Omit<Todo, 'id' | 'createdAt' | 'updatedAt'>
+  data: Omit<Todo, 'id' | 'createdAt' | 'updatedAt' | 'locationId'> & { locationId?: string | null }
 ): Promise<Todo> {
   const now = new Date().toISOString();
   const todo: Todo = {
     ...data,
+    locationId: data.locationId ?? null,
     id: uuidv4(),
     createdAt: now,
     updatedAt: now,

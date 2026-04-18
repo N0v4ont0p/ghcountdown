@@ -16,6 +16,7 @@ export async function initDB(): Promise<IDBDatabase> {
 
     request.onupgradeneeded = (event) => {
       const db = (event.target as IDBOpenDBRequest).result;
+      const oldVersion = event.oldVersion;
 
       if (!db.objectStoreNames.contains(STORES.EVENTS)) {
         const eventsStore = db.createObjectStore(STORES.EVENTS, { keyPath: 'id' });
@@ -48,6 +49,27 @@ export async function initDB(): Promise<IDBDatabase> {
 
       if (!db.objectStoreNames.contains(STORES.SETTINGS)) {
         db.createObjectStore(STORES.SETTINGS, { keyPath: 'id' });
+      }
+
+      if (oldVersion < 2) {
+        if (!db.objectStoreNames.contains(STORES.LOCATIONS)) {
+          const locationsStore = db.createObjectStore(STORES.LOCATIONS, { keyPath: 'id' });
+          locationsStore.createIndex('name', 'name', { unique: false });
+        }
+
+        if (!db.objectStoreNames.contains(STORES.SCHEDULE_SKELETON)) {
+          const skeletonStore = db.createObjectStore(STORES.SCHEDULE_SKELETON, { keyPath: 'id' });
+          skeletonStore.createIndex('kind', 'kind', { unique: false });
+        }
+
+        if (!db.objectStoreNames.contains(STORES.SCHEDULE_OVERRIDES)) {
+          const overridesStore = db.createObjectStore(STORES.SCHEDULE_OVERRIDES, { keyPath: 'id' });
+          overridesStore.createIndex('date', 'date', { unique: false });
+        }
+
+        if (!db.objectStoreNames.contains(STORES.HABIT_MODEL)) {
+          db.createObjectStore(STORES.HABIT_MODEL, { keyPath: 'id' });
+        }
       }
     };
   });

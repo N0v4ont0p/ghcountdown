@@ -1,5 +1,5 @@
 export const DB_NAME = 'ghcountdown';
-export const DB_VERSION = 1;
+export const DB_VERSION = 2;
 
 export interface Event {
   id: string;
@@ -29,6 +29,7 @@ export interface Todo {
   priority: 1 | 2 | 3 | 4 | 5;
   projectId: string | null;
   eventId: string | null;
+  locationId: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -53,11 +54,49 @@ export interface TimeBlock {
   endTime: string;
   todoId: string | null;
   projectId: string | null;
+  locationId: string | null;
   color: string;
   autoTrack: boolean;
   slotType: 'fixed' | 'flex-todo' | 'flex-project';
   createdAt: string;
   updatedAt: string;
+}
+
+export interface Location {
+  id: string;
+  name: string;
+  color: string;
+  icon: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ScheduleSkeletonEntry {
+  id: string;
+  title: string;
+  locationId: string | null;
+  daysOfWeek: number[];
+  startTime: string;
+  endTime: string;
+  kind: 'fixed' | 'flex';
+  color: string;
+  notes: string;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ScheduleOverride {
+  id: string;
+  date: string;
+  skeletonEntryId: string | null;
+  action: 'skip' | 'replace' | 'add';
+  replacementTitle: string | null;
+  replacementStartTime: string | null;
+  replacementEndTime: string | null;
+  replacementLocationId: string | null;
+  notes: string;
+  createdAt: string;
 }
 
 export interface Settings {
@@ -78,4 +117,8 @@ export const STORES = {
   TIME_ENTRIES: 'timeEntries',
   TIME_BLOCKS: 'timeBlocks',
   SETTINGS: 'settings',
+  LOCATIONS: 'locations',
+  SCHEDULE_SKELETON: 'scheduleSkeleton',
+  SCHEDULE_OVERRIDES: 'scheduleOverrides',
+  HABIT_MODEL: 'habitModel',
 } as const;
