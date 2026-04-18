@@ -39,7 +39,7 @@ import { Label } from '@/components/ui/label';
 import { exportAllData, downloadJSON, exportTimeEntriesCSV, exportEventsCSV, exportTodosCSV, importAllData, ExportData } from '@/db/export';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { toast } from 'sonner';
+import { toast as notifications } from 'sonner';
 import { getAIConfiguration, updateAIConfiguration, generateActionPlan } from '@/lib/aiPlanner';
 import { performDailyRollover } from '@/lib/rollover';
 import { escalateOverdueTodos } from '@/lib/overdueCheck';
@@ -113,12 +113,12 @@ function App() {
 
         const rolledOver = await performDailyRollover();
         if (rolledOver.length > 0) {
-          toast.info(`🔄 ${rolledOver.length} unfinished todo${rolledOver.length !== 1 ? 's' : ''} rolled over from yesterday`);
+          notifications.info(`🔄 ${rolledOver.length} unfinished todo${rolledOver.length !== 1 ? 's' : ''} rolled over from yesterday`);
         }
 
         const escalated = await escalateOverdueTodos();
         if (escalated > 0) {
-          toast.warning(`⚠️ ${escalated} overdue todo${escalated !== 1 ? 's' : ''} escalated to critical priority`);
+          notifications.warning(`⚠️ ${escalated} overdue todo${escalated !== 1 ? 's' : ''} escalated to critical priority`);
         }
 
         await detectDrift();
@@ -323,40 +323,40 @@ function App() {
     try {
       const data = await exportAllData();
       downloadJSON(data, `ghcountdown-backup-${new Date().toISOString().split('T')[0]}.json`);
-      toast.success('Data exported');
+      notifications.success('Data exported');
     } catch (error) {
       console.error('Export failed:', error);
-      toast.error('Failed to export data');
+      notifications.error('Failed to export data');
     }
   }
 
   async function handleExportTimeCSV() {
     try {
       await exportTimeEntriesCSV();
-      toast.success('Time entries exported');
+      notifications.success('Time entries exported');
     } catch (error) {
       console.error('Export failed:', error);
-      toast.error('Failed to export time entries');
+      notifications.error('Failed to export time entries');
     }
   }
 
   async function handleExportEventsCSV() {
     try {
       await exportEventsCSV();
-      toast.success('Events exported');
+      notifications.success('Events exported');
     } catch (error) {
       console.error('Export failed:', error);
-      toast.error('Failed to export events');
+      notifications.error('Failed to export events');
     }
   }
 
   async function handleExportTodosCSV() {
     try {
       await exportTodosCSV();
-      toast.success('Todos exported');
+      notifications.success('Todos exported');
     } catch (error) {
       console.error('Export failed:', error);
-      toast.error('Failed to export todos');
+      notifications.error('Failed to export todos');
     }
   }
 
@@ -373,11 +373,11 @@ function App() {
         const text = await file.text();
         const data: ExportData = JSON.parse(text);
         await importAllData(data);
-        toast.success('Data imported — refreshing...');
+        notifications.success('Data imported — refreshing...');
         setTimeout(() => window.location.reload(), 1500);
       } catch (error) {
         console.error('Import failed:', error);
-        toast.error('Import failed — check the file format');
+        notifications.error('Import failed — check the file format');
       }
     };
 
@@ -450,9 +450,9 @@ function App() {
       }
 
       await loadHomeData();
-      toast.success(bulkDeleteMeta[bulkDeleteTarget].successMessage);
+      notifications.success(bulkDeleteMeta[bulkDeleteTarget].successMessage);
     } catch (error) {
-      toast.error('Failed to delete data');
+      notifications.error('Failed to delete data');
       throw error;
     } finally {
       setBulkDeleteTarget(null);
@@ -782,7 +782,7 @@ function App() {
                           await updateSettings({ importantPriorityThreshold: threshold });
                           const updated = await getSettings();
                           setSettings(updated);
-                          toast.success('Priority threshold updated');
+                          notifications.success('Priority threshold updated');
                         }}
                       >
                         <SelectTrigger className="w-48">
