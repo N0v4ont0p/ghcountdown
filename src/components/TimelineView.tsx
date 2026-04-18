@@ -21,6 +21,7 @@ import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { RoutinePanel } from '@/components/RoutinePanel';
 import { PRIORITY_COLORS, withColorAlpha } from '@/lib/scheduleDay';
+import { scheduleMyDay } from '@/lib/schedulingUtils';
 import { detectBlockConflicts } from '@/lib/conflictDetection';
 import { EffectiveScheduleEntry, getCurrentLocation, getEffectiveScheduleForDate, getFreeSlotsForDate } from '@/lib/effectiveSchedule';
 import { predictActivity } from '@/lib/habitModel';
@@ -426,36 +427,7 @@ export function TimelineView() {
     setIsScheduling(true);
     try {
       const dateStr = format(currentDate, 'yyyy-MM-dd');
-      const occupiedHours = new Set<number>();
-      for (const block of timeBlocks) {
-        const startH = parseInt(block.startTime.split(':')[0]);
-        const endH = parseInt(block.endTime.split(':')[0]);
-        for (let h = startH; h < Math.max(startH + 1, endH); h++) {
-          occupiedHours.add(h);
-        }
-      }
-      const candidateHours = [9, 10, 14, 15, 11, 13, 16, 17, 8, 18];
-      const sorted = [...unscheduledTodayTodos].sort((a, b) => b.priority - a.priority);
-      let count = 0;
-      for (const todo of sorted) {
-        const slot = candidateHours.find(h => !occupiedHours.has(h));
-        if (slot === undefined) break;
-        const startTime = `${String(slot).padStart(2, '0')}:00`;
-        const endTime = `${String(slot + 1).padStart(2, '0')}:00`;
-        await createTimeBlock({
-          title: todo.title,
-          date: dateStr,
-          startTime,
-          endTime,
-          todoId: todo.id,
-          projectId: todo.projectId ?? null,
-          color: PRIORITY_COLORS[todo.priority] || PRIORITY_COLORS[3],
-          autoTrack: todo.priority >= 4,
-          slotType: 'fixed',
-        });
-        occupiedHours.add(slot);
-        count++;
-      }
+      const count = await scheduleMyDay(dateStr, unscheduledTodayTodos, timeBlocks);
       if (count === 0) {
         toast.info('All todos are already scheduled!');
       } else {
