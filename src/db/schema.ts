@@ -1,5 +1,15 @@
 export const DB_NAME = 'ghcountdown';
-export const DB_VERSION = 2;
+export const DB_VERSION = 3;
+
+export interface Goal {
+  id: string;
+  title: string;
+  description: string;
+  targetDate: string | null;
+  status: 'active' | 'completed' | 'paused';
+  createdAt: string;
+  updatedAt: string;
+}
 
 export interface Event {
   id: string;
@@ -9,6 +19,7 @@ export interface Event {
   priority: 1 | 2 | 3 | 4 | 5;
   tags: string[];
   notes: string;
+  goalId: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -29,7 +40,10 @@ export interface Todo {
   priority: 1 | 2 | 3 | 4 | 5;
   projectId: string | null;
   eventId: string | null;
+  goalId: string | null;
   locationId: string | null;
+  estimatedMinutes: number | null;
+  cognitiveLoad: 1 | 2 | 3 | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -121,4 +135,5 @@ export const STORES = {
   SCHEDULE_SKELETON: 'scheduleSkeleton',
   SCHEDULE_OVERRIDES: 'scheduleOverrides',
   HABIT_MODEL: 'habitModel',
+  GOALS: 'goals',
 } as const;

@@ -24,23 +24,109 @@ export function withColorAlpha(color: string, alpha: number): string {
   return `color-mix(in srgb, ${trimmed} ${Math.round(alpha * 100)}%, transparent)`;
 }
 
+const DEFAULT_TODO_MINUTES = 60;
+const MAX_PRODUCTIVE_HOURS = 8;
+const OVERLOAD_MAX_TODOS = 5;
+
+/**
+ * Computes the total estimated workload (in minutes) for a given day.
+ * Counts the duration of all scheduled time blocks plus the estimated minutes
+ * for each unscheduled today-todo (default 60 min if no estimate set).
+ */
+export function computeDayLoadMinutes(
+  existingBlocks: TimeBlock[],
+  unscheduledTodos: Todo[]
+): number {
+  const blockMinutes = existingBlocks.reduce((sum, block) => {
+    const [sh, sm] = block.startTime.split(':').map(Number);
+    const [eh, em] = block.endTime.split(':').map(Number);
+    return sum + (eh * 60 + em) - (sh * 60 + sm);
+  }, 0);
+
+  const todoMinutes = unscheduledTodos.reduce((sum, todo) => {
+    return sum + (todo.estimatedMinutes ?? DEFAULT_TODO_MINUTES);
+  }, 0);
+
+  return blockMinutes + todoMinutes;
+}
+
+/**
+ * Returns true if the current day load already exceeds 8 hours of productive time.
+ */
+export function isDayOverloaded(
+  existingBlocks: TimeBlock[],
+  unscheduledTodos: Todo[]
+): boolean {
+  return computeDayLoadMinutes(existingBlocks, unscheduledTodos) > MAX_PRODUCTIVE_HOURS * 60;
+}
+
+/**
+ * Groups todos by project for context-aware scheduling.
+ * Within each project cluster, todos are sorted by cognitiveLoad high→low.
+ * Ungrouped (no project) todos come last.
+ */
+function groupByProject(todos: Todo[]): Todo[] {
+  const clusters = new Map<string, Todo[]>();
+  const ungrouped: Todo[] = [];
+
+  for (const todo of todos) {
+    if (todo.projectId) {
+      const group = clusters.get(todo.projectId) ?? [];
+      group.push(todo);
+      clusters.set(todo.projectId, group);
+    } else {
+      ungrouped.push(todo);
+    }
+  }
+
+  const sortByCognitiveLoad = (a: Todo, b: Todo) => {
+    return (b.cognitiveLoad ?? 1) - (a.cognitiveLoad ?? 1);
+  };
+
+  const result: Todo[] = [];
+  for (const group of clusters.values()) {
+    result.push(...group.sort(sortByCognitiveLoad));
+  }
+  result.push(...ungrouped.sort(sortByCognitiveLoad));
+  return result;
+}
+
 /**
  * Schedules unscheduled todos as time blocks for the given date.
  * High-priority todos (p5, p4) are placed first and earlier in the day.
- * Returns the number of time blocks created.
+ * Applies context grouping (by project, then by cognitiveLoad) to minimise
+ * context switching. When the day is overloaded, caps scheduling to the top
+ * OVERLOAD_MAX_TODOS todos by combined priority + cognitive load score.
+ * Returns { created, wasOverloaded } so callers can surface a warning.
  */
 export async function scheduleMyDay(
   dateStr: string,
   unscheduledTodos: Todo[],
   existingBlocks: TimeBlock[]
-): Promise<number> {
-  if (unscheduledTodos.length === 0) return 0;
+): Promise<{ created: number; wasOverloaded: boolean }> {
+  if (unscheduledTodos.length === 0) return { created: 0, wasOverloaded: false };
 
-  // Sort by priority descending so p5/p4 go first
-  const sorted = [...unscheduledTodos].sort((a, b) => b.priority - a.priority);
+  // Detect overload before we add the new todos
+  const overloaded = isDayOverloaded(existingBlocks, unscheduledTodos);
+
+  // When overloaded, pick the top OVERLOAD_MAX_TODOS todos by (priority*2 + cognitiveLoad)
+  let todosToSchedule = [...unscheduledTodos];
+  if (overloaded) {
+    todosToSchedule = [...unscheduledTodos]
+      .sort((a, b) => {
+        const scoreA = a.priority * 2 + (a.cognitiveLoad ?? 1);
+        const scoreB = b.priority * 2 + (b.cognitiveLoad ?? 1);
+        return scoreB - scoreA;
+      })
+      .slice(0, OVERLOAD_MAX_TODOS);
+  }
+
+  // Apply context grouping: cluster by project, sort within clusters by cognitiveLoad desc
+  const grouped = groupByProject(
+    [...todosToSchedule].sort((a, b) => b.priority - a.priority)
+  );
 
   // Build the set of hours already occupied by existing blocks.
-  // Hour H is occupied if any existing block overlaps the [H:00, H+1:00) window.
   const occupiedHours = new Set<number>();
   for (const block of existingBlocks) {
     const [startH, startM] = block.startTime.split(':').map(Number);
@@ -56,15 +142,39 @@ export async function scheduleMyDay(
   const fallback = [9, 10, 14, 15];
   const hours = peakHours.length ? peakHours : fallback;
 
-  // Partition todos into high-priority (p4-5) and lower-priority (p1-3)
-  const highPriority = sorted.filter(t => t.priority >= 4);
-  const lowPriority = sorted.filter(t => t.priority < 4);
+  // Assign grouped todos to consecutive available slots
+  const now = new Date();
+  const todayStr = format(now, 'yyyy-MM-dd');
+  let currentHour = 9;
+  if (dateStr === todayStr) {
+    currentHour = Math.max(9, now.getHours());
+  }
+
+  // Track which project cluster we last placed, so we try to keep clusters consecutive
+  const getNextAvailableHour = (preferredHours: number[], fallbackStart: number): number | undefined => {
+    // First try peak/preferred hours
+    const peak = preferredHours.find(h => !occupiedHours.has(h));
+    if (peak !== undefined) return peak;
+    // Then fall back to chronological search
+    let h = fallbackStart;
+    while (h < 24 && occupiedHours.has(h)) h++;
+    return h < 24 ? h : undefined;
+  };
 
   let created = 0;
+  let slotCursor = currentHour;
 
-  // High-priority todos: assign into earliest available slots that match hours[]
-  for (const todo of highPriority) {
-    const slot = hours.find(h => !occupiedHours.has(h));
+  for (const todo of grouped) {
+    // For high-priority todos (p4-5), prefer peak hours
+    let slot: number | undefined;
+    if (todo.priority >= 4) {
+      slot = hours.find(h => !occupiedHours.has(h));
+    }
+    // For all others, place chronologically to keep project clusters consecutive
+    if (slot === undefined) {
+      while (slotCursor < 24 && occupiedHours.has(slotCursor)) slotCursor++;
+      slot = slotCursor < 24 ? slotCursor : undefined;
+    }
     if (slot === undefined) break;
 
     const startTime = `${String(slot).padStart(2, '0')}:00`;
@@ -84,43 +194,10 @@ export async function scheduleMyDay(
     });
 
     occupiedHours.add(slot);
+    if (slot === slotCursor) slotCursor++;
     created++;
   }
 
-  // Low-priority todos: fill remaining time chronologically
-  const now = new Date();
-  const todayStr = format(now, 'yyyy-MM-dd');
-  let currentHour = 9;
-  if (dateStr === todayStr) {
-    currentHour = Math.max(9, now.getHours());
-  }
-
-  for (const todo of lowPriority) {
-    while (occupiedHours.has(currentHour) && currentHour < 24) {
-      currentHour++;
-    }
-    if (currentHour >= 24) break;
-
-    const startTime = `${String(currentHour).padStart(2, '0')}:00`;
-    const endTime = `${String(currentHour + 1).padStart(2, '0')}:00`;
-    const color = PRIORITY_COLORS[todo.priority] ?? PRIORITY_COLORS[3];
-
-    await createTimeBlock({
-      title: todo.title,
-      date: dateStr,
-      startTime,
-      endTime,
-      todoId: todo.id,
-      projectId: todo.projectId,
-      color,
-      autoTrack: true,
-      slotType: 'fixed',
-    });
-
-    occupiedHours.add(currentHour);
-    currentHour++;
-    created++;
-  }
-
-  return created;
+  return { created, wasOverloaded: overloaded };
 }
+

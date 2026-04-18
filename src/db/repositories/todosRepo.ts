@@ -19,12 +19,20 @@ export async function getTodosByProject(projectId: string): Promise<Todo[]> {
 }
 
 export async function createTodo(
-  data: Omit<Todo, 'id' | 'createdAt' | 'updatedAt' | 'locationId'> & { locationId?: string | null }
+  data: Omit<Todo, 'id' | 'createdAt' | 'updatedAt' | 'locationId' | 'goalId' | 'estimatedMinutes' | 'cognitiveLoad'> & {
+    locationId?: string | null;
+    goalId?: string | null;
+    estimatedMinutes?: number | null;
+    cognitiveLoad?: 1 | 2 | 3 | null;
+  }
 ): Promise<Todo> {
   const now = new Date().toISOString();
   const todo: Todo = {
     ...data,
     locationId: data.locationId ?? null,
+    goalId: data.goalId ?? null,
+    estimatedMinutes: data.estimatedMinutes ?? null,
+    cognitiveLoad: data.cognitiveLoad ?? null,
     id: uuidv4(),
     createdAt: now,
     updatedAt: now,

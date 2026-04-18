@@ -1,1 +1,1 @@
-export { scheduleMyDay } from '@/lib/scheduleDay';
+export { scheduleMyDay, computeDayLoadMinutes, isDayOverloaded } from '@/lib/scheduleDay';

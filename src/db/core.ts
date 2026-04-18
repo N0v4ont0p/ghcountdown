@@ -71,6 +71,12 @@ export async function initDB(): Promise<IDBDatabase> {
           db.createObjectStore(STORES.HABIT_MODEL, { keyPath: 'id' });
         }
       }
+
+      if (oldVersion < 3) {
+        if (!db.objectStoreNames.contains(STORES.GOALS)) {
+          db.createObjectStore(STORES.GOALS, { keyPath: 'id' });
+        }
+      }
     };
   });
 }

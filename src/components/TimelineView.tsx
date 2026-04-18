@@ -20,7 +20,7 @@ import { format } from 'date-fns';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { RoutinePanel } from '@/components/RoutinePanel';
-import { PRIORITY_COLORS, withColorAlpha } from '@/lib/scheduleDay';
+import { PRIORITY_COLORS, withColorAlpha, computeDayLoadMinutes } from '@/lib/scheduleDay';
 import { scheduleMyDay } from '@/lib/schedulingUtils';
 import { detectBlockConflicts } from '@/lib/conflictDetection';
 import { EffectiveScheduleEntry, getCurrentLocation, getEffectiveScheduleForDate, getFreeSlotsForDate } from '@/lib/effectiveSchedule';
@@ -427,11 +427,17 @@ export function TimelineView() {
     setIsScheduling(true);
     try {
       const dateStr = format(currentDate, 'yyyy-MM-dd');
-      const count = await scheduleMyDay(dateStr, unscheduledTodayTodos, timeBlocks);
-      if (count === 0) {
+      const result = await scheduleMyDay(dateStr, unscheduledTodayTodos, timeBlocks);
+      if (result.created === 0) {
         toast.info('All todos are already scheduled!');
       } else {
-        toast.success(`Scheduled ${count} todo${count !== 1 ? 's' : ''} for today`);
+        if (result.wasOverloaded) {
+          toast.warning(
+            `Day is overloaded — scheduled only the top 5 highest-priority tasks (${result.created} added).`
+          );
+        } else {
+          toast.success(`Scheduled ${result.created} todo${result.created !== 1 ? 's' : ''} for today`);
+        }
         loadData();
       }
     } catch {
@@ -569,8 +575,23 @@ export function TimelineView() {
     return ids;
   }, [timeBlocks, currentDate]);
 
+  const dayLoadMinutes = useMemo(
+    () => computeDayLoadMinutes(timeBlocks, unscheduledTodayTodos),
+    [timeBlocks, unscheduledTodayTodos]
+  );
+  const isDayOverloaded = dayLoadMinutes > 8 * 60;
+  const dayLoadHours = Math.round(dayLoadMinutes / 60 * 10) / 10;
+
   return (
     <div className="max-w-7xl mx-auto h-[calc(100vh-6rem)]">
+      {isDayOverloaded && (
+        <div className="mb-3 flex items-center gap-2 rounded-lg px-4 py-2 bg-yellow-500/15 border border-yellow-500/40 text-yellow-700 dark:text-yellow-400">
+          <Warning size={16} weight="fill" />
+          <span className="text-sm font-medium">
+            Today has {dayLoadHours}h of work in ~8h of productive time.
+          </span>
+        </div>
+      )}
       <div className="mb-6 flex items-center justify-between">
         <div>
           <h2 className="text-3xl font-semibold mb-2">Timeline</h2>
