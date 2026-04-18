@@ -6,6 +6,8 @@ import { CountdownHero } from '@/components/CountdownHero';
 import { RightNowCard } from '@/components/RightNowCard';
 import { DeadlinePressureStrip } from '@/components/DeadlinePressureStrip';
 import { MomentumStrip } from '@/components/MomentumStrip';
+import { GoalsProgressCard } from '@/components/GoalsProgressCard';
+import { GoalsSettingsCard } from '@/components/GoalsSettingsCard';
 import { SmartSuggestions } from '@/components/SmartSuggestions';
 import { EventsView } from '@/components/EventsView';
 import { TodosView } from '@/components/TodosView';
@@ -24,7 +26,7 @@ import { getSettings, updateSettings } from '@/db/repositories/settingsRepo';
 import { deleteAllProjects } from '@/db/repositories/projectsRepo';
 import { deleteAllTimeEntries, getAllTimeEntries } from '@/db/repositories/timeRepo';
 import { deleteAllTimeBlocks, getTimeBlocksByDate, getAllTimeBlocks } from '@/db/repositories/timeBlocksRepo';
-import { getAllGoals, createGoal, updateGoal, deleteGoal } from '@/db/repositories/goalsRepo';
+import { getAllGoals, getActiveGoals, createGoal, updateGoal, deleteGoal, deleteAllGoals } from '@/db/repositories/goalsRepo';
 import { Event, Todo, TimeBlock, Settings, Goal } from '@/db/schema';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -216,6 +218,7 @@ function App() {
       if (!config.apiKey) return;
       const allTodos = await getAllTodos();
       const allEvents = await getAllEvents();
+      const goals = await getActiveGoals();
       const todayTodos = allTodos.filter(t => t.status === 'today');
       const urgentEvents = allEvents
         .filter(e => {
@@ -223,10 +226,14 @@ function App() {
           return h > 0 && h <= 48;
         })
         .slice(0, 3);
+      const goalsSummary = goals.length > 0
+        ? goals.map(g => `"${g.title}" (why: ${g.why || 'unspecified'})`).join('; ')
+        : 'none';
       const briefingPrompt = [
         'Generate a short morning briefing (2-3 sentences max).',
         `Today\'s tasks: ${todayTodos.map(t => `${t.title}(P${t.priority})`).join(', ') || 'none'}`,
         `Upcoming deadlines: ${urgentEvents.map(e => `${e.title} in ${Math.round((new Date(e.startsAt).getTime() - Date.now()) / 3600000)}h`).join(', ') || 'none'}`,
+        `Active goals: ${goalsSummary}`,
         'Be specific, concise, and encouraging. Do not invent tasks.',
         'Return only the summary string in the JSON summary field. Leave suggestions array empty.',
       ].join(' ');
@@ -243,6 +250,7 @@ function App() {
         currentLocation: '',
         peakFocusHoursToday: [],
         typicalActivitiesNow: [],
+        activeGoals: goalsSummary,
       }, { mode: 'plan' });
       if (plan.summary) setMorningBriefing(plan.summary);
     } catch {
@@ -404,6 +412,7 @@ function App() {
             deleteAllProjects(),
             deleteAllTimeEntries(),
             deleteAllTimeBlocks(),
+            deleteAllGoals(),
           ]);
           break;
       }
@@ -484,7 +493,10 @@ function App() {
                 {/* 2. Momentum strip */}
                 <MomentumStrip />
 
-                {/* 3. Right Now card — visually prominent */}
+                {/* 3. Goals progress — only shown if active goals exist */}
+                {activeGoals.length > 0 && <GoalsProgressCard />}
+
+                {/* 4. Right Now card — visually prominent */}
                 <div className="rounded-2xl overflow-hidden shadow-lg" style={{ borderLeft: '4px solid var(--primary)' }}>
                   <RightNowCard
                     blocks={todayBlocks}
@@ -493,10 +505,10 @@ function App() {
                   />
                 </div>
 
-                {/* 4. Countdown hero */}
+                {/* 5. Countdown hero */}
                 <CountdownHero event={nextEvent} />
 
-                {/* 5. Deadline pressure strip */}
+                {/* 6. Deadline pressure strip */}
                 <DeadlinePressureStrip events={upcomingEvents} />
 
                 {/* 6. Smart suggestions + AI nudges */}
@@ -661,6 +673,8 @@ function App() {
                 </div>
 
                 <div className="space-y-4">
+                  <GoalsSettingsCard />
+
                   <Card className="p-6">
                     <div className="space-y-4">
                       <div>
@@ -747,7 +761,7 @@ function App() {
                         ) : (
                           goals.map(goal => (
                             <div key={goal.id} className="flex items-center gap-2 text-sm">
-                              <span className={`flex-1 truncate ${goal.status === 'completed' ? 'line-through text-muted-foreground' : ''}`}>
+                              <span className={`flex-1 truncate ${goal.status !== 'active' ? 'line-through text-muted-foreground' : ''}`}>
                                 {goal.title}
                               </span>
                               <Button
@@ -755,7 +769,7 @@ function App() {
                                 size="sm"
                                 className="h-6 px-2 text-xs"
                                 onClick={async () => {
-                                  const next = goal.status === 'active' ? 'completed' : 'active';
+                                  const next = goal.status === 'active' ? 'achieved' : 'active';
                                   await updateGoal(goal.id, { status: next });
                                   const all = await getAllGoals();
                                   setGoals(all);
@@ -784,7 +798,7 @@ function App() {
                         onSubmit={async (e) => {
                           e.preventDefault();
                           if (!newGoalTitle.trim()) return;
-                          await createGoal({ title: newGoalTitle.trim(), description: '', targetDate: null, status: 'active' });
+                          await createGoal({ title: newGoalTitle.trim(), why: '', targetDate: null, status: 'active', color: 'oklch(0.60 0.19 250)' });
                           setNewGoalTitle('');
                           const all = await getAllGoals();
                           setGoals(all);

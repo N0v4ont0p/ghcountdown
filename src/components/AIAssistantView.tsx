@@ -16,7 +16,7 @@ import { getAllEvents, createEvent } from '@/db/repositories/eventsRepo';
 import { getAllTimeBlocks, createTimeBlock, getTimeBlocksByDate } from '@/db/repositories/timeBlocksRepo';
 import { getAllTimeEntries } from '@/db/repositories/timeRepo';
 import { updateSettings } from '@/db/repositories/settingsRepo';
-import { getAllGoals } from '@/db/repositories/goalsRepo';
+import { getActiveGoals } from '@/db/repositories/goalsRepo';
 import {
   AIMode,
   AIAssistantResult,
@@ -157,14 +157,12 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
     setIsGenerating(true);
     try {
       const today = format(new Date(), 'yyyy-MM-dd');
-      const [todos, events, blocks, entries, allGoals] = await Promise.all([
+      const [todos, events, blocks, entries] = await Promise.all([
         getAllTodos(),
         getAllEvents(),
         getAllTimeBlocks(),
         getAllTimeEntries(),
-        getAllGoals(),
       ]);
-      const activeGoals = allGoals.filter(g => g.status === 'active');
 
       const now = Date.now();
 
@@ -215,11 +213,12 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
       }
 
       const nextEvent = nextEvents[0] ?? null;
-      const [todaySkeleton, currentLocation, habitModel, predictedNow] = await Promise.all([
+      const [todaySkeleton, currentLocation, habitModel, predictedNow, activeGoals] = await Promise.all([
         getEffectiveScheduleForDate(today),
         getCurrentLocation(),
         getHabitModel(),
         predictActivity(new Date()),
+        getActiveGoals(),
       ]);
 
       const weeklySkeletonSummary = todaySkeleton
@@ -228,7 +227,9 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
       const currentLocationLabel = currentLocation ? `${currentLocation.icon} ${currentLocation.name}` : 'none';
       const peakFocusHoursToday = habitModel.dailyRhythms.peakFocusHours.map((hour) => `${String(hour).padStart(2, '0')}:00`);
       const typicalActivitiesNow = predictedNow ? [predictedNow.label] : [];
-      const activeGoalTitles = activeGoals.map(g => g.title);
+      const activeGoalsSummary = activeGoals.length > 0
+        ? activeGoals.map(g => `"${g.title}" (why: ${g.why || 'unspecified'})`).join('; ')
+        : undefined;
 
       const plan = await generateActionPlan(prompt.trim(), {
         todoTitles: todos.slice(0, 20).map((todo) => todo.title),
@@ -243,7 +244,7 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
         currentLocation: currentLocationLabel,
         peakFocusHoursToday,
         typicalActivitiesNow,
-        activeGoals: activeGoalTitles,
+        activeGoals: activeGoalsSummary,
       }, { mode });
 
       setResult(plan);

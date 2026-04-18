@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import { Goal, STORES } from '../schema';
-import { getAll, getByKey, put, remove } from '../core';
+import { clearStore, getAll, getByKey, put, remove, getAllByIndex } from '../core';
 
 export async function getAllGoals(): Promise<Goal[]> {
   return getAll<Goal>(STORES.GOALS);
@@ -8,6 +8,10 @@ export async function getAllGoals(): Promise<Goal[]> {
 
 export async function getGoalById(id: string): Promise<Goal | undefined> {
   return getByKey<Goal>(STORES.GOALS, id);
+}
+
+export async function getActiveGoals(): Promise<Goal[]> {
+  return getAllByIndex<Goal>(STORES.GOALS, 'status', 'active');
 }
 
 export async function createGoal(
@@ -44,4 +48,8 @@ export async function deleteGoal(id: string): Promise<boolean> {
   if (!existing) return false;
   await remove(STORES.GOALS, id);
   return true;
+}
+
+export async function deleteAllGoals(): Promise<void> {
+  await clearStore(STORES.GOALS);
 }

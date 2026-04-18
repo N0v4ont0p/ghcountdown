@@ -4,9 +4,10 @@ export const DB_VERSION = 3;
 export interface Goal {
   id: string;
   title: string;
-  description: string;
+  why: string;
   targetDate: string | null;
-  status: 'active' | 'completed' | 'paused';
+  status: 'active' | 'achieved' | 'abandoned';
+  color: string;
   createdAt: string;
   updatedAt: string;
 }

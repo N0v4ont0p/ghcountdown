@@ -3,8 +3,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Todo, Project, Goal } from '@/db/schema';
 import { getAllTodos, createTodo, updateTodo, deleteTodo } from '@/db/repositories/todosRepo';
 import { getAllProjects, createProject, deleteProject } from '@/db/repositories/projectsRepo';
+import { getActiveGoals } from '@/db/repositories/goalsRepo';
 import { getAllTimeEntries, updateTimeEntry } from '@/db/repositories/timeRepo';
-import { getAllGoals } from '@/db/repositories/goalsRepo';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
@@ -52,14 +52,14 @@ export function TodosView() {
   }, []);
 
   async function loadData() {
-    const [allTodos, allProjects, allGoals] = await Promise.all([
+    const [allTodos, allProjects, activeGoals] = await Promise.all([
       getAllTodos(),
       getAllProjects(),
-      getAllGoals(),
+      getActiveGoals(),
     ]);
     setTodos(allTodos);
     setProjects(allProjects);
-    setGoals(allGoals);
+    setGoals(activeGoals);
   }
 
   function resetForm() {
@@ -500,6 +500,28 @@ export function TodosView() {
                       </SelectContent>
                     </Select>
                   </div>
+
+                  {goals.length > 0 && (
+                    <div>
+                      <Label htmlFor="goalId">Contributes to (optional)</Label>
+                      <Select
+                        value={formData.goalId}
+                        onValueChange={(val) => setFormData({ ...formData, goalId: val })}
+                      >
+                        <SelectTrigger id="goalId">
+                          <SelectValue placeholder="No goal" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">No goal</SelectItem>
+                          {goals.map((goal) => (
+                            <SelectItem key={goal.id} value={goal.id}>
+                              {goal.title}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
 
                   <div>
                     <Label htmlFor="goalId">Goal (optional)</Label>

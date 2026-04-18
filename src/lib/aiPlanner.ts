@@ -36,7 +36,7 @@ interface AIContext {
   currentLocation: string;
   peakFocusHoursToday: string[];
   typicalActivitiesNow: string[];
-  activeGoals?: string[];
+  activeGoals?: string;
 }
 
 const ENV_HUGGING_FACE_API_KEY = import.meta.env.VITE_HUGGINGFACE_API_KEY;
@@ -461,9 +461,11 @@ export async function generateActionPlan(
     `Current location: ${context.currentLocation || 'unknown'}`,
     `Peak focus hours today: ${context.peakFocusHoursToday.join(', ') || 'none'}`,
     `Typical activities now: ${context.typicalActivitiesNow.join(', ') || 'none'}`,
+    context.activeGoals ? `Active goals: ${context.activeGoals}` : '',
+    context.activeGoals ? `When suggesting new todos, link them to a relevant goal (add a "goalNote" field with the goal title) where it makes sense.` : '',
     ``,
     `User request: ${prompt.trim()}`,
-  ].join('\n');
+  ].filter(Boolean).join('\n');
 
   const body = await requestWithFallback({
     apiKey: config.apiKey,

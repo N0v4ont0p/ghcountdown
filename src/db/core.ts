@@ -74,7 +74,8 @@ export async function initDB(): Promise<IDBDatabase> {
 
       if (oldVersion < 3) {
         if (!db.objectStoreNames.contains(STORES.GOALS)) {
-          db.createObjectStore(STORES.GOALS, { keyPath: 'id' });
+          const goalsStore = db.createObjectStore(STORES.GOALS, { keyPath: 'id' });
+          goalsStore.createIndex('status', 'status', { unique: false });
         }
       }
     };
