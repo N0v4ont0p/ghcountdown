@@ -34,16 +34,22 @@ export function QuickCapture({ open, onClose }: QuickCaptureProps) {
     if (!text) return;
 
     let priority: 1 | 2 | 3 | 4 | 5 = 3;
+    let status: 'inbox' | 'someday' = 'inbox';
     if (/urgent|!!|asap/i.test(text)) priority = 5;
     else if (/important|!/i.test(text)) priority = 4;
-    else if (/someday|maybe|eventually/i.test(text)) priority = 1;
+    else if (/someday|maybe|eventually/i.test(text)) { priority = 1; status = 'someday'; }
+
+    const durationMatch = text.match(/~?(\d+(?:\.\d+)?)\s*(h|hr|hour|min|m)\b/i);
+    const estimatedDurationMin = durationMatch
+      ? (durationMatch[2].toLowerCase().startsWith('h') ? Math.round(parseFloat(durationMatch[1]) * 60) : Math.round(parseFloat(durationMatch[1])))
+      : null;
 
     const cleanTitle = text.replace(/~?\d+(?:\.\d+)?\s*(h|hr|hour|min|m)\b/gi, '').trim();
 
     try {
       await createTodo({
         title: cleanTitle || text,
-        status: 'inbox',
+        status,
         dueAt: null,
         priority,
         projectId: null,

@@ -24,7 +24,7 @@ export interface Project {
 export interface Todo {
   id: string;
   title: string;
-  status: 'inbox' | 'today' | 'done';
+  status: 'inbox' | 'today' | 'done' | 'someday';
   dueAt: string | null;
   priority: 1 | 2 | 3 | 4 | 5;
   projectId: string | null;

@@ -44,6 +44,8 @@ export function UniversalSearch({ open, onClose, onNavigate }: UniversalSearchPr
       setResults([]);
       return;
     }
+    // debounce: 150ms delay before searching
+    const DEBOUNCE_MS = 150;
     const timer = setTimeout(async () => {
       const q = query.toLowerCase();
       const [todos, events, blocks, projects] = await Promise.all([
@@ -84,7 +86,7 @@ export function UniversalSearch({ open, onClose, onNavigate }: UniversalSearchPr
       ];
       setResults(out);
       setSelectedIndex(0);
-    }, 150);
+    }, DEBOUNCE_MS);
     return () => clearTimeout(timer);
   }, [query]);
 
