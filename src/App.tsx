@@ -14,6 +14,7 @@ import { StatisticsView } from '@/components/StatisticsView';
 import { AIAssistantView } from '@/components/AIAssistantView';
 import { QuickCapture } from '@/components/QuickCapture';
 import { UniversalSearch } from '@/components/UniversalSearch';
+import { EveningFlow } from '@/components/EveningFlow';
 import { initDB } from '@/db/core';
 import { seedDatabase } from '@/db/seed';
 import { deleteAllEvents, getNextImportantEvent, getAllEvents } from '@/db/repositories/eventsRepo';
@@ -56,6 +57,7 @@ function App() {
   const [dataVersion, setDataVersion] = useState(0);
   const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false);
   const [bulkDeleteTarget, setBulkDeleteTarget] = useState<'events' | 'todos' | 'projects' | 'timeEntries' | 'timeBlocks' | 'all' | null>(null);
+  const [showEveningFlow, setShowEveningFlow] = useState(false);
   const { theme, setTheme, resolvedTheme } = useTheme();
 
   function invalidateCache() { setDataVersion(v => v + 1); }
@@ -124,6 +126,23 @@ function App() {
   useEffect(() => {
     const id = setInterval(() => setNowTick(new Date()), 60_000);
     return () => clearInterval(id);
+  }, []);
+
+  // Evening flow — trigger after 8pm, once per day, on load and window focus
+  useEffect(() => {
+    function checkEveningFlow() {
+      const hour = new Date().getHours();
+      const today = new Date().toISOString().split('T')[0];
+      const lastEvening = localStorage.getItem('eveningFlowDate');
+      if (hour >= 20 && lastEvening !== today) {
+        setShowEveningFlow(true);
+        localStorage.setItem('eveningFlowDate', today);
+      }
+    }
+
+    checkEveningFlow();
+    window.addEventListener('focus', checkEveningFlow);
+    return () => window.removeEventListener('focus', checkEveningFlow);
   }, []);
 
   // Global keyboard shortcuts
@@ -875,6 +894,12 @@ function App() {
         onClose={() => setIsSearchOpen(false)}
         onNavigate={setCurrentView}
       />
+
+      <AnimatePresence>
+        {showEveningFlow && (
+          <EveningFlow onDismiss={() => setShowEveningFlow(false)} />
+        )}
+      </AnimatePresence>
 
       <Toaster />
     </div>
