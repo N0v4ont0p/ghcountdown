@@ -20,8 +20,7 @@ import { format } from 'date-fns';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { RoutinePanel } from '@/components/RoutinePanel';
-import { PRIORITY_COLORS, withColorAlpha } from '@/lib/scheduleDay';
-import { scheduleMyDay } from '@/lib/schedulingUtils';
+import { PRIORITY_COLORS, withColorAlpha, scheduleMyDay, DAY_CAPACITY_MINUTES, DEFAULT_TODO_MINUTES } from '@/lib/schedulingUtils';
 import { detectBlockConflicts } from '@/lib/conflictDetection';
 import { EffectiveScheduleEntry, getCurrentLocation, getEffectiveScheduleForDate, getFreeSlotsForDate } from '@/lib/effectiveSchedule';
 import { predictActivity } from '@/lib/habitModel';
@@ -569,6 +568,22 @@ export function TimelineView() {
     return ids;
   }, [timeBlocks, currentDate]);
 
+  // Daily workload estimate: sum block durations + DEFAULT_TODO_MINUTES per unscheduled todo
+  const totalWorkloadMinutes = useMemo(() => {
+    const blockMinutes = timeBlocks.reduce((sum, block) => {
+      const [sH, sM] = block.startTime.split(':').map(Number);
+      const [eH, eM] = block.endTime.split(':').map(Number);
+      return sum + Math.max(0, (eH * 60 + eM) - (sH * 60 + sM));
+    }, 0);
+    const unscheduledMinutes = unscheduledTodayTodos.length * DEFAULT_TODO_MINUTES;
+    return blockMinutes + unscheduledMinutes;
+  }, [timeBlocks, unscheduledTodayTodos]);
+
+  const isOverloaded = totalWorkloadMinutes > DAY_CAPACITY_MINUTES;
+  const warningMessage = isOverloaded
+    ? `${(totalWorkloadMinutes / 60).toFixed(1)} h of work planned — over the 8 h baseline`
+    : null;
+
   return (
     <div className="max-w-7xl mx-auto h-[calc(100vh-6rem)]">
       <div className="mb-6 flex items-center justify-between">
@@ -650,6 +665,13 @@ export function TimelineView() {
           )}
         </div>
       </div>
+
+      {warningMessage && (
+        <div className="mb-4 flex items-center gap-2 rounded-lg border border-yellow-400/60 bg-yellow-400/10 px-4 py-2 text-sm text-yellow-700 dark:text-yellow-300">
+          <Warning size={16} weight="fill" className="shrink-0 text-yellow-500" />
+          {warningMessage}
+        </div>
+      )}
 
       <div className="grid grid-cols-[1fr_300px] gap-6 h-[calc(100%-5rem)]">
         <Card className="relative overflow-hidden">
@@ -986,6 +1008,27 @@ export function TimelineView() {
                         P{todo.priority}
                       </Badge>
                       <span className="text-sm truncate flex-1">{todo.title}</span>
+                      {todo.cognitiveLoad && (
+                        <span
+                          className="w-2 h-2 rounded-full shrink-0"
+                          style={{
+                            backgroundColor:
+                              todo.cognitiveLoad === 'high'
+                                ? 'oklch(0.58 0.20 20)'
+                                : todo.cognitiveLoad === 'medium'
+                                ? 'oklch(0.75 0.18 75)'
+                                : 'oklch(0.65 0.17 145)',
+                          }}
+                          aria-label={`Cognitive load: ${todo.cognitiveLoad}`}
+                          title={
+                            todo.cognitiveLoad === 'high'
+                              ? 'Deep work'
+                              : todo.cognitiveLoad === 'medium'
+                              ? 'Medium effort'
+                              : 'Easy'
+                          }
+                        />
+                      )}
                     </motion.div>
                   ))}
                 </div>

@@ -39,6 +39,7 @@ export interface Todo {
   status: 'inbox' | 'today' | 'done' | 'someday';
   dueAt: string | null;
   priority: 1 | 2 | 3 | 4 | 5;
+  cognitiveLoad: 'high' | 'medium' | 'low' | null;
   projectId: string | null;
   eventId: string | null;
   locationId: string | null;
