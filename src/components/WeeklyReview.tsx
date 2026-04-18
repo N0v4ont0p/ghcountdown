@@ -52,15 +52,12 @@ function buildSummarySentence(summary: WeekSummary): string {
 }
 
 export function WeeklyReview({ onDismiss }: Props) {
-  const now = new Date();
-  const lastWeekStart = startOfWeek(subWeeks(now, 1));
-  const lastWeekEnd = endOfWeek(subWeeks(now, 1));
-
   const [summary, setSummary] = useState<WeekSummary>({
     totalFocusMinutes: 0,
     tasksCompleted: 0,
     activeDays: 0,
   });
+  const [weekRange, setWeekRange] = useState({ start: new Date(), end: new Date() });
   const [openLoops, setOpenLoops] = useState<Todo[]>([]);
   const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
   const [goalChecks, setGoalChecks] = useState<GoalCheck[]>([]);
@@ -70,6 +67,11 @@ export function WeeklyReview({ onDismiss }: Props) {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    const now = new Date();
+    const lastWeekStart = startOfWeek(subWeeks(now, 1));
+    const lastWeekEnd = endOfWeek(subWeeks(now, 1));
+    setWeekRange({ start: lastWeekStart, end: lastWeekEnd });
+
     async function loadData() {
       try {
         const [entries, todos, projects] = await Promise.all([
@@ -138,7 +140,6 @@ export function WeeklyReview({ onDismiss }: Props) {
       }
     }
     loadData();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function handleKeep(id: string) {
@@ -157,7 +158,7 @@ export function WeeklyReview({ onDismiss }: Props) {
 
   function handleClose() {
     localStorage.setItem('weeklyIntention', intention);
-    localStorage.setItem('weeklyReviewKey', weeklyReviewKey(now));
+    localStorage.setItem('weeklyReviewKey', weeklyReviewKey());
     onDismiss();
   }
 
@@ -184,7 +185,7 @@ export function WeeklyReview({ onDismiss }: Props) {
           <div>
             <h1 className="text-3xl font-semibold text-foreground">Weekly Review</h1>
             <p className="text-sm text-muted-foreground mt-1">
-              {format(lastWeekStart, 'MMM d')} – {format(lastWeekEnd, 'MMM d, yyyy')}
+              {format(weekRange.start, 'MMM d')} – {format(weekRange.end, 'MMM d, yyyy')}
             </p>
           </div>
 

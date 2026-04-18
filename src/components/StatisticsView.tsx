@@ -694,7 +694,7 @@ export function StatisticsView() {
                     </p>
                     {trajectory.personalBestWeek && (
                       <p className="text-xs text-muted-foreground">
-                        w/o {format(parseISO(trajectory.personalBestWeek.weekStart), 'MMM d')}
+                        wk of {format(parseISO(trajectory.personalBestWeek.weekStart), 'MMM d')}
                       </p>
                     )}
                   </div>

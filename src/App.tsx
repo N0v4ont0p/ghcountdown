@@ -68,6 +68,13 @@ function App() {
 
   function invalidateCache() { setDataVersion(v => v + 1); }
 
+  // Sync weeklyIntention from localStorage whenever the review modal closes
+  useEffect(() => {
+    if (!showWeeklyReview) {
+      setWeeklyIntention(localStorage.getItem('weeklyIntention') ?? '');
+    }
+  }, [showWeeklyReview]);
+
   useEffect(() => {
     async function initialize() {
       try {
@@ -963,10 +970,7 @@ function App() {
         )}
         {showWeeklyReview && (
           <WeeklyReview
-            onDismiss={() => {
-              setShowWeeklyReview(false);
-              setWeeklyIntention(localStorage.getItem('weeklyIntention') ?? '');
-            }}
+            onDismiss={() => setShowWeeklyReview(false)}
           />
         )}
       </AnimatePresence>
