@@ -102,20 +102,20 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
     updateAIConfiguration({ apiKey: trimmedApiKey });
     updateSettings({ aiApiKey: trimmedApiKey });
     if (trimmedApiKey) {
-      toast.success('AI credentials saved.');
+      toast.success('AI credentials saved');
     } else {
-      toast.success('AI key cleared.');
+      toast.success('AI key cleared');
     }
   }
 
   async function handleGenerate() {
     if (!prompt.trim()) {
-      toast.error('Describe your schedule or goals first.');
+      toast.error('Enter a prompt first');
       return;
     }
 
     if (!isOnline) {
-      toast.error('No internet connection. AI features are disabled.');
+      toast.error('No internet connection — AI unavailable');
       return;
     }
 
@@ -138,7 +138,7 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
         if (count > 0) {
           toast.success(`Scheduled ${count} todo${count !== 1 ? 's' : ''} for today`);
         } else {
-          toast.info('All todos are already scheduled!');
+          toast.info('All todos are already scheduled');
         }
       } catch {
         toast.error('Failed to schedule todos');
@@ -149,7 +149,7 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
     }
 
     if (!apiKey.trim()) {
-      toast.error('Missing AI key. Add your Hugging Face key below or via VITE_HUGGINGFACE_API_KEY.');
+      toast.error('Add your Hugging Face key in AI settings');
       return;
     }
 
@@ -257,12 +257,12 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
           }
         }
         if (failedCount === 0) {
-          toast.success(`Agent executed ${appliedCount} action(s) automatically.`);
+          toast.success(`Agent executed ${appliedCount} action${appliedCount !== 1 ? 's' : ''}`);
         } else {
-          toast.error(`Agent executed ${appliedCount} action(s); ${failedCount} failed. Review and re-apply if needed.`);
+          toast.error(`${appliedCount} action${appliedCount !== 1 ? 's' : ''} applied, ${failedCount} failed — review and retry`);
         }
       } else {
-        toast.success('AI action plan generated.');
+        toast.success('AI plan generated');
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to generate AI plan.';
@@ -345,7 +345,7 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
       for (const suggestion of result.suggestions) {
         await applySuggestion(suggestion);
       }
-      toast.success('AI plan applied to your app data.');
+      toast.success('AI plan applied');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to apply some AI actions.';
       toast.error(message);
@@ -369,13 +369,31 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
           <div className="flex items-center gap-1.5">
             <span className={`inline-block w-2 h-2 rounded-full ${aiReady ? 'bg-green-500' : 'bg-yellow-500'}`} />
             <span className="text-xs text-muted-foreground">
-              {!isOnline ? 'Offline' : aiReady ? `AI ready · ${mode} mode` : 'Setup needed'}
+              {!isOnline ? 'Offline' : aiReady ? 'AI ready' : 'Setup needed'}
             </span>
           </div>
-          <Button type="button" variant="ghost" size="sm" className="h-7 px-2 gap-1.5" onClick={() => setIsCompactSettingsOpen(true)}>
-            <SlidersHorizontal size={13} />
-            <span className="text-xs">Settings</span>
-          </Button>
+          <div className="flex items-center gap-2">
+            <div className="flex items-center p-0.5 bg-muted rounded-md">
+              <button
+                type="button"
+                className={`px-2 py-0.5 rounded text-xs transition-colors ${mode === 'plan' ? 'bg-background shadow text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+                onClick={() => setMode('plan')}
+              >
+                Plan
+              </button>
+              <button
+                type="button"
+                className={`px-2 py-0.5 rounded text-xs transition-colors ${mode === 'agent' ? 'bg-background shadow text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+                onClick={() => setMode('agent')}
+              >
+                Agent
+              </button>
+            </div>
+            <Button type="button" variant="ghost" size="sm" className="h-7 px-2 gap-1.5" onClick={() => setIsCompactSettingsOpen(true)}>
+              <SlidersHorizontal size={13} />
+              <span className="text-xs">Key</span>
+            </Button>
+          </div>
         </div>
 
         {/* ── banners ── */}
@@ -408,26 +426,23 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
             {/* suggestion chips */}
             {result.suggestions.length > 0 && (
               <div className="space-y-1.5">
-                {mode === 'agent' && (
-                  <div className="text-xs text-green-600 font-medium px-1">
-                    ✓ Agent auto-applied all actions
+                {mode === 'agent' ? (
+                  <div className="text-sm text-green-600 font-medium px-1 py-1">
+                    ✓ Created {result.suggestions.length} item{result.suggestions.length !== 1 ? 's' : ''}
                   </div>
-                )}
-                {result.suggestions.map((suggestion) => {
-                  const applied = mode === 'agent' || appliedIds.includes(suggestion.id);
-                  return (
-                    <div
-                      key={suggestion.id}
-                      className={`flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm transition-colors ${applied ? 'opacity-50 bg-background' : 'bg-background hover:bg-accent'}`}
-                    >
-                      {suggestionTypeIcon(suggestion.type)}
-                      <span className="flex-1 truncate">{suggestion.title}</span>
-                      {suggestion.type === 'timeBlock' && suggestion.startTime && (
-                        <span className="text-xs text-muted-foreground shrink-0">{suggestion.startTime}</span>
-                      )}
-                      {mode === 'agent' ? (
-                        <CheckCircle size={16} className="text-green-500 shrink-0" />
-                      ) : (
+                ) : (
+                  result.suggestions.map((suggestion) => {
+                    const applied = appliedIds.includes(suggestion.id);
+                    return (
+                      <div
+                        key={suggestion.id}
+                        className={`flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm transition-colors ${applied ? 'opacity-50 bg-background' : 'bg-background hover:bg-accent'}`}
+                      >
+                        {suggestionTypeIcon(suggestion.type)}
+                        <span className="flex-1 truncate">{suggestion.title}</span>
+                        {suggestion.type === 'timeBlock' && suggestion.startTime && (
+                          <span className="text-xs text-muted-foreground shrink-0">{suggestion.startTime}</span>
+                        )}
                         <button
                           type="button"
                           aria-label={applied ? 'Applied' : 'Add'}
@@ -440,16 +455,15 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
                             : <span className="text-muted-foreground hover:text-foreground text-base leading-none">+</span>
                           }
                         </button>
-                      )}
-                    </div>
-                  );
-                })}
+                      </div>
+                    );
+                  })
+                )}
               </div>
             )}
 
             {/* apply all + clear */}
-            {result.suggestions.length > 1 && mode !== 'agent' && (
-              <div className="flex items-center gap-3 pt-0.5">
+            {result.suggestions.length > 1 && mode !== 'agent' && (              <div className="flex items-center gap-3 pt-0.5">
                 <button
                   type="button"
                   onClick={handleApplyAll}
@@ -483,8 +497,8 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
             }}
             placeholder={
               mode === 'agent'
-                ? 'Talk naturally — e.g. "I feel behind today, help me recover…"'
-                : "Describe your day or goals and I'll build a plan…"
+                ? 'Tell me what to do...'
+                : 'Describe your day or goals...'
             }
             className="min-h-20 pr-12 resize-none text-sm"
             disabled={isGenerating}
@@ -521,20 +535,6 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
                   placeholder="hf_xxx…"
                   autoComplete="off"
                 />
-              </div>
-              <div className="space-y-1.5">
-                <p className="text-xs font-medium text-muted-foreground">Response style</p>
-                <div className="flex gap-2">
-                  <Button type="button" size="sm" variant={mode === 'plan' ? 'default' : 'outline'} onClick={() => setMode('plan')}>
-                    Plan
-                  </Button>
-                  <Button type="button" size="sm" variant={mode === 'agent' ? 'default' : 'outline'} onClick={() => setMode('agent')}>
-                    Agent
-                  </Button>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  {mode === 'agent' ? 'Auto-executes all actions immediately.' : 'Concise, execution-focused output.'}
-                </p>
               </div>
               <div className="flex items-center justify-between gap-2 pt-1">
                 <Button

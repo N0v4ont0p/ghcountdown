@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Todo, Project } from '@/db/schema';
 import { getAllTodos, createTodo, updateTodo, deleteTodo } from '@/db/repositories/todosRepo';
 import { getAllProjects, createProject, deleteProject } from '@/db/repositories/projectsRepo';
+import { getAllTimeEntries, updateTimeEntry } from '@/db/repositories/timeRepo';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
@@ -13,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
-import { Plus, Trash, Folder, CheckCircle, Tray, CalendarCheck } from '@phosphor-icons/react';
+import { Plus, Trash, Folder, CheckCircle, Tray, CalendarCheck, Cloud } from '@phosphor-icons/react';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -84,7 +85,7 @@ export function TodosView() {
         eventId: null,
       });
       
-      toast.success('Todo created!');
+      toast.success('Todo created');
       setIsDialogOpen(false);
       resetForm();
       loadData();
@@ -96,10 +97,14 @@ export function TodosView() {
   async function handleToggle(todo: Todo) {
     const newStatus = todo.status === 'done' ? 'inbox' : 'done';
     await updateTodo(todo.id, { status: newStatus });
-    loadData();
     if (newStatus === 'done') {
-      toast.success('Task completed!');
+      // Stop any running time entries linked to this todo
+      const entries = await getAllTimeEntries();
+      const running = entries.filter(e => e.todoId === todo.id && !e.endAt);
+      await Promise.all(running.map(e => updateTimeEntry(e.id, { endAt: new Date().toISOString() })));
+      toast.success('Task completed');
     }
+    loadData();
   }
 
   async function handleMoveToToday(todo: Todo) {
@@ -116,8 +121,27 @@ export function TodosView() {
   async function handleDeleteConfirm() {
     if (!todoToDelete) return;
     try {
+      const { pushUndo } = await import('@/lib/undoHistory');
+      const { getTodoById } = await import('@/db/repositories/todosRepo');
+      const todoData = await getTodoById(todoToDelete);
+      if (todoData) pushUndo({ type: 'deleteTodo', data: todoData, ts: Date.now() });
       await deleteTodo(todoToDelete);
-      toast.success('Todo deleted');
+      toast.success('Todo deleted', {
+        duration: 5000,
+        action: {
+          label: 'Undo',
+          onClick: async () => {
+            const { canUndo, popUndo } = await import('@/lib/undoHistory');
+            if (canUndo()) {
+              const entry = popUndo()!;
+              const { add } = await import('@/db/core');
+              const { STORES } = await import('@/db/schema');
+              await add(STORES.TODOS, entry.data);
+              await loadData();
+            }
+          },
+        },
+      });
       await loadData();
     } catch (error) {
       toast.error('Failed to delete todo');
@@ -154,7 +178,7 @@ export function TodosView() {
 
     try {
       await createProject(projectFormData);
-      toast.success('Project created!');
+      toast.success('Project created');
       setIsProjectDialogOpen(false);
       setProjectFormData({ name: '', color: 'oklch(0.60 0.19 250)' });
       loadData();
@@ -178,6 +202,7 @@ export function TodosView() {
       return aOv - bOv;
     });
   const doneTodos = todos.filter(t => t.status === 'done');
+  const someDayTodos = todos.filter(t => t.status === 'someday');
 
   function getTodosByProject(projectId: string) {
     return todos.filter(t => t.projectId === projectId && t.status !== 'done');
@@ -301,6 +326,15 @@ export function TodosView() {
               {todayTodos.length > 0 && (
                 <Badge variant="secondary" className="ml-1 h-5 min-w-5 px-1">
                   {todayTodos.length}
+                </Badge>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="someday" className="gap-2">
+              <Cloud size={16} />
+              Someday
+              {someDayTodos.length > 0 && (
+                <Badge variant="secondary" className="ml-1 h-5 min-w-5 px-1">
+                  {someDayTodos.length}
                 </Badge>
               )}
             </TabsTrigger>
@@ -485,9 +519,9 @@ export function TodosView() {
         <TabsContent value="inbox" className="space-y-3 mt-0">
           {inboxTodos.length === 0 ? (
             <Card className="p-12 text-center">
-              <Tray weight="thin" size={64} className="mx-auto mb-4 text-muted-foreground" />
-              <h3 className="text-xl font-semibold mb-2">Inbox is Empty</h3>
-              <p className="text-muted-foreground mb-4">All caught up!</p>
+              <Tray weight="thin" size={48} className="mx-auto mb-4 text-muted-foreground" />
+              <h3 className="text-lg font-semibold mb-2">All clear</h3>
+              <p className="text-sm text-muted-foreground">Tasks you capture land here</p>
             </Card>
           ) : (
             <AnimatePresence mode="popLayout">
@@ -501,9 +535,9 @@ export function TodosView() {
         <TabsContent value="today" className="space-y-3 mt-0">
           {todayTodos.length === 0 ? (
             <Card className="p-12 text-center">
-              <CalendarCheck weight="thin" size={64} className="mx-auto mb-4 text-muted-foreground" />
-              <h3 className="text-xl font-semibold mb-2">No Tasks for Today</h3>
-              <p className="text-muted-foreground mb-4">Add tasks to focus on today</p>
+              <CalendarCheck weight="thin" size={48} className="mx-auto mb-4 text-muted-foreground" />
+              <h3 className="text-lg font-semibold mb-2">Nothing planned</h3>
+              <p className="text-sm text-muted-foreground">Move tasks here to focus</p>
             </Card>
           ) : (
             <AnimatePresence mode="popLayout">
@@ -514,12 +548,28 @@ export function TodosView() {
           )}
         </TabsContent>
 
+        <TabsContent value="someday" className="space-y-3 mt-0">
+          {someDayTodos.length === 0 ? (
+            <Card className="p-12 text-center">
+              <Cloud weight="thin" size={48} className="mx-auto mb-4 text-muted-foreground" />
+              <h3 className="text-lg font-semibold mb-2">Your idea list is empty</h3>
+              <p className="text-sm text-muted-foreground">Capture ideas without committing</p>
+            </Card>
+          ) : (
+            <AnimatePresence mode="popLayout">
+              {someDayTodos.map((todo) => (
+                <TodoItem key={todo.id} todo={todo} showProject />
+              ))}
+            </AnimatePresence>
+          )}
+        </TabsContent>
+
         <TabsContent value="projects" className="space-y-4 mt-0">
           {projects.length === 0 ? (
             <Card className="p-12 text-center">
-              <Folder weight="thin" size={64} className="mx-auto mb-4 text-muted-foreground" />
-              <h3 className="text-xl font-semibold mb-2">No Projects Yet</h3>
-              <p className="text-muted-foreground mb-4">Create projects to organize your todos</p>
+              <Folder weight="thin" size={48} className="mx-auto mb-4 text-muted-foreground" />
+              <h3 className="text-lg font-semibold mb-2">No projects yet</h3>
+              <p className="text-sm text-muted-foreground mb-4">Create projects to organize your todos</p>
               <Button onClick={() => setIsProjectDialogOpen(true)} className="gap-2">
                 <Plus size={16} weight="bold" />
                 Create Your First Project

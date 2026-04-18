@@ -19,7 +19,7 @@ import { Plus, Play, Stop, Trash, Clock, CalendarBlank, CheckSquare, Lightning, 
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
-import { scheduleMyDay, PRIORITY_COLORS, withColorAlpha } from '@/lib/scheduleDay';
+import { PRIORITY_COLORS, withColorAlpha } from '@/lib/scheduleDay';
 import { detectBlockConflicts } from '@/lib/conflictDetection';
 import { EffectiveScheduleEntry, getCurrentLocation, getEffectiveScheduleForDate, getFreeSlotsForDate } from '@/lib/effectiveSchedule';
 import { predictActivity } from '@/lib/habitModel';
@@ -316,7 +316,7 @@ export function TimelineView() {
           autoTrack: formData.autoTrack,
           slotType: formData.slotType,
         });
-        toast.success('Time block updated!');
+        toast.success('Time block updated');
       } else {
         await createTimeBlock({
           title: formData.title,
@@ -329,7 +329,7 @@ export function TimelineView() {
           autoTrack: formData.autoTrack,
           slotType: formData.slotType,
         });
-        toast.success('Time block created!');
+        toast.success('Time block created');
       }
       
       setIsDialogOpen(false);
@@ -348,8 +348,26 @@ export function TimelineView() {
   async function handleDeleteConfirm() {
     if (!blockToDelete) return;
     try {
+      const { pushUndo } = await import('@/lib/undoHistory');
+      const blockData = timeBlocks.find(b => b.id === blockToDelete);
+      if (blockData) pushUndo({ type: 'deleteTimeBlock', data: blockData, ts: Date.now() });
       await deleteTimeBlock(blockToDelete);
-      toast.success('Time block deleted');
+      toast.success('Time block deleted', {
+        duration: 5000,
+        action: {
+          label: 'Undo',
+          onClick: async () => {
+            const { canUndo, popUndo } = await import('@/lib/undoHistory');
+            if (canUndo()) {
+              const entry = popUndo()!;
+              const { add } = await import('@/db/core');
+              const { STORES } = await import('@/db/schema');
+              await add(STORES.TIME_BLOCKS, entry.data);
+              await loadData();
+            }
+          },
+        },
+      });
       await loadData();
     } catch (error) {
       toast.error('Failed to delete time block');
@@ -362,7 +380,7 @@ export function TimelineView() {
     if (!block.todoId) return;
     try {
       await updateTodo(block.todoId, { status: 'done' });
-      toast.success('Todo marked as done!');
+      toast.success('Todo marked as done');
       loadData();
     } catch {
       toast.error('Failed to complete todo');
@@ -406,7 +424,36 @@ export function TimelineView() {
     setIsScheduling(true);
     try {
       const dateStr = format(currentDate, 'yyyy-MM-dd');
-      const count = await scheduleMyDay(dateStr, unscheduledTodayTodos, timeBlocks);
+      const occupiedHours = new Set<number>();
+      for (const block of timeBlocks) {
+        const startH = parseInt(block.startTime.split(':')[0]);
+        const endH = parseInt(block.endTime.split(':')[0]);
+        for (let h = startH; h < Math.max(startH + 1, endH); h++) {
+          occupiedHours.add(h);
+        }
+      }
+      const candidateHours = [9, 10, 14, 15, 11, 13, 16, 17, 8, 18];
+      const sorted = [...unscheduledTodayTodos].sort((a, b) => b.priority - a.priority);
+      let count = 0;
+      for (const todo of sorted) {
+        const slot = candidateHours.find(h => !occupiedHours.has(h));
+        if (slot === undefined) break;
+        const startTime = `${String(slot).padStart(2, '0')}:00`;
+        const endTime = `${String(slot + 1).padStart(2, '0')}:00`;
+        await createTimeBlock({
+          title: todo.title,
+          date: dateStr,
+          startTime,
+          endTime,
+          todoId: todo.id,
+          projectId: todo.projectId ?? null,
+          color: PRIORITY_COLORS[todo.priority] || PRIORITY_COLORS[3],
+          autoTrack: todo.priority >= 4,
+          slotType: 'fixed',
+        });
+        occupiedHours.add(slot);
+        count++;
+      }
       if (count === 0) {
         toast.info('All todos are already scheduled!');
       } else {
@@ -422,16 +469,31 @@ export function TimelineView() {
 
   async function handleChipKeyDown(e: React.KeyboardEvent, todo: Todo) {
     if (e.key !== 'Enter' && e.key !== ' ') return;
-    e.preventDefault(); // prevent page scroll on Space, form submit on Enter
+    e.preventDefault();
     const dateStr = format(currentDate, 'yyyy-MM-dd');
     try {
-      const count = await scheduleMyDay(dateStr, [todo], timeBlocks);
-      if (count > 0) {
-        toast.success(`Scheduled "${todo.title}"`);
-        loadData();
-      } else {
+      const occupiedSet = new Set(timeBlocks.map(b => parseInt(b.startTime.split(':')[0])));
+      const candidateHours = [9, 10, 14, 15, 11, 13, 16, 17, 8, 18];
+      const slot = candidateHours.find(h => !occupiedSet.has(h));
+      if (slot === undefined) {
         toast.error('No available time slots for this todo');
+        return;
       }
+      const startTime = `${String(slot).padStart(2, '0')}:00`;
+      const endTime = `${String(slot + 1).padStart(2, '0')}:00`;
+      await createTimeBlock({
+        title: todo.title,
+        date: dateStr,
+        startTime,
+        endTime,
+        todoId: todo.id,
+        projectId: todo.projectId ?? null,
+        color: PRIORITY_COLORS[todo.priority] ?? PRIORITY_COLORS[3],
+        autoTrack: todo.priority >= 4,
+        slotType: 'fixed',
+      });
+      toast.success(`Scheduled "${todo.title}"`);
+      loadData();
     } catch {
       toast.error('Failed to schedule todo');
     }
@@ -607,6 +669,13 @@ export function TimelineView() {
 
       <div className="grid grid-cols-[1fr_300px] gap-6 h-[calc(100%-5rem)]">
         <Card className="relative overflow-hidden">
+          {timeBlocks.length === 0 && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 z-10 pointer-events-none">
+              <CalendarBlank weight="thin" size={48} className="text-muted-foreground" />
+              <h3 className="text-lg font-semibold">No blocks today</h3>
+              <p className="text-sm text-muted-foreground">Drag a task or add a block to get started</p>
+            </div>
+          )}
           <div
             ref={timelineRef}
             className="h-full overflow-y-auto overflow-x-hidden relative"
@@ -863,53 +932,46 @@ export function TimelineView() {
           </div>
         </Card>
 
-        <div className="space-y-4 overflow-y-auto">
-          <Card className="p-4">
-            <h3 className="font-semibold mb-3 flex items-center gap-2">
-              <Clock size={18} />
-              Quick Stats
-            </h3>
-            <div className="space-y-2">
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Time blocks:</span>
-                <span className="font-semibold">{timeBlocks.length}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Auto-tracking:</span>
-                <span className="font-semibold">{timeBlocks.filter(b => b.autoTrack).length}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Events today:</span>
-                <span className="font-semibold">{todayEvents.length}</span>
-              </div>
+        <div className="space-y-3 overflow-y-auto">
+          {/* 1. Today's progress bar */}
+          <Card className="p-3">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-xs font-medium">Today's Progress</span>
+              <span className="text-xs text-muted-foreground">
+                {todayTodos.length - unscheduledTodayTodos.length}/{todayTodos.length} scheduled
+              </span>
+            </div>
+            <div className="w-full bg-muted rounded-full h-1.5">
+              <div
+                className="bg-primary rounded-full h-1.5 transition-all"
+                style={{
+                  width: todayTodos.length > 0
+                    ? `${((todayTodos.length - unscheduledTodayTodos.length) / todayTodos.length) * 100}%`
+                    : '0%',
+                }}
+              />
             </div>
           </Card>
 
-          {runningTimer && (
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-            >
-              <Card className="p-4 border-primary bg-primary/5">
-                <div className="flex items-center gap-2 mb-2">
-                  <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
-                  <h3 className="font-semibold text-sm">Timer Running</h3>
-                </div>
-                <p className="text-xs text-muted-foreground">{runningTimer.note}</p>
-              </Card>
-            </motion.div>
+          {/* 2. Current location badge */}
+          {currentLocationLabel && (
+            <div className="px-1">
+              <Badge variant="secondary" className="h-7 px-3 text-xs w-full justify-center">
+                📍 {currentLocationLabel}
+              </Badge>
+            </div>
           )}
 
-          <Card className="p-4">
-            <h3 className="font-semibold mb-1">Today's Todos</h3>
+          {/* 3. Drag to schedule chips */}
+          <Card className="p-3">
             {todayTodos.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-4">No todos for today</p>
+              <p className="text-sm text-muted-foreground text-center py-3">No todos for today</p>
             ) : unscheduledTodayTodos.length === 0 ? (
               <p className="text-sm text-green-500 text-center py-3 font-medium">All tasks scheduled ✓</p>
             ) : (
               <>
-                <p className="text-xs text-muted-foreground mb-3">Drag to schedule →</p>
-                <div className="space-y-2">
+                <p className="text-xs text-muted-foreground mb-2">Drag to schedule →</p>
+                <div className="space-y-1.5">
                   {unscheduledTodayTodos.map((todo, index) => (
                     <motion.div
                       key={todo.id}
@@ -946,6 +1008,40 @@ export function TimelineView() {
               </>
             )}
           </Card>
+
+          {/* 4. Quick stats */}
+          <Card className="p-3">
+            <h3 className="font-semibold mb-2 flex items-center gap-2 text-sm">
+              <Clock size={16} />
+              Quick Stats
+            </h3>
+            <div className="space-y-1.5">
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Time blocks:</span>
+                <span className="font-semibold">{timeBlocks.length}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Auto-tracking:</span>
+                <span className="font-semibold">{timeBlocks.filter(b => b.autoTrack).length}</span>
+              </div>
+            </div>
+          </Card>
+
+          {/* 5. Running timer */}
+          {runningTimer && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+            >
+              <Card className="p-3 border-primary bg-primary/5">
+                <div className="flex items-center gap-2 mb-1">
+                  <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+                  <h3 className="font-semibold text-sm">Timer Running</h3>
+                </div>
+                <p className="text-xs text-muted-foreground">{runningTimer.note}</p>
+              </Card>
+            </motion.div>
+          )}
         </div>
       </div>
 
