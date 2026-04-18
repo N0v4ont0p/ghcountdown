@@ -36,11 +36,12 @@ export async function getNextImportantEvent(minPriority: number): Promise<Event 
 }
 
 export async function createEvent(
-  data: Omit<Event, 'id' | 'createdAt' | 'updatedAt'>
+  data: Omit<Event, 'id' | 'createdAt' | 'updatedAt' | 'goalId'> & { goalId?: string | null }
 ): Promise<Event> {
   const now = new Date().toISOString();
   const event: Event = {
     ...data,
+    goalId: data.goalId ?? null,
     id: uuidv4(),
     createdAt: now,
     updatedAt: now,

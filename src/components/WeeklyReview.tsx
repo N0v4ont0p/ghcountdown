@@ -13,9 +13,9 @@ import {
 } from 'date-fns';
 import { getAllTimeEntries } from '@/db/repositories/timeRepo';
 import { getAllTodos, updateTodo, deleteTodo } from '@/db/repositories/todosRepo';
-import { getAllProjects } from '@/db/repositories/projectsRepo';
-import { Todo, Project } from '@/db/schema';
-import { Clock, CheckCircle, CalendarBlank, Folder, ArrowRight } from '@phosphor-icons/react';
+import { getActiveGoals } from '@/db/repositories/goalsRepo';
+import { Todo, Goal } from '@/db/schema';
+import { Clock, CheckCircle, CalendarBlank, Target, ArrowRight } from '@phosphor-icons/react';
 import { weeklyReviewKey } from '@/lib/weeklyTrajectory';
 
 interface Props {
@@ -29,7 +29,7 @@ interface WeekSummary {
 }
 
 interface GoalCheck {
-  project: Project;
+  goal: Goal;
   completedThisWeek: number;
   totalLinked: number;
 }
@@ -74,10 +74,10 @@ export function WeeklyReview({ onDismiss }: Props) {
 
     async function loadData() {
       try {
-        const [entries, todos, projects] = await Promise.all([
+        const [entries, todos, goals] = await Promise.all([
           getAllTimeEntries(),
           getAllTodos(),
-          getAllProjects(),
+          getActiveGoals(),
         ]);
 
         // --- Week summary ---
@@ -121,16 +121,16 @@ export function WeeklyReview({ onDismiss }: Props) {
         });
         setOpenLoops(pastDue);
 
-        // --- Goals check: projects with any linked todos ---
-        const goalData: GoalCheck[] = projects
-          .map(project => {
-            const linked = todos.filter(t => t.projectId === project.id);
+        // --- Goals check: active goals with any linked todos ---
+        const goalData: GoalCheck[] = goals
+          .map(goal => {
+            const linked = todos.filter(t => t.goalId === goal.id);
             const completedThisWeek = linked.filter(t => {
               if (t.status !== 'done') return false;
               const updated = parseISO(t.updatedAt);
               return updated >= lastWeekStart && updated <= lastWeekEnd;
             }).length;
-            return { project, completedThisWeek, totalLinked: linked.length };
+            return { goal, completedThisWeek, totalLinked: linked.length };
           })
           .filter(g => g.totalLinked > 0);
 
@@ -293,14 +293,14 @@ export function WeeklyReview({ onDismiss }: Props) {
                   </h2>
                   <div className="space-y-2">
                     {goalChecks.map(g => (
-                      <Card key={g.project.id} className="p-3 flex items-center gap-3">
+                      <Card key={g.goal.id} className="p-3 flex items-center gap-3">
                         <div
                           className="w-2.5 h-2.5 rounded-full flex-shrink-0"
-                          style={{ backgroundColor: g.project.color }}
+                          style={{ backgroundColor: g.goal.color }}
                         />
-                        <Folder size={14} className="text-muted-foreground shrink-0" />
+                        <Target size={14} className="text-muted-foreground shrink-0" />
                         <span className="flex-1 text-sm font-medium truncate">
-                          {g.project.name}
+                          {g.goal.title}
                         </span>
                         <span className="text-sm text-muted-foreground shrink-0">
                           {g.completedThisWeek}/{g.totalLinked} done

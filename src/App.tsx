@@ -6,6 +6,8 @@ import { CountdownHero } from '@/components/CountdownHero';
 import { RightNowCard } from '@/components/RightNowCard';
 import { DeadlinePressureStrip } from '@/components/DeadlinePressureStrip';
 import { MomentumStrip } from '@/components/MomentumStrip';
+import { GoalsProgressCard } from '@/components/GoalsProgressCard';
+import { GoalsSettingsCard } from '@/components/GoalsSettingsCard';
 import { SmartSuggestions } from '@/components/SmartSuggestions';
 import { EventsView } from '@/components/EventsView';
 import { TodosView } from '@/components/TodosView';
@@ -25,7 +27,8 @@ import { getSettings, updateSettings } from '@/db/repositories/settingsRepo';
 import { deleteAllProjects } from '@/db/repositories/projectsRepo';
 import { deleteAllTimeEntries, getAllTimeEntries } from '@/db/repositories/timeRepo';
 import { deleteAllTimeBlocks, getTimeBlocksByDate, getAllTimeBlocks } from '@/db/repositories/timeBlocksRepo';
-import { Event, Todo, TimeBlock, Settings } from '@/db/schema';
+import { getActiveGoals } from '@/db/repositories/goalsRepo';
+import { Event, Todo, TimeBlock, Settings, Goal } from '@/db/schema';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Sun, Moon, Monitor, DownloadSimple, UploadSimple, Trash, Sparkle, X, MagnifyingGlass, Plus, CalendarBlank, CheckSquare, Warning, ArrowRight } from '@phosphor-icons/react';
@@ -64,6 +67,7 @@ function App() {
   const [showMorningFlow, setShowMorningFlow] = useState(false);
   const [showWeeklyReview, setShowWeeklyReview] = useState(false);
   const [weeklyIntention, setWeeklyIntention] = useState(() => localStorage.getItem('weeklyIntention') ?? '');
+  const [activeGoals, setActiveGoals] = useState<Goal[]>([]);
   const { theme, setTheme, resolvedTheme } = useTheme();
 
   function invalidateCache() { setDataVersion(v => v + 1); }
@@ -231,6 +235,9 @@ function App() {
     const blocks = await getTimeBlocksByDate(format(new Date(), 'yyyy-MM-dd'));
     setTodayBlocks(blocks.sort((a, b) => a.startTime.localeCompare(b.startTime)));
 
+    const goals = await getActiveGoals();
+    setActiveGoals(goals);
+
     void generateNudges(upcoming, activeTodos);
   }
 
@@ -240,6 +247,7 @@ function App() {
       if (!config.apiKey) return;
       const allTodos = await getAllTodos();
       const allEvents = await getAllEvents();
+      const goals = await getActiveGoals();
       const todayTodos = allTodos.filter(t => t.status === 'today');
       const urgentEvents = allEvents
         .filter(e => {
@@ -247,10 +255,14 @@ function App() {
           return h > 0 && h <= 48;
         })
         .slice(0, 3);
+      const goalsSummary = goals.length > 0
+        ? goals.map(g => `"${g.title}" (why: ${g.why || 'unspecified'})`).join('; ')
+        : 'none';
       const briefingPrompt = [
         'Generate a short morning briefing (2-3 sentences max).',
         `Today\'s tasks: ${todayTodos.map(t => `${t.title}(P${t.priority})`).join(', ') || 'none'}`,
         `Upcoming deadlines: ${urgentEvents.map(e => `${e.title} in ${Math.round((new Date(e.startsAt).getTime() - Date.now()) / 3600000)}h`).join(', ') || 'none'}`,
+        `Active goals: ${goalsSummary}`,
         'Be specific, concise, and encouraging. Do not invent tasks.',
         'Return only the summary string in the JSON summary field. Leave suggestions array empty.',
       ].join(' ');
@@ -267,6 +279,7 @@ function App() {
         currentLocation: '',
         peakFocusHoursToday: [],
         typicalActivitiesNow: [],
+        activeGoals: goalsSummary,
       }, { mode: 'plan' });
       if (plan.summary) setMorningBriefing(plan.summary);
     } catch {
@@ -508,7 +521,10 @@ function App() {
                 {/* 2. Momentum strip */}
                 <MomentumStrip />
 
-                {/* 3. Right Now card — visually prominent */}
+                {/* 3. Goals progress — only shown if active goals exist */}
+                {activeGoals.length > 0 && <GoalsProgressCard />}
+
+                {/* 4. Right Now card — visually prominent */}
                 <div className="rounded-2xl overflow-hidden shadow-lg" style={{ borderLeft: '4px solid var(--primary)' }}>
                   <RightNowCard
                     blocks={todayBlocks}
@@ -517,10 +533,10 @@ function App() {
                   />
                 </div>
 
-                {/* 4. Countdown hero */}
+                {/* 5. Countdown hero */}
                 <CountdownHero event={nextEvent} />
 
-                {/* 5. Deadline pressure strip */}
+                {/* 6. Deadline pressure strip */}
                 <DeadlinePressureStrip events={upcomingEvents} />
 
                 {/* 6. Smart suggestions + AI nudges */}
@@ -675,6 +691,8 @@ function App() {
                 </div>
 
                 <div className="space-y-4">
+                  <GoalsSettingsCard />
+
                   <Card className="p-6">
                     <div className="space-y-4">
                       <div>
