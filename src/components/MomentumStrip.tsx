@@ -15,7 +15,7 @@ interface MomentumData {
 
 const MAX_STREAK_LOOKBACK_DAYS = 365;
 
-export function MomentumStrip() {
+export function MomentumStrip({ compact }: { compact?: boolean } = {}) {
   const [data, setData] = useState<MomentumData | null>(null);
 
   useEffect(() => {
@@ -75,6 +75,27 @@ export function MomentumStrip() {
   }, []);
 
   if (!data) return null;
+
+  if (compact) {
+    const focusFormatted = data.focusMinutesToday >= 60
+      ? `${Math.floor(data.focusMinutesToday / 60)}h ${data.focusMinutesToday % 60}m`
+      : `${data.focusMinutesToday}m`;
+    return (
+      <div className="flex items-center gap-4 text-sm flex-wrap">
+        <span className="flex items-center gap-1.5 text-muted-foreground">
+          <Flame size={14} className="text-orange-500" />
+          <span className="tabular-nums font-semibold text-foreground">{data.streak}d</span>
+          <span>streak</span>
+        </span>
+        <span className="text-muted-foreground">·</span>
+        <span className="flex items-center gap-1.5 text-muted-foreground">
+          <Timer size={14} className="text-blue-500" />
+          <span className="tabular-nums font-semibold text-foreground">{focusFormatted}</span>
+          <span>focus today</span>
+        </span>
+      </div>
+    );
+  }
 
   const stats = [
     {
