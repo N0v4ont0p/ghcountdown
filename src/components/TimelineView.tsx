@@ -426,11 +426,11 @@ export function TimelineView() {
     setIsScheduling(true);
     try {
       const dateStr = format(currentDate, 'yyyy-MM-dd');
-      const count = await scheduleMyDay(dateStr, unscheduledTodayTodos, timeBlocks);
-      if (count === 0) {
+      const created = await scheduleMyDay(dateStr, unscheduledTodayTodos, timeBlocks);
+      if (created === 0) {
         toast.info('All todos are already scheduled!');
       } else {
-        toast.success(`Scheduled ${count} todo${count !== 1 ? 's' : ''} for today`);
+        toast.success(`Scheduled ${created} todo${created !== 1 ? 's' : ''} for today`);
         loadData();
       }
     } catch {
@@ -586,6 +586,14 @@ export function TimelineView() {
 
   return (
     <div className="max-w-7xl mx-auto h-[calc(100vh-6rem)]">
+      {warningMessage && (
+        <div className="mb-3 flex items-center gap-2 rounded-lg px-4 py-2 bg-yellow-500/15 border border-yellow-500/40 text-yellow-700 dark:text-yellow-400">
+          <Warning size={16} weight="fill" />
+          <span className="text-sm font-medium">
+            {warningMessage}
+          </span>
+        </div>
+      )}
       <div className="mb-6 flex items-center justify-between">
         <div>
           <h2 className="text-3xl font-semibold mb-2">Timeline</h2>

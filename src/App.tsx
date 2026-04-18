@@ -27,11 +27,11 @@ import { getSettings, updateSettings } from '@/db/repositories/settingsRepo';
 import { deleteAllProjects } from '@/db/repositories/projectsRepo';
 import { deleteAllTimeEntries, getAllTimeEntries } from '@/db/repositories/timeRepo';
 import { deleteAllTimeBlocks, getTimeBlocksByDate, getAllTimeBlocks } from '@/db/repositories/timeBlocksRepo';
-import { getActiveGoals } from '@/db/repositories/goalsRepo';
+import { getAllGoals, getActiveGoals, createGoal, updateGoal, deleteGoal, deleteAllGoals } from '@/db/repositories/goalsRepo';
 import { Event, Todo, TimeBlock, Settings, Goal } from '@/db/schema';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Sun, Moon, Monitor, DownloadSimple, UploadSimple, Trash, Sparkle, X, MagnifyingGlass, Plus, CalendarBlank, CheckSquare, Warning, ArrowRight } from '@phosphor-icons/react';
+import { Sun, Moon, Monitor, DownloadSimple, UploadSimple, Trash, Sparkle, X, MagnifyingGlass, Plus, CalendarBlank, CheckSquare, Warning, Target, ArrowRight } from '@phosphor-icons/react';
 import { format } from 'date-fns';
 import { useTheme } from '@/hooks/use-theme';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -65,6 +65,8 @@ function App() {
   const [bulkDeleteTarget, setBulkDeleteTarget] = useState<'events' | 'todos' | 'projects' | 'timeEntries' | 'timeBlocks' | 'all' | null>(null);
   const [showEveningFlow, setShowEveningFlow] = useState(false);
   const [showMorningFlow, setShowMorningFlow] = useState(false);
+  const [goals, setGoals] = useState<Goal[]>([]);
+  const [newGoalTitle, setNewGoalTitle] = useState('');
   const [showWeeklyReview, setShowWeeklyReview] = useState(false);
   const [weeklyIntention, setWeeklyIntention] = useState(() => localStorage.getItem('weeklyIntention') ?? '');
   const [activeGoals, setActiveGoals] = useState<Goal[]>([]);
@@ -235,8 +237,9 @@ function App() {
     const blocks = await getTimeBlocksByDate(format(new Date(), 'yyyy-MM-dd'));
     setTodayBlocks(blocks.sort((a, b) => a.startTime.localeCompare(b.startTime)));
 
-    const goals = await getActiveGoals();
-    setActiveGoals(goals);
+    const allGoals = await getAllGoals();
+    setGoals(allGoals);
+    setActiveGoals(allGoals.filter(g => g.status === 'active'));
 
     void generateNudges(upcoming, activeTodos);
   }
@@ -441,6 +444,7 @@ function App() {
             deleteAllProjects(),
             deleteAllTimeEntries(),
             deleteAllTimeBlocks(),
+            deleteAllGoals(),
           ]);
           break;
       }
@@ -605,7 +609,38 @@ function App() {
                   </Card>
                 </div>
 
-                {/* 8. Weekly intention card */}
+                {/* 8. Goals Progress */}
+                {goals.filter(g => g.status === 'active').length > 0 && (
+                  <Card className="p-4">
+                    <h3 className="font-semibold mb-3 flex items-center gap-2 text-sm">
+                      <Target size={16} />
+                      Goals Progress
+                    </h3>
+                    <div className="space-y-3">
+                      {goals.filter(g => g.status === 'active').slice(0, 5).map(goal => {
+                        const linked = todos.filter(t => t.goalId === goal.id);
+                        const done = linked.filter(t => t.status === 'done').length;
+                        const pct = linked.length > 0 ? Math.round((done / linked.length) * 100) : 0;
+                        return (
+                          <div key={goal.id}>
+                            <div className="flex justify-between mb-1">
+                              <span className="text-sm font-medium truncate">{goal.title}</span>
+                              <span className="text-xs text-muted-foreground shrink-0 ml-2">{done}/{linked.length} tasks</span>
+                            </div>
+                            <div className="w-full bg-muted rounded-full h-1.5">
+                              <div
+                                className="bg-primary rounded-full h-1.5 transition-all"
+                                style={{ width: `${pct}%` }}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </Card>
+                )}
+
+                {/* 9. Weekly intention card */}
                 {weeklyIntention && (
                   <Card className="p-4 border-l-4 border-l-primary/50">
                     <div className="flex items-start justify-between gap-3">
@@ -761,6 +796,77 @@ function App() {
                           <SelectItem value="1">Priority 1 — All events</SelectItem>
                         </SelectContent>
                       </Select>
+                    </div>
+                  </Card>
+
+                  <Card className="p-6">
+                    <div>
+                      <h3 className="font-semibold mb-2 flex items-center gap-2">
+                        <Target size={16} />
+                        Goals
+                      </h3>
+                      <p className="text-sm text-muted-foreground mb-3">
+                        Define goals and link todos to track progress
+                      </p>
+                      <div className="space-y-2 mb-3">
+                        {goals.length === 0 ? (
+                          <p className="text-sm text-muted-foreground text-center py-2">No goals yet</p>
+                        ) : (
+                          goals.map(goal => (
+                            <div key={goal.id} className="flex items-center gap-2 text-sm">
+                              <span className={`flex-1 truncate ${goal.status !== 'active' ? 'line-through text-muted-foreground' : ''}`}>
+                                {goal.title}
+                              </span>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 px-2 text-xs"
+                                onClick={async () => {
+                                  const next = goal.status === 'active' ? 'achieved' : 'active';
+                                  await updateGoal(goal.id, { status: next });
+                                  const all = await getAllGoals();
+                                  setGoals(all);
+                                }}
+                              >
+                                {goal.status === 'active' ? '✓' : '↺'}
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 w-6 p-0 text-destructive"
+                                onClick={async () => {
+                                  await deleteGoal(goal.id);
+                                  const all = await getAllGoals();
+                                  setGoals(all);
+                                }}
+                              >
+                                <Trash size={12} />
+                              </Button>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                      <form
+                        className="flex gap-2"
+                        onSubmit={async (e) => {
+                          e.preventDefault();
+                          if (!newGoalTitle.trim()) return;
+                          await createGoal({ title: newGoalTitle.trim(), why: '', targetDate: null, status: 'active', color: 'oklch(0.60 0.19 250)' });
+                          setNewGoalTitle('');
+                          const all = await getAllGoals();
+                          setGoals(all);
+                        }}
+                      >
+                        <input
+                          className="flex-1 text-sm border rounded px-2 py-1 bg-background"
+                          placeholder="New goal title…"
+                          value={newGoalTitle}
+                          onChange={e => setNewGoalTitle(e.target.value)}
+                        />
+                        <Button type="submit" size="sm" variant="outline" className="gap-1">
+                          <Plus size={13} /> Add
+                        </Button>
+                      </form>
                     </div>
                   </Card>
 

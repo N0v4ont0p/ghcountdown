@@ -527,6 +527,26 @@ export function TodosView() {
                   )}
 
                   <div>
+                    <Label htmlFor="goalId">Goal (optional)</Label>
+                    <Select
+                      value={formData.goalId}
+                      onValueChange={(val) => setFormData({ ...formData, goalId: val })}
+                    >
+                      <SelectTrigger id="goalId">
+                        <SelectValue placeholder="None" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">None</SelectItem>
+                        {goals.filter(g => g.status === 'active').map((goal) => (
+                          <SelectItem key={goal.id} value={goal.id}>
+                            {goal.title}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div>
                     <Label htmlFor="dueAt">Due Date (optional)</Label>
                     <Input
                       id="dueAt"

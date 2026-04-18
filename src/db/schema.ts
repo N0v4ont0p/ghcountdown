@@ -42,8 +42,9 @@ export interface Todo {
   cognitiveLoad: 'high' | 'medium' | 'low' | null;
   projectId: string | null;
   eventId: string | null;
-  locationId: string | null;
   goalId: string | null;
+  locationId: string | null;
+  estimatedMinutes: number | null;
   createdAt: string;
   updatedAt: string;
 }

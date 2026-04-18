@@ -34,7 +34,6 @@ export async function updateGoal(
 ): Promise<Goal | null> {
   const existing = await getGoalById(id);
   if (!existing) return null;
-
   const updated: Goal = {
     ...existing,
     ...data,
