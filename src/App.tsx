@@ -15,6 +15,7 @@ import { AIAssistantView } from '@/components/AIAssistantView';
 import { QuickCapture } from '@/components/QuickCapture';
 import { UniversalSearch } from '@/components/UniversalSearch';
 import { EveningFlow } from '@/components/EveningFlow';
+import { MorningFlow } from '@/components/MorningFlow';
 import { initDB } from '@/db/core';
 import { seedDatabase } from '@/db/seed';
 import { deleteAllEvents, getNextImportantEvent, getAllEvents } from '@/db/repositories/eventsRepo';
@@ -58,6 +59,7 @@ function App() {
   const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false);
   const [bulkDeleteTarget, setBulkDeleteTarget] = useState<'events' | 'todos' | 'projects' | 'timeEntries' | 'timeBlocks' | 'all' | null>(null);
   const [showEveningFlow, setShowEveningFlow] = useState(false);
+  const [showMorningFlow, setShowMorningFlow] = useState(false);
   const { theme, setTheme, resolvedTheme } = useTheme();
 
   function invalidateCache() { setDataVersion(v => v + 1); }
@@ -108,9 +110,19 @@ function App() {
         const hour = new Date().getHours();
         const today = new Date().toISOString().split('T')[0];
         const lastBriefing = localStorage.getItem('lastBriefingDate');
+        const morningFlowDate = localStorage.getItem('morningFlowDate');
         if (lastBriefing !== today && hour >= 5 && hour <= 11) {
           localStorage.setItem('lastBriefingDate', today);
-          generateMorningBriefing();
+          await generateMorningBriefing();
+        }
+        if (morningFlowDate !== today && hour >= 5 && hour <= 11) {
+          const blocks = await getTimeBlocksByDate(format(new Date(), 'yyyy-MM-dd'));
+          const allTodos = await getAllTodos();
+          const scheduledIds = new Set(blocks.map((b) => b.todoId).filter(Boolean) as string[]);
+          const unscheduledToday = allTodos.filter((t) => t.status === 'today' && !scheduledIds.has(t.id));
+          if (unscheduledToday.length > 0 || blocks.length < 2) {
+            setShowMorningFlow(true);
+          }
         }
       } catch (error) {
         console.error('Failed to initialize:', error);
@@ -896,6 +908,12 @@ function App() {
       />
 
       <AnimatePresence>
+        {showMorningFlow && (
+          <MorningFlow
+            briefing={morningBriefing}
+            onDismiss={() => setShowMorningFlow(false)}
+          />
+        )}
         {showEveningFlow && (
           <EveningFlow onDismiss={() => setShowEveningFlow(false)} />
         )}
