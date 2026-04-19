@@ -61,6 +61,7 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
   const [result, setResult] = useState<AIAssistantResult | null>(null);
   const [appliedIds, setAppliedIds] = useState<string[]>([]);
   const [isCompactSettingsOpen, setIsCompactSettingsOpen] = useState(false);
+  const [keyCheckDone, setKeyCheckDone] = useState(false);
   const resultRef = useRef<HTMLDivElement | null>(null);
 
   const hasApiKey = apiKey.trim().length > 0;
@@ -69,6 +70,21 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
     const config = getAIConfiguration();
     setApiKey(config.apiKey);
     setMode(readSavedMode());
+
+    // App.tsx initialize() is async — if the key is empty on first read,
+    // retry after 500ms to let IndexedDB settings load into the runtime config.
+    if (!config.apiKey) {
+      const timer = setTimeout(() => {
+        const retried = getAIConfiguration();
+        if (retried.apiKey) setApiKey(retried.apiKey);
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, []);
+
+  useEffect(() => {
+    const t = setTimeout(() => setKeyCheckDone(true), 600);
+    return () => clearTimeout(t);
   }, []);
 
   useEffect(() => {
@@ -417,7 +433,7 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
             No internet — AI unavailable.
           </div>
         )}
-        {!hasApiKey && isOnline && (
+        {!hasApiKey && isOnline && keyCheckDone && (
           <div className="flex items-center gap-1.5 text-xs text-yellow-600">
             <WarningCircle size={14} />
             Add your Hugging Face API key in Settings.
@@ -592,7 +608,7 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
         </Card>
       )}
 
-      {!hasApiKey && (
+      {!hasApiKey && keyCheckDone && (
         <Card className="p-4 border-yellow-500/40">
           <div className="flex items-center gap-2 text-sm">
             <WarningCircle size={18} className="text-yellow-500" />
