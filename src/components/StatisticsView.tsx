@@ -111,8 +111,9 @@ export function StatisticsView() {
   }, [runningTimer]);
 
   async function loadTrackerData() {
-    const [running] = await Promise.all([getRunningTimer()]);
+    const [running, entries] = await Promise.all([getRunningTimer(), getAllTimeEntries()]);
     setRunningTimer(running);
+    setTimeEntries(entries);
     if (running) {
       setTimerElapsed(Math.floor((Date.now() - new Date(running.startAt).getTime()) / 1000));
     }
@@ -465,16 +466,6 @@ export function StatisticsView() {
     return `${hours}h ${mins}m`;
   }
 
-  if (!isLoading && stats && stats.totalFocusedTime === 0 && weeklyData.every(d => d.focusTime === 0)) {
-    return (
-      <div className="flex flex-col items-center justify-center h-full gap-3">
-        <ChartBar weight="thin" size={48} className="text-muted-foreground" />
-        <h3 className="text-lg font-semibold">No data yet</h3>
-        <p className="text-sm text-muted-foreground">Start tracking time to see insights</p>
-      </div>
-    );
-  }
-
   if (isLoading || !stats) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -489,6 +480,8 @@ export function StatisticsView() {
       </div>
     );
   }
+
+  const hasNoData = stats.totalFocusedTime === 0 && weeklyData.every(d => d.focusTime === 0);
 
   const maxWeeklyTime = Math.max(...weeklyData.map(d => d.focusTime), 1);
   const maxHourlyTime = Math.max(...hourlyData.map(h => h.focusTime), 1);
@@ -627,6 +620,14 @@ export function StatisticsView() {
 
         {/* ── Overview ── */}
         <TabsContent value="overview" className="space-y-6 mt-6">
+          {hasNoData ? (
+            <div className="flex flex-col items-center justify-center py-24 gap-3">
+              <ChartBar weight="thin" size={48} className="text-muted-foreground" />
+              <h3 className="text-lg font-semibold">No data yet</h3>
+              <p className="text-sm text-muted-foreground">Start tracking time to see insights</p>
+            </div>
+          ) : (
+          <>
           {/* Trajectory section */}
           {trajectory && (
             trajectory.hasEnoughData ? (
@@ -838,6 +839,8 @@ export function StatisticsView() {
               })}
             </div>
           </Card>
+          </>
+          )}
         </TabsContent>
 
         {/* ── Tracker ── */}
