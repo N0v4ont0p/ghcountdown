@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Dialog, DialogContent } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { getAllTodos } from '@/db/repositories/todosRepo';
@@ -119,6 +119,10 @@ export function UniversalSearch({ open, onClose, onNavigate }: UniversalSearchPr
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="sm:max-w-lg p-0 overflow-hidden gap-0" onKeyDown={handleKeyDown}>
+        <DialogHeader className="sr-only">
+          <DialogTitle>Search</DialogTitle>
+          <DialogDescription>Search todos, events, time blocks, and projects</DialogDescription>
+        </DialogHeader>
         <div className="p-3 border-b">
           <Input
             ref={inputRef}
