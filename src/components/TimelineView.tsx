@@ -539,6 +539,65 @@ export function TimelineView() {
     return { top, height };
   }
 
+  /**
+   * Assigns each block a column index and column count so that overlapping
+   * blocks are rendered side-by-side rather than stacked.
+   *
+   * Algorithm:
+   *  1. Sort blocks by start time.
+   *  2. Greedily assign each block to the first column whose last block ends
+   *     at or before this block's start (interval scheduling).
+   *  3. Walk the list a second time: for each block, the column count is the
+   *     maximum column index among all blocks it overlaps, plus one.
+   */
+  function computeBlockLayouts(blocks: TimeBlock[]): Record<string, { colIndex: number; colCount: number }> {
+    const toMinutes = (time: string) => {
+      const [h, m] = time.split(':').map(Number);
+      return h * 60 + m;
+    };
+
+    const items = blocks.map((block) => ({
+      id: block.id,
+      start: toMinutes(block.startTime),
+      end: toMinutes(block.endTime),
+    })).sort((a, b) => a.start - b.start || a.end - b.end);
+
+    // columns[c] = end time of the last block placed in column c
+    const columns: number[] = [];
+    const colAssignment: Record<string, number> = {};
+
+    for (const item of items) {
+      let placed = false;
+      for (let c = 0; c < columns.length; c++) {
+        if (columns[c] <= item.start) {
+          columns[c] = item.end;
+          colAssignment[item.id] = c;
+          placed = true;
+          break;
+        }
+      }
+      if (!placed) {
+        colAssignment[item.id] = columns.length;
+        columns.push(item.end);
+      }
+    }
+
+    // Second pass: determine colCount for each block
+    const result: Record<string, { colIndex: number; colCount: number }> = {};
+    for (const item of items) {
+      let maxCol = colAssignment[item.id];
+      for (const other of items) {
+        if (other.id === item.id) continue;
+        if (item.start < other.end && item.end > other.start) {
+          maxCol = Math.max(maxCol, colAssignment[other.id]);
+        }
+      }
+      result[item.id] = { colIndex: colAssignment[item.id], colCount: maxCol + 1 };
+    }
+
+    return result;
+  }
+
   function getCurrentTimePosition() {
     const hours = currentTime.getHours();
     const minutes = currentTime.getMinutes();
@@ -567,6 +626,8 @@ export function TimelineView() {
     });
     return ids;
   }, [timeBlocks, currentDate]);
+
+  const blockLayouts = useMemo(() => computeBlockLayouts(timeBlocks), [timeBlocks]);
 
   // Daily workload estimate: sum block durations + DEFAULT_TODO_MINUTES per unscheduled todo
   const totalWorkloadMinutes = useMemo(() => {
@@ -823,12 +884,15 @@ export function TimelineView() {
                     const project = block.projectId ? projects.find(p => p.id === block.projectId) : null;
                     const isFlex = (block.slotType || 'fixed') !== 'fixed';
                     const isConflicting = conflictingBlockIds.has(block.id);
+                    const layout = blockLayouts[block.id] ?? { colIndex: 0, colCount: 1 };
+                    const leftPct = (layout.colIndex / layout.colCount) * 100;
+                    const widthPct = 100 / layout.colCount;
 
                     return (
                       <motion.div
                         key={block.id}
                         className={cn(
-                          "absolute left-2 right-2 rounded-xl p-3 cursor-pointer group shadow-md",
+                          "absolute rounded-xl p-3 cursor-pointer group shadow-md",
                           "hover:shadow-lg transition-all duration-200 border-2",
                           isRunning && "ring-2 ring-primary ring-offset-2 ring-offset-background",
                           isConflicting && "ring-2 ring-red-500 ring-offset-2 ring-offset-background"
@@ -836,7 +900,9 @@ export function TimelineView() {
                         style={{
                           top: style.top,
                           height: style.height,
-                          backgroundColor: block.color + '20',
+                          left: `calc(${leftPct}% + 4px)`,
+                          width: `calc(${widthPct}% - 8px)`,
+                          backgroundColor: withColorAlpha(block.color, 0.15),
                           borderColor: block.color,
                           borderStyle: isFlex ? 'dashed' : 'solid',
                         }}
@@ -849,7 +915,7 @@ export function TimelineView() {
                         <div className="flex items-start justify-between gap-2">
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 mb-1">
-                              <h4 className="font-semibold text-sm truncate" style={{ color: block.color }}>
+                              <h4 className="font-semibold text-sm truncate">
                                 {isFlex ? (
                                   <><span aria-hidden="true">⚡</span> Flex slot</>
                                 ) : block.title}
