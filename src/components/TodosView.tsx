@@ -52,6 +52,12 @@ export function TodosView() {
     loadData();
   }, []);
 
+  useEffect(() => {
+    function onDataChange() { void loadData(); }
+    window.addEventListener('app:datachange', onDataChange);
+    return () => window.removeEventListener('app:datachange', onDataChange);
+  }, []);
+
   async function loadData() {
     const [allTodos, allProjects, activeGoals] = await Promise.all([
       getAllTodos(),

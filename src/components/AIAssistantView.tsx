@@ -303,7 +303,7 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
       if (suggestion.type === 'todo') {
         await createTodo({
           title: suggestion.title,
-          status: suggestion.priority >= 4 ? 'today' : 'inbox',
+          status: 'today',
           dueAt: suggestion.dueAt ?? null,
           priority: suggestion.priority,
           projectId: null,
@@ -361,6 +361,7 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
       }
 
       setAppliedIds((prev) => [...prev, suggestion.id]);
+      window.dispatchEvent(new CustomEvent('app:datachange'));
     } catch (error) {
       console.error('applySuggestion failed:', error);
       toast.error(`Failed to apply: ${suggestion.title}`);

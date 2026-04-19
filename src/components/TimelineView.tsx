@@ -81,6 +81,12 @@ export function TimelineView() {
   }, [currentDate]);
 
   useEffect(() => {
+    function onDataChange() { void loadData(); }
+    window.addEventListener('app:datachange', onDataChange);
+    return () => window.removeEventListener('app:datachange', onDataChange);
+  }, [currentDate]);
+
+  useEffect(() => {
     let active = true;
 
     async function buildGhostSuggestions() {

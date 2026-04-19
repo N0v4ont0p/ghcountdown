@@ -91,6 +91,12 @@ export function EventsView() {
     loadEvents();
   }, []);
 
+  useEffect(() => {
+    function onDataChange() { void loadEvents(); }
+    window.addEventListener('app:datachange', onDataChange);
+    return () => window.removeEventListener('app:datachange', onDataChange);
+  }, []);
+
   async function loadEvents() {
     const allEvents = await getAllEvents();
     setEvents(allEvents.sort((a, b) => a.startsAt.localeCompare(b.startsAt)));
