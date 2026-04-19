@@ -93,8 +93,12 @@ export function EventsView() {
 
   useEffect(() => {
     function onDataChange() { void loadEvents(); }
+    window.addEventListener('ghc-data-changed', onDataChange);
     window.addEventListener('app:datachange', onDataChange);
-    return () => window.removeEventListener('app:datachange', onDataChange);
+    return () => {
+      window.removeEventListener('ghc-data-changed', onDataChange);
+      window.removeEventListener('app:datachange', onDataChange);
+    };
   }, []);
 
   async function loadEvents() {

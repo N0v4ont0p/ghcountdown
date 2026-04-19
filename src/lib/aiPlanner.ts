@@ -139,45 +139,73 @@ function extractFirstJsonObject(text: string): unknown {
   const firstCurly = trimmed.indexOf('{');
   const lastCurly = trimmed.lastIndexOf('}');
   if (firstCurly >= 0 && lastCurly > firstCurly) {
-    return safeJsonParse(trimmed.slice(firstCurly, lastCurly + 1));
+    const objectCandidate = safeJsonParse(trimmed.slice(firstCurly, lastCurly + 1));
+    if (objectCandidate) return objectCandidate;
+  }
+
+  const firstSquare = trimmed.indexOf('[');
+  const lastSquare = trimmed.lastIndexOf(']');
+  if (firstSquare >= 0 && lastSquare > firstSquare) {
+    const arrayCandidate = safeJsonParse(trimmed.slice(firstSquare, lastSquare + 1));
+    if (arrayCandidate) return arrayCandidate;
   }
 
   return null;
 }
 
 function normalizeSuggestion(raw: any): AISuggestion | null {
-  if (!raw || typeof raw !== 'object' || typeof raw.title !== 'string') return null;
-  const type = raw.type === 'event' || raw.type === 'timeBlock' ? raw.type : 'todo';
+  const source = raw && typeof raw === 'object' ? raw : {};
+  const normalizedType = typeof source.type === 'string' ? source.type.toLowerCase() : 'todo';
+  const type = normalizedType === 'event' || normalizedType === 'timeblock' || normalizedType === 'time_block'
+    ? (normalizedType === 'event' ? 'event' : 'timeBlock')
+    : 'todo';
+  const titleValue = source.title ?? source.name ?? source.task ?? source.text ?? source.action;
+  const title = typeof titleValue === 'string' && titleValue.trim()
+    ? titleValue.trim()
+    : 'Untitled action';
   const now = new Date();
   const defaultDate = toIsoDate(now);
-  const startTime = normalizeClockValue(raw.startTime, '09:00');
-  const endTime = normalizeClockValue(raw.endTime, withOneHourAfter(startTime));
-  const startsAt = toIsoDateTimeOrNull(raw.startsAt) || new Date(`${defaultDate}T${startTime}:00`).toISOString();
+  const startTime = normalizeClockValue(source.startTime ?? source.start ?? source.from, '09:00');
+  const endTime = normalizeClockValue(source.endTime ?? source.end ?? source.to, withOneHourAfter(startTime));
+  const startsAt = toIsoDateTimeOrNull(source.startsAt ?? source.startAt ?? source.when)
+    || new Date(`${defaultDate}T${startTime}:00`).toISOString();
 
   return {
     id: crypto.randomUUID(),
     type,
-    title: raw.title.trim(),
-    priority: normalizePriority(raw.priority),
-    cognitiveLoad: normalizeCognitiveLoad(raw.cognitiveLoad),
-    notes: typeof raw.notes === 'string' ? raw.notes.trim() : undefined,
-    dueAt: toIsoDateTimeOrNull(raw.dueAt),
+    title,
+    priority: normalizePriority(source.priority ?? source.urgency ?? source.importance),
+    cognitiveLoad: normalizeCognitiveLoad(source.cognitiveLoad ?? source.load),
+    notes: typeof source.notes === 'string' ? source.notes.trim() : undefined,
+    dueAt: toIsoDateTimeOrNull(source.dueAt ?? source.dueDate ?? source.deadline),
     startsAt,
-    allDay: Boolean(raw.allDay),
-    date: typeof raw.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(raw.date) ? raw.date : defaultDate,
+    allDay: Boolean(source.allDay),
+    date: typeof source.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(source.date) ? source.date : defaultDate,
     startTime,
     endTime,
-    autoTrack: raw.autoTrack !== false,
+    autoTrack: source.autoTrack !== false,
   };
 }
 
 function normalizeAIResponse(raw: any): AIAssistantResult {
-  const suggestions = (Array.isArray(raw.suggestions) ? raw.suggestions : [])
+  const suggestionSource = Array.isArray(raw)
+    ? raw
+    : Array.isArray(raw?.suggestions)
+      ? raw.suggestions
+      : Array.isArray(raw?.actions)
+        ? raw.actions
+        : [];
+
+  const suggestions = suggestionSource
     .map((s: any) => normalizeSuggestion(s))
     .filter((s: any): s is AISuggestion => Boolean(s));
 
   return {
-    summary: raw.summary || 'Actions created.',
+    summary: typeof raw?.summary === 'string'
+      ? raw.summary
+      : typeof raw?.message === 'string'
+        ? raw.message
+        : 'Actions created.',
     severity: normalizeSeverity(raw.severity),
     urgencyHours: raw.urgencyHours ?? null,
     confidence: Math.max(0, Math.min(1, Number(raw.confidence) || 0.8)),
@@ -213,6 +241,7 @@ Mix suggestion types appropriately:
 - Use "timeBlock" to schedule focused work sessions (requires date in YYYY-MM-DD, startTime and endTime in HH:mm 24h format)
 - Use "event" for deadlines, meetings, or appointments (requires startsAt as full ISO datetime e.g. ${today}T18:00:00.000Z)
 - Use "todo" for tasks and action items (optional dueAt as full ISO datetime)
+${mode === 'agent' ? '- In agent mode, todos should be created for the "today" list so they are visible immediately.' : ''}
 
 Priority scale: 5=critical deadline, 4=high importance, 3=normal, 2=low priority, 1=someday.
 Cognitive load scale for every todo/timeBlock suggestion: "high" (writing, coding, problem-solving, deep analysis), "medium" (reading, planning, reviewing), "low" (admin, replies, organizing, simple errands). Always include cognitiveLoad in every suggestion.
@@ -476,22 +505,61 @@ export async function generateActionPlan(
     `User request: ${prompt.trim()}`,
   ].filter(Boolean).join('\n');
 
-  const body = await requestWithFallback({
-    apiKey: config.apiKey,
-    model: FIXED_MODEL,
-    systemPrompt,
-    userPrompt,
-  });
+  const parseResponseOrThrow = (body: any) => {
+    const textResponse =
+      body?.choices?.[0]?.message?.content ||
+      body?.generated_text ||
+      body?.[0]?.generated_text || '';
 
-  const textResponse =
-    body?.choices?.[0]?.message?.content ||
-    body?.generated_text ||
-    body?.[0]?.generated_text || '';
+    if (!textResponse || textResponse.trim().length === 0) {
+      const error = new Error('AI returned an empty response. Check your API key and try again.');
+      (error as Error & { code?: string }).code = 'EMPTY_RESPONSE';
+      throw error;
+    }
 
-  if (!textResponse || textResponse.trim().length === 0) {
-    throw new Error('AI returned an empty response. Check your API key and try again.');
+    const parsed = safeJsonParse(textResponse.trim()) ?? extractFirstJsonObject(textResponse);
+    if (!parsed) {
+      const error = new Error('AI returned malformed JSON.');
+      (error as Error & { code?: string }).code = 'PARSE_FAILED';
+      throw error;
+    }
+
+    const normalized = normalizeAIResponse(parsed);
+    if (normalized.suggestions.length === 0) {
+      const error = new Error('AI returned no actionable suggestions.');
+      (error as Error & { code?: string }).code = 'NO_SUGGESTIONS';
+      throw error;
+    }
+
+    return normalized;
+  };
+
+  const runRequest = async (inputSystemPrompt: string, inputUserPrompt: string) => {
+    const body = await requestWithFallback({
+      apiKey: config.apiKey,
+      model: FIXED_MODEL,
+      systemPrompt: inputSystemPrompt,
+      userPrompt: inputUserPrompt,
+    });
+    return parseResponseOrThrow(body);
+  };
+
+  try {
+    return await runRequest(systemPrompt, userPrompt);
+  } catch (firstError) {
+    const code = (firstError as Error & { code?: string }).code;
+    const shouldRetry = code === 'EMPTY_RESPONSE' || code === 'PARSE_FAILED' || code === 'NO_SUGGESTIONS';
+    if (!shouldRetry) throw firstError;
+
+    const retrySystemPrompt = `You are a productivity assistant.
+Return only valid JSON.
+Return exactly one todo suggestion for the single most important next action.`;
+    const retryUserPrompt = [
+      'Output JSON shape:',
+      '{"summary":"...","suggestions":[{"type":"todo","title":"...","priority":3,"cognitiveLoad":"medium"}]}',
+      `User request: ${prompt.trim()}`,
+    ].join('\n');
+
+    return runRequest(retrySystemPrompt, retryUserPrompt);
   }
-
-  const parsed = JSON.parse(textResponse.trim());
-  return normalizeAIResponse(parsed);
 }

@@ -44,6 +44,14 @@ interface AIAssistantViewProps {
   compact?: boolean;
 }
 
+type ChangedDataType = 'todos' | 'events' | 'timeBlocks';
+
+function suggestionToChangedType(type: AISuggestion['type']): ChangedDataType {
+  if (type === 'event') return 'events';
+  if (type === 'timeBlock') return 'timeBlocks';
+  return 'todos';
+}
+
 function readSavedMode(): AIMode {
   if (typeof window === 'undefined') return 'plan';
   const saved = window.localStorage.getItem(AI_MODE_STORAGE_KEY);
@@ -125,6 +133,13 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
     }
   }
 
+  function dispatchDataChanged(types: Set<ChangedDataType>) {
+    if (types.size === 0) return;
+    const detail = { types: Array.from(types) };
+    window.dispatchEvent(new CustomEvent('ghc-data-changed', { detail }));
+    window.dispatchEvent(new CustomEvent('app:datachange', { detail }));
+  }
+
   async function handleGenerate() {
     if (!prompt.trim()) {
       toast.error('Enter a prompt first');
@@ -152,6 +167,9 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
         const scheduledIds = new Set(todayBlocks.map(b => b.todoId).filter(Boolean) as string[]);
         const unscheduled = todayTodos.filter(t => !scheduledIds.has(t.id));
         const result = await scheduleMyDay(today, unscheduled, todayBlocks);
+        if (result.created > 0) {
+          dispatchDataChanged(new Set<ChangedDataType>(['timeBlocks', 'todos']));
+        }
         if (result.created > 0) {
           toast.success(`Scheduled ${result.created} todo${result.created !== 1 ? 's' : ''} for today`);
         } else {
@@ -271,15 +289,17 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
         // Auto-apply all suggestions in agent mode
         let appliedCount = 0;
         let failedCount = 0;
+        const changedTypes = new Set<ChangedDataType>();
         for (const suggestion of plan.suggestions) {
           try {
             console.log('Applying suggestion:', suggestion.type, suggestion.title);
-            await applySuggestion(suggestion);
+            changedTypes.add(await applySuggestion(suggestion));
             appliedCount += 1;
           } catch {
             failedCount += 1;
           }
         }
+        dispatchDataChanged(changedTypes);
         if (failedCount === 0) {
           toast.success(`Agent executed ${appliedCount} action${appliedCount !== 1 ? 's' : ''}`);
         } else {
@@ -296,8 +316,8 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
     }
   }
 
-  async function applySuggestion(suggestion: AISuggestion) {
-    if (appliedIds.includes(suggestion.id)) return;
+  async function applySuggestion(suggestion: AISuggestion): Promise<ChangedDataType> {
+    if (appliedIds.includes(suggestion.id)) return suggestionToChangedType(suggestion.type);
 
     try {
       if (suggestion.type === 'todo') {
@@ -309,6 +329,8 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
           projectId: null,
           eventId: null,
         });
+        setAppliedIds((prev) => [...prev, suggestion.id]);
+        return 'todos';
       } else if (suggestion.type === 'event') {
         await createEvent({
           title: suggestion.title,
@@ -318,6 +340,8 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
           tags: ['ai'],
           notes: suggestion.notes ?? '',
         });
+        setAppliedIds((prev) => [...prev, suggestion.id]);
+        return 'events';
       } else {
         const blockDate = suggestion.date ?? new Date().toISOString().split('T')[0];
         const startTime = suggestion.startTime ?? '09:00';
@@ -358,10 +382,9 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
           autoTrack: suggestion.autoTrack !== false,
           slotType: 'fixed',
         });
+        setAppliedIds((prev) => [...prev, suggestion.id]);
+        return 'timeBlocks';
       }
-
-      setAppliedIds((prev) => [...prev, suggestion.id]);
-      window.dispatchEvent(new CustomEvent('app:datachange'));
     } catch (error) {
       console.error('applySuggestion failed:', error);
       toast.error(`Failed to apply: ${suggestion.title}`);
@@ -369,13 +392,24 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
     }
   }
 
+  async function handleApplySuggestion(suggestion: AISuggestion) {
+    try {
+      const changedType = await applySuggestion(suggestion);
+      dispatchDataChanged(new Set<ChangedDataType>([changedType]));
+    } catch {
+      // applySuggestion already reports toast + logs
+    }
+  }
+
   async function handleApplyAll() {
     if (!result || result.suggestions.length === 0) return;
     setIsApplyingAll(true);
     try {
+      const changedTypes = new Set<ChangedDataType>();
       for (const suggestion of result.suggestions) {
-        await applySuggestion(suggestion);
+        changedTypes.add(await applySuggestion(suggestion));
       }
+      dispatchDataChanged(changedTypes);
       toast.success('AI plan applied');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to apply some AI actions.';
@@ -478,7 +512,7 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
                           type="button"
                           aria-label={applied ? 'Applied' : 'Add'}
                           disabled={applied}
-                          onClick={() => applySuggestion(suggestion)}
+                          onClick={() => void handleApplySuggestion(suggestion)}
                           className="shrink-0 rounded-md p-0.5 hover:bg-accent disabled:cursor-not-allowed"
                         >
                           {applied
@@ -738,7 +772,7 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
                         <Button
                           size="sm"
                           variant={applied ? 'secondary' : 'default'}
-                          onClick={() => applySuggestion(suggestion)}
+                          onClick={() => void handleApplySuggestion(suggestion)}
                           disabled={applied}
                         >
                           {applied ? (
