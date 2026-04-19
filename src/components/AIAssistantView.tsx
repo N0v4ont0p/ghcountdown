@@ -61,6 +61,7 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
   const [result, setResult] = useState<AIAssistantResult | null>(null);
   const [appliedIds, setAppliedIds] = useState<string[]>([]);
   const [isCompactSettingsOpen, setIsCompactSettingsOpen] = useState(false);
+  const [keyCheckDone, setKeyCheckDone] = useState(false);
   const resultRef = useRef<HTMLDivElement | null>(null);
 
   const hasApiKey = apiKey.trim().length > 0;
@@ -69,6 +70,21 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
     const config = getAIConfiguration();
     setApiKey(config.apiKey);
     setMode(readSavedMode());
+
+    // App.tsx initialize() is async — if the key is empty on first read,
+    // retry after 500ms to let IndexedDB settings load into the runtime config.
+    if (!config.apiKey) {
+      const timer = setTimeout(() => {
+        const retried = getAIConfiguration();
+        if (retried.apiKey) setApiKey(retried.apiKey);
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, []);
+
+  useEffect(() => {
+    const t = setTimeout(() => setKeyCheckDone(true), 600);
+    return () => clearTimeout(t);
   }, []);
 
   useEffect(() => {
@@ -247,6 +263,7 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
         activeGoals: activeGoalsSummary,
       }, { mode });
 
+      console.log('AI plan received:', plan.suggestions.length, 'suggestions');
       setResult(plan);
       setAppliedIds([]);
 
@@ -256,6 +273,7 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
         let failedCount = 0;
         for (const suggestion of plan.suggestions) {
           try {
+            console.log('Applying suggestion:', suggestion.type, suggestion.title);
             await applySuggestion(suggestion);
             appliedCount += 1;
           } catch {
@@ -281,67 +299,73 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
   async function applySuggestion(suggestion: AISuggestion) {
     if (appliedIds.includes(suggestion.id)) return;
 
-    if (suggestion.type === 'todo') {
-      await createTodo({
-        title: suggestion.title,
-        status: suggestion.priority >= 4 ? 'today' : 'inbox',
-        dueAt: suggestion.dueAt ?? null,
-        priority: suggestion.priority,
-        projectId: null,
-        eventId: null,
-      });
-    } else if (suggestion.type === 'event') {
-      await createEvent({
-        title: suggestion.title,
-        startsAt: suggestion.startsAt ?? new Date().toISOString(),
-        allDay: Boolean(suggestion.allDay),
-        priority: suggestion.priority,
-        tags: ['ai'],
-        notes: suggestion.notes ?? '',
-      });
-    } else {
-      const blockDate = suggestion.date ?? new Date().toISOString().split('T')[0];
-      const startTime = suggestion.startTime ?? '09:00';
-      const endTime = suggestion.endTime ?? '10:00';
-      const toMinutes = (value: string) => {
-        const [h, m] = value.split(':').map(Number);
-        return (h * 60) + m;
-      };
-      const startMinutes = toMinutes(startTime);
-      const endMinutes = toMinutes(endTime);
-      const effectiveSchedule = await getEffectiveScheduleForDate(blockDate);
-      const conflictingFixed = effectiveSchedule.find(
-        (entry) =>
-          entry.kind === 'fixed' &&
-          startMinutes < toMinutes(entry.endTime) &&
-          endMinutes > toMinutes(entry.startTime)
-      );
-
-      if (conflictingFixed) {
-        throw new Error(
-          `AI suggestion overlaps with fixed routine "${conflictingFixed.title}" from ${conflictingFixed.startTime} to ${conflictingFixed.endTime}`
+    try {
+      if (suggestion.type === 'todo') {
+        await createTodo({
+          title: suggestion.title,
+          status: suggestion.priority >= 4 ? 'today' : 'inbox',
+          dueAt: suggestion.dueAt ?? null,
+          priority: suggestion.priority,
+          projectId: null,
+          eventId: null,
+        });
+      } else if (suggestion.type === 'event') {
+        await createEvent({
+          title: suggestion.title,
+          startsAt: suggestion.startsAt ?? new Date().toISOString(),
+          allDay: Boolean(suggestion.allDay),
+          priority: suggestion.priority,
+          tags: ['ai'],
+          notes: suggestion.notes ?? '',
+        });
+      } else {
+        const blockDate = suggestion.date ?? new Date().toISOString().split('T')[0];
+        const startTime = suggestion.startTime ?? '09:00';
+        const endTime = suggestion.endTime ?? '10:00';
+        const toMinutes = (value: string) => {
+          const [h, m] = value.split(':').map(Number);
+          return (h * 60) + m;
+        };
+        const startMinutes = toMinutes(startTime);
+        const endMinutes = toMinutes(endTime);
+        const effectiveSchedule = await getEffectiveScheduleForDate(blockDate);
+        const conflictingFixed = effectiveSchedule.find(
+          (entry) =>
+            entry.kind === 'fixed' &&
+            startMinutes < toMinutes(entry.endTime) &&
+            endMinutes > toMinutes(entry.startTime)
         );
+
+        if (conflictingFixed) {
+          throw new Error(
+            `AI suggestion overlaps with fixed routine "${conflictingFixed.title}" from ${conflictingFixed.startTime} to ${conflictingFixed.endTime}`
+          );
+        }
+
+        const matchingSlot = effectiveSchedule.find(
+          (entry) => startMinutes < toMinutes(entry.endTime) && endMinutes > toMinutes(entry.startTime)
+        );
+
+        await createTimeBlock({
+          title: suggestion.title,
+          date: blockDate,
+          startTime,
+          endTime,
+          todoId: null,
+          projectId: null,
+          locationId: matchingSlot?.locationId ?? null,
+          color: 'oklch(0.60 0.19 250)',
+          autoTrack: suggestion.autoTrack !== false,
+          slotType: 'fixed',
+        });
       }
 
-      const matchingSlot = effectiveSchedule.find(
-        (entry) => startMinutes < toMinutes(entry.endTime) && endMinutes > toMinutes(entry.startTime)
-      );
-
-      await createTimeBlock({
-        title: suggestion.title,
-        date: blockDate,
-        startTime,
-        endTime,
-        todoId: null,
-        projectId: null,
-        locationId: matchingSlot?.locationId ?? null,
-        color: 'oklch(0.60 0.19 250)',
-        autoTrack: suggestion.autoTrack !== false,
-        slotType: 'fixed',
-      });
+      setAppliedIds((prev) => [...prev, suggestion.id]);
+    } catch (error) {
+      console.error('applySuggestion failed:', error);
+      toast.error(`Failed to apply: ${suggestion.title}`);
+      throw error;
     }
-
-    setAppliedIds((prev) => [...prev, suggestion.id]);
   }
 
   async function handleApplyAll() {
@@ -409,7 +433,7 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
             No internet — AI unavailable.
           </div>
         )}
-        {!hasApiKey && isOnline && (
+        {!hasApiKey && isOnline && keyCheckDone && (
           <div className="flex items-center gap-1.5 text-xs text-yellow-600">
             <WarningCircle size={14} />
             Add your Hugging Face API key in Settings.
@@ -584,7 +608,7 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
         </Card>
       )}
 
-      {!hasApiKey && (
+      {!hasApiKey && keyCheckDone && (
         <Card className="p-4 border-yellow-500/40">
           <div className="flex items-center gap-2 text-sm">
             <WarningCircle size={18} className="text-yellow-500" />

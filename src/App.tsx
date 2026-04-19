@@ -579,6 +579,7 @@ function App() {
 
                     {/* Right Now — no card border */}
                     <motion.div
+                      key="right-now"
                       initial={{ opacity: 0, y: 12 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ delay: 0.1 }}
@@ -639,6 +640,7 @@ function App() {
 
                     {/* Today's Schedule — colored pill timeline */}
                     <motion.div
+                      key="todays-schedule"
                       initial={{ opacity: 0, y: 12 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ delay: 0.15 }}
@@ -678,6 +680,7 @@ function App() {
 
                     {/* Focus Tasks — priority 4 & 5 only, max 4 */}
                     <motion.div
+                      key="focus-tasks"
                       initial={{ opacity: 0, y: 12 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ delay: 0.2 }}
@@ -724,6 +727,7 @@ function App() {
                     {/* Morning briefing — blockquote style */}
                     {morningBriefing && (
                       <motion.div
+                        key="morning-briefing"
                         initial={{ opacity: 0, x: 10 }}
                         animate={{ opacity: 1, x: 0 }}
                         transition={{ delay: 0.1 }}
@@ -744,6 +748,7 @@ function App() {
                     {/* Weekly intention */}
                     {weeklyIntention && (
                       <motion.div
+                        key="weekly-intention"
                         initial={{ opacity: 0, x: 10 }}
                         animate={{ opacity: 1, x: 0 }}
                         transition={{ delay: 0.12 }}
@@ -766,6 +771,7 @@ function App() {
                     {/* Goals progress — thin rows, no card border */}
                     {activeGoals.length > 0 && (
                       <motion.div
+                        key="goals-progress"
                         initial={{ opacity: 0, x: 10 }}
                         animate={{ opacity: 1, x: 0 }}
                         transition={{ delay: 0.15 }}
@@ -803,6 +809,7 @@ function App() {
                     {/* Upcoming events — max 3, minimal rows */}
                     {upcomingEvents.length > 0 && (
                       <motion.div
+                        key="upcoming-events"
                         initial={{ opacity: 0, x: 10 }}
                         animate={{ opacity: 1, x: 0 }}
                         transition={{ delay: 0.2 }}
@@ -839,6 +846,7 @@ function App() {
                     {/* AI nudges — max 2 */}
                     {aiNudges.length > 0 && (
                       <motion.div
+                        key="ai-nudges"
                         initial={{ opacity: 0, x: 10 }}
                         animate={{ opacity: 1, x: 0 }}
                         transition={{ delay: 0.25 }}
@@ -855,6 +863,7 @@ function App() {
 
                     {/* Momentum — compact inline stats */}
                     <motion.div
+                      key="momentum"
                       initial={{ opacity: 0, x: 10 }}
                       animate={{ opacity: 1, x: 0 }}
                       transition={{ delay: 0.28 }}
