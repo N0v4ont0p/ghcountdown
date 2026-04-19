@@ -46,12 +46,6 @@ interface AIAssistantViewProps {
 
 type ChangedDataType = 'todos' | 'events' | 'timeBlocks';
 
-function suggestionToChangedType(type: AISuggestion['type']): ChangedDataType {
-  if (type === 'event') return 'events';
-  if (type === 'timeBlock') return 'timeBlocks';
-  return 'todos';
-}
-
 function readSavedMode(): AIMode {
   if (typeof window === 'undefined') return 'plan';
   const saved = window.localStorage.getItem(AI_MODE_STORAGE_KEY);
@@ -281,7 +275,6 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
         activeGoals: activeGoalsSummary,
       }, { mode });
 
-      console.log('AI plan received:', plan.suggestions.length, 'suggestions');
       setResult(plan);
       setAppliedIds([]);
 
@@ -291,11 +284,11 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
         let failedCount = 0;
         const changedTypes = new Set<ChangedDataType>();
         for (const suggestion of plan.suggestions) {
-          try {
-            console.log('Applying suggestion:', suggestion.type, suggestion.title);
-            changedTypes.add(await applySuggestion(suggestion));
+          const changedType = await applySuggestion(suggestion);
+          if (changedType) {
+            changedTypes.add(changedType);
             appliedCount += 1;
-          } catch {
+          } else {
             failedCount += 1;
           }
         }
@@ -316,8 +309,8 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
     }
   }
 
-  async function applySuggestion(suggestion: AISuggestion): Promise<ChangedDataType> {
-    if (appliedIds.includes(suggestion.id)) return suggestionToChangedType(suggestion.type);
+  async function applySuggestion(suggestion: AISuggestion): Promise<ChangedDataType | null> {
+    if (appliedIds.includes(suggestion.id)) return null;
 
     try {
       if (suggestion.type === 'todo') {
@@ -388,17 +381,14 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
     } catch (error) {
       console.error('applySuggestion failed:', error);
       toast.error(`Failed to apply: ${suggestion.title}`);
-      throw error;
+      return null;
     }
   }
 
   async function handleApplySuggestion(suggestion: AISuggestion) {
-    try {
-      const changedType = await applySuggestion(suggestion);
-      dispatchDataChanged(new Set<ChangedDataType>([changedType]));
-    } catch {
-      // applySuggestion already reports toast + logs
-    }
+    const changedType = await applySuggestion(suggestion);
+    if (!changedType) return;
+    dispatchDataChanged(new Set<ChangedDataType>([changedType]));
   }
 
   async function handleApplyAll() {
@@ -407,7 +397,8 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
     try {
       const changedTypes = new Set<ChangedDataType>();
       for (const suggestion of result.suggestions) {
-        changedTypes.add(await applySuggestion(suggestion));
+        const changedType = await applySuggestion(suggestion);
+        if (changedType) changedTypes.add(changedType);
       }
       dispatchDataChanged(changedTypes);
       toast.success('AI plan applied');

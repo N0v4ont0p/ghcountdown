@@ -124,7 +124,6 @@ function safeJsonParse(value: string): unknown {
   }
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function extractFirstJsonObject(text: string): unknown {
   const trimmed = text.trim();
   const direct = safeJsonParse(trimmed);
@@ -241,7 +240,7 @@ Mix suggestion types appropriately:
 - Use "timeBlock" to schedule focused work sessions (requires date in YYYY-MM-DD, startTime and endTime in HH:mm 24h format)
 - Use "event" for deadlines, meetings, or appointments (requires startsAt as full ISO datetime e.g. ${today}T18:00:00.000Z)
 - Use "todo" for tasks and action items (optional dueAt as full ISO datetime)
-${mode === 'agent' ? '- In agent mode, todos should be created for the "today" list so they are visible immediately.' : ''}
+${mode === 'agent' ? '- In agent mode, include "status":"today" for todo suggestions so they appear immediately in the Today list.' : ''}
 
 Priority scale: 5=critical deadline, 4=high importance, 3=normal, 2=low priority, 1=someday.
 Cognitive load scale for every todo/timeBlock suggestion: "high" (writing, coding, problem-solving, deep analysis), "medium" (reading, planning, reviewing), "low" (admin, replies, organizing, simple errands). Always include cognitiveLoad in every suggestion.
