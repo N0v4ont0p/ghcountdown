@@ -60,7 +60,7 @@ function HomeViewInner({
         title: activeBlock.title,
         startsAt: `${format(nowTick, 'yyyy-MM-dd')}T${activeBlock.endTime}:00`,
         color: activeBlock.color,
-        label: 'Counting down to block end',
+        label: 'Block ends in',
         whenText: `Today • ${activeBlock.endTime}`,
       }
     : nextUpcomingBlock
@@ -68,7 +68,7 @@ function HomeViewInner({
           title: nextUpcomingBlock.title,
           startsAt: `${format(nowTick, 'yyyy-MM-dd')}T${nextUpcomingBlock.startTime}:00`,
           color: nextUpcomingBlock.color,
-          label: 'Counting down to timeline block',
+          label: 'Timeline starts in',
           whenText: `Today • ${nextUpcomingBlock.startTime}`,
         }
       : null;

@@ -127,7 +127,7 @@ export function RoutinePanel({ onClose: _onClose }: RoutinePanelProps) {
 
   async function handleSave() {
     if (!form.title.trim()) { toast.error('Title is required'); return; }
-    if (form.startTime > form.endTime) { toast.error('End time must be after start time or equal for a moment entry'); return; }
+    if (form.startTime > form.endTime) { toast.error('End time cannot be earlier than start time'); return; }
     if (form.daysOfWeek.length === 0) { toast.error('Pick at least one day'); return; }
 
     const payload = {

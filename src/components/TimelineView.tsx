@@ -303,7 +303,7 @@ export function TimelineView() {
     }
 
     if (formData.startTime > formData.endTime) {
-      toast.error('End time must be after start time or match it for a moment block');
+      toast.error('End time cannot be earlier than start time');
       return;
     }
 

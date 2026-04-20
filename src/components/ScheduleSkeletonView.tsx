@@ -145,7 +145,7 @@ export function ScheduleSkeletonView() {
       return;
     }
     if (entryForm.startTime > entryForm.endTime) {
-      toast.error('End time must be after start time or equal for a moment entry');
+      toast.error('End time cannot be earlier than start time');
       return;
     }
     if (entryForm.daysOfWeek.length === 0) {
