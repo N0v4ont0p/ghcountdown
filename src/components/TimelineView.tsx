@@ -29,6 +29,7 @@ const AUTO_FILL_THRESHOLD_MINUTES = 5;
 const TIMELINE_ZOOM_MIN = 0.75;
 const TIMELINE_ZOOM_MAX = 2;
 const TIMELINE_ZOOM_STEP = 0.25;
+const MIN_VISUAL_BLOCK_MINUTES = 15;
 
 const COGNITIVE_LOAD_COLORS = {
   high:   { bg: 'oklch(0.58 0.20 20)', text: 'oklch(0.50 0.20 20)' },
@@ -301,8 +302,8 @@ export function TimelineView() {
       return;
     }
 
-    if (formData.startTime >= formData.endTime) {
-      toast.error('End time must be after start time');
+    if (formData.startTime > formData.endTime) {
+      toast.error('End time cannot be earlier than start time');
       return;
     }
 
@@ -557,7 +558,10 @@ export function TimelineView() {
     
     const startMinutes = startHour * 60 + startMin;
     const endMinutes = endHour * 60 + endMin;
-    const duration = endMinutes - startMinutes;
+    const visualEndMinutes = endMinutes <= startMinutes
+      ? startMinutes + MIN_VISUAL_BLOCK_MINUTES
+      : endMinutes;
+    const duration = visualEndMinutes - startMinutes;
     
     const top = (startMinutes / 60) * timelineHourHeight;
     const height = (duration / 60) * timelineHourHeight;
@@ -582,11 +586,16 @@ export function TimelineView() {
       return h * 60 + m;
     };
 
-    const items = blocks.map((block) => ({
+    const items = blocks.map((block) => {
+      const start = toMinutes(block.startTime);
+      const rawEnd = toMinutes(block.endTime);
+      const end = rawEnd <= start ? start + MIN_VISUAL_BLOCK_MINUTES : rawEnd;
+      return {
       id: block.id,
-      start: toMinutes(block.startTime),
-      end: toMinutes(block.endTime),
-    })).sort((a, b) => a.start - b.start || a.end - b.end);
+      start,
+      end,
+    };
+    }).sort((a, b) => a.start - b.start || a.end - b.end);
 
     // columns[c] = end time of the last block placed in column c
     const columns: number[] = [];
@@ -654,6 +663,26 @@ export function TimelineView() {
   }, [timeBlocks, currentDate]);
 
   const blockLayouts = useMemo(() => computeBlockLayouts(timeBlocks), [timeBlocks]);
+  const skeletonLayouts = useMemo(
+    () => computeBlockLayouts(
+      skeletonEntries.map((entry) => ({
+        id: `skeleton-${entry.id}-${entry.startTime}`,
+        title: entry.title,
+        date: format(currentDate, 'yyyy-MM-dd'),
+        startTime: entry.startTime,
+        endTime: entry.endTime,
+        todoId: null,
+        projectId: null,
+        locationId: entry.locationId,
+        color: entry.color,
+        autoTrack: false,
+        slotType: entry.kind === 'flex' ? 'flex-todo' : 'fixed',
+        createdAt: '',
+        updatedAt: '',
+      }))
+    ),
+    [skeletonEntries, currentDate]
+  );
 
   // Daily workload estimate: sum block durations + DEFAULT_TODO_MINUTES per unscheduled todo
   const totalWorkloadMinutes = useMemo(() => {
@@ -923,8 +952,9 @@ export function TimelineView() {
 
                 {/* Skeleton / routine entries */}
                 {skeletonEntries.map((entry) => {
+                  const skeletonId = `skeleton-${entry.id}-${entry.startTime}`;
                   const style = getBlockStyle({
-                    id: entry.id,
+                    id: skeletonId,
                     title: entry.title,
                     date: format(currentDate, 'yyyy-MM-dd'),
                     startTime: entry.startTime,
@@ -938,20 +968,23 @@ export function TimelineView() {
                     createdAt: '',
                     updatedAt: '',
                   });
+                  const layout = skeletonLayouts[skeletonId] ?? { colIndex: 0, colCount: 1 };
+                  const leftPct = (layout.colIndex / layout.colCount) * 100;
+                  const widthPct = 100 / layout.colCount;
                   return (
                     <div
-                      key={`skeleton-${entry.id}-${entry.startTime}`}
+                      key={skeletonId}
                       className="absolute pointer-events-none overflow-hidden rounded-r-md"
                       style={{
                         top: style.top + 1,
-                        height: Math.max(style.height - 2, 26),
-                        left: 2,
-                        right: 2,
+                        height: Math.max(style.height - 2, 36),
+                        left: `${leftPct}%`,
+                        width: `calc(${widthPct}% - 4px)`,
                         borderLeft: `3px ${entry.kind === 'flex' ? 'dashed' : 'solid'} ${entry.color}`,
                         backgroundColor: withColorAlpha(entry.color, 0.07),
                       }}
                     >
-                      <div className="px-2 py-1">
+                      <div className="px-2 py-1.5">
                         <p className="text-[9px] text-muted-foreground/90 tabular-nums leading-tight mb-0.5">
                           {entry.startTime}–{entry.endTime}
                         </p>

@@ -40,6 +40,7 @@ import { performDailyRollover } from '@/lib/rollover';
 import { escalateOverdueTodos } from '@/lib/overdueCheck';
 import { detectDrift } from '@/lib/habitModel';
 import { weeklyReviewKey } from '@/lib/weeklyTrajectory';
+import { getEffectiveScheduleForDate } from '@/lib/effectiveSchedule';
 
 function App() {
   function formatCountdown(seconds: number): string {
@@ -108,8 +109,7 @@ function App() {
         const allTodos = await getAllTodos();
         setTodos(allTodos.filter(t => t.status !== 'done'));
 
-        const blocks = await getTimeBlocksByDate(format(new Date(), 'yyyy-MM-dd'));
-        setTodayBlocks(blocks.sort((a, b) => a.startTime.localeCompare(b.startTime)));
+        setTodayBlocks(await loadTodayTimelineBlocks());
 
         const rolledOver = await performDailyRollover();
         if (rolledOver.length > 0) {
@@ -221,9 +221,9 @@ function App() {
   useEffect(() => {
     let active = true;
     const refreshTodayBlocks = async () => {
-      const blocks = await getTimeBlocksByDate(format(new Date(), 'yyyy-MM-dd'));
+      const blocks = await loadTodayTimelineBlocks();
       if (active) {
-        setTodayBlocks(blocks.sort((a, b) => a.startTime.localeCompare(b.startTime)));
+        setTodayBlocks(blocks);
       }
     };
 
@@ -260,8 +260,7 @@ function App() {
     const activeTodos = allTodos.filter(t => t.status !== 'done');
     setTodos(activeTodos);
 
-    const blocks = await getTimeBlocksByDate(format(new Date(), 'yyyy-MM-dd'));
-    setTodayBlocks(blocks.sort((a, b) => a.startTime.localeCompare(b.startTime)));
+    setTodayBlocks(await loadTodayTimelineBlocks());
 
     const allGoals = await getAllGoals();
     setActiveGoals(allGoals.filter(g => g.status === 'active'));
@@ -495,6 +494,34 @@ function App() {
   const handleDismissMorningBriefing = useCallback(() => setMorningBriefing(null), []);
 
   const handleShowWeeklyReview = useCallback(() => setShowWeeklyReview(true), []);
+
+  async function loadTodayTimelineBlocks(): Promise<TimeBlock[]> {
+    const dateStr = format(new Date(), 'yyyy-MM-dd');
+    const blocks = await getTimeBlocksByDate(dateStr);
+    if (blocks.length > 0) {
+      return blocks.sort((a, b) => a.startTime.localeCompare(b.startTime));
+    }
+
+    const effective = await getEffectiveScheduleForDate(dateStr);
+    const now = new Date().toISOString();
+    return effective
+      .map<TimeBlock>((entry) => ({
+        id: `routine-${entry.id}-${dateStr}`,
+        title: entry.title,
+        date: dateStr,
+        startTime: entry.startTime,
+        endTime: entry.endTime,
+        todoId: null,
+        projectId: null,
+        locationId: entry.locationId,
+        color: entry.color,
+        autoTrack: false,
+        slotType: entry.kind === 'flex' ? 'flex-todo' : 'fixed',
+        createdAt: now,
+        updatedAt: now,
+      }))
+      .sort((a, b) => a.startTime.localeCompare(b.startTime));
+  }
 
   const { activeRoutineBlock, nextRoutineBlock, activeRemainingSeconds } = useMemo(() => {
     const currentHHMM = format(nowTick, 'HH:mm');
