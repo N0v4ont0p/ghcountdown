@@ -358,7 +358,13 @@ COGNITIVE_LOAD: medium
 If nothing to create output NO_SUGGESTIONS between the markers. No other text.`;
 }
 
-function buildModelCandidates(requestedModel: string) {  return [requestedModel?.trim() || FIXED_MODEL];
+function buildModelCandidates(requestedModel: string) {
+  return [requestedModel?.trim() || FIXED_MODEL];
+}
+
+/** Pause execution for the given number of milliseconds. */
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 function formatAttemptError(status: number | null, endpoint: string, model: string, detail?: string) {
@@ -643,8 +649,6 @@ export async function generateActionPlan(
     });
     return parseResponseOrThrow(body);
   };
-
-  const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
 
   /** Returns true for errors that should be retried (empty/no suggestions).
    *  Returns false for errors that must surface immediately (auth, rate limit, network). */
