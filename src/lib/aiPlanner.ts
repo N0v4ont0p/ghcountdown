@@ -116,73 +116,117 @@ function withOneHourAfter(startTime: string): string {
   return `${endHour}:${endMinute}`;
 }
 
-function safeJsonParse(value: string): unknown {
+/**
+ * Parses the tagged text format produced by the AI model.
+ * Extracts suggestion blocks between === SUGGESTIONS START === and === SUGGESTIONS END ===
+ * and maps them to AISuggestion objects. Never throws — returns [] on any error.
+ */
+export function parseTaggedSuggestions(raw: string): AISuggestion[] {
   try {
-    return JSON.parse(value);
-  } catch {
-    return null;
+    const START_MARKER = '=== SUGGESTIONS START ===';
+    const END_MARKER = '=== SUGGESTIONS END ===';
+
+    let content = raw;
+    const startIdx = raw.indexOf(START_MARKER);
+    const endIdx = raw.indexOf(END_MARKER);
+    if (startIdx !== -1 && endIdx > startIdx) {
+      content = raw.slice(startIdx + START_MARKER.length, endIdx);
+    }
+
+    content = content.trim();
+    if (!content || content === 'NO_SUGGESTIONS') return [];
+
+    // Split on lines that begin with CREATE_ to get individual blocks
+    const blocks = content.split(/^(?=CREATE_)/m).map(b => b.trim()).filter(Boolean);
+
+    const suggestions: AISuggestion[] = [];
+    const now = new Date();
+    const defaultDate = toIsoDate(now);
+
+    for (const block of blocks) {
+      const lines = block.split('\n');
+      const typeTag = lines[0].trim().toUpperCase();
+
+      const fields: Record<string, string> = {};
+      for (let i = 1; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line) continue;
+        const colonIdx = line.indexOf(':');
+        if (colonIdx < 1) continue;
+        const key = line.slice(0, colonIdx).trim().toUpperCase();
+        const value = line.slice(colonIdx + 1).trim();
+        if (key && value) fields[key] = value;
+      }
+
+      const title = fields['TITLE'] || 'Untitled action';
+      const priority = normalizePriority(fields['PRIORITY'] ?? '3');
+      const cognitiveLoad = normalizeCognitiveLoad(
+        (fields['COGNITIVE_LOAD'] ?? fields['COGNITIVE'] ?? '').toLowerCase() || null
+      );
+
+      if (typeTag === 'CREATE_TODO') {
+        suggestions.push({
+          id: crypto.randomUUID(),
+          type: 'todo',
+          title,
+          priority,
+          cognitiveLoad,
+          notes: fields['NOTES'] || undefined,
+          dueAt: toIsoDateTimeOrNull(fields['DUE_AT'] ?? fields['DUE'] ?? null),
+          startsAt: undefined,
+          allDay: false,
+          date: defaultDate,
+          startTime: '09:00',
+          endTime: '10:00',
+          autoTrack: true,
+        });
+      } else if (typeTag === 'CREATE_EVENT') {
+        const startsAtRaw = fields['STARTS_AT'] ?? fields['STARTS'] ?? fields['DATE'] ?? null;
+        const startsAt = toIsoDateTimeOrNull(startsAtRaw) ?? new Date(`${defaultDate}T09:00:00`).toISOString();
+        const allDay = (fields['ALL_DAY'] ?? '').toLowerCase() === 'true';
+        suggestions.push({
+          id: crypto.randomUUID(),
+          type: 'event',
+          title,
+          priority,
+          cognitiveLoad,
+          notes: fields['NOTES'] || undefined,
+          dueAt: null,
+          startsAt,
+          allDay,
+          date: defaultDate,
+          startTime: '09:00',
+          endTime: '10:00',
+          autoTrack: false,
+        });
+      } else if (typeTag === 'CREATE_TIMEBLOCK') {
+        const date = /^\d{4}-\d{2}-\d{2}$/.test(fields['DATE'] ?? '') ? fields['DATE'] : defaultDate;
+        const startTime = normalizeClockValue(fields['START_TIME'] ?? fields['STARTTIME'] ?? '09:00', '09:00');
+        const endTime = normalizeClockValue(fields['END_TIME'] ?? fields['ENDTIME'] ?? '', withOneHourAfter(startTime));
+        suggestions.push({
+          id: crypto.randomUUID(),
+          type: 'timeBlock',
+          title,
+          priority,
+          cognitiveLoad,
+          notes: fields['NOTES'] || undefined,
+          dueAt: null,
+          startsAt: new Date(`${date}T${startTime}:00`).toISOString(),
+          allDay: false,
+          date,
+          startTime,
+          endTime,
+          autoTrack: true,
+        });
+      }
+      // Unknown type tag — skip
+    }
+
+    return suggestions;
+  } catch (err) {
+    console.error('[parseTaggedSuggestions] Failed to parse response:', err, '\nRaw:', raw);
+    return [];
   }
-}
-
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-function extractFirstJsonObject(text: string): unknown {
-  const trimmed = text.trim();
-  const direct = safeJsonParse(trimmed);
-  if (direct) return direct;
-
-  const fenceMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
-  if (fenceMatch?.[1]) {
-    const fenced = safeJsonParse(fenceMatch[1]);
-    if (fenced) return fenced;
-  }
-
-  const firstCurly = trimmed.indexOf('{');
-  const lastCurly = trimmed.lastIndexOf('}');
-  if (firstCurly >= 0 && lastCurly > firstCurly) {
-    return safeJsonParse(trimmed.slice(firstCurly, lastCurly + 1));
-  }
-
-  return null;
-}
-
-function normalizeSuggestion(raw: any): AISuggestion | null {
-  if (!raw || typeof raw !== 'object' || typeof raw.title !== 'string') return null;
-  const type = raw.type === 'event' || raw.type === 'timeBlock' ? raw.type : 'todo';
-  const now = new Date();
-  const defaultDate = toIsoDate(now);
-  const startTime = normalizeClockValue(raw.startTime, '09:00');
-  const endTime = normalizeClockValue(raw.endTime, withOneHourAfter(startTime));
-  const startsAt = toIsoDateTimeOrNull(raw.startsAt) || new Date(`${defaultDate}T${startTime}:00`).toISOString();
-
-  return {
-    id: crypto.randomUUID(),
-    type,
-    title: raw.title.trim(),
-    priority: normalizePriority(raw.priority),
-    cognitiveLoad: normalizeCognitiveLoad(raw.cognitiveLoad),
-    notes: typeof raw.notes === 'string' ? raw.notes.trim() : undefined,
-    dueAt: toIsoDateTimeOrNull(raw.dueAt),
-    startsAt,
-    allDay: Boolean(raw.allDay),
-    date: typeof raw.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(raw.date) ? raw.date : defaultDate,
-    startTime,
-    endTime,
-    autoTrack: raw.autoTrack !== false,
-  };
-}
-
-function normalizeAIResponse(raw: any): AIAssistantResult {
-  const suggestions = (Array.isArray(raw.suggestions) ? raw.suggestions : [])
-    .map((s: any) => normalizeSuggestion(s))
-    .filter((s: any): s is AISuggestion => Boolean(s));
-
-  return {
-    summary: raw.summary || 'Actions created.',
-    severity: normalizeSeverity(raw.severity),
-    urgencyHours: raw.urgencyHours ?? null,
-    confidence: Math.max(0, Math.min(1, Number(raw.confidence) || 0.8)),
-    suggestions,
-  };
 }
 
 export function isAIConfigured() {
@@ -190,39 +234,137 @@ export function isAIConfigured() {
 }
 
 function buildSystemPrompt(mode: AIMode): string {
-  const today = new Date().toISOString().split('T')[0];
-  const tomorrow = new Date(Date.now() + 86400000)
-    .toISOString().split('T')[0];
-
   const modeDirective = mode === 'agent'
-    ? 'You are an autonomous productivity agent. Execute immediately. Infer all missing details. Never ask questions. Be decisive about times, dates, and priorities.'
-    : 'You are a productivity planning assistant. Be concise and practical.';
+    ? 'You are an autonomous productivity agent. Execute immediately. Infer all missing details. Never ask questions. Be decisive. Create 2-5 suggestions that directly address the request.'
+    : 'You are a productivity planning assistant. Be concise and practical. Create 1-3 focused suggestions.';
 
   return `${modeDirective}
 
-Today is ${today}. Tomorrow is ${tomorrow}.
-Always output times in 24-hour HH:mm format. "2pm"=14:00, "9am"=09:00, "noon"=12:00, "midnight"=00:00.
+Output ONLY suggestion blocks between the markers below. Nothing else outside the markers matters.
 
-Create 2-5 suggestions that directly address the user request.
-Hard constraints:
-- Never schedule over fixed weekly skeleton commitments.
-- Prefer peak focus hours when suggesting focused work.
-- Respect location constraints when scheduling.
-- Support "skeleton mode" requests by proposing changes to routine structure instead of conflicting timeline blocks.
-Mix suggestion types appropriately:
-- Use "timeBlock" to schedule focused work sessions (requires date in YYYY-MM-DD, startTime and endTime in HH:mm 24h format)
-- Use "event" for deadlines, meetings, or appointments (requires startsAt as full ISO datetime e.g. ${today}T18:00:00.000Z)
-- Use "todo" for tasks and action items (optional dueAt as full ISO datetime)
+Format rules:
+- Wrap all output between === SUGGESTIONS START === and === SUGGESTIONS END ===
+- Each block starts with CREATE_TODO, CREATE_EVENT, or CREATE_TIMEBLOCK on its own line
+- Each field is FIELDNAME: value on its own line
+- Blocks are separated by one blank line
+- Times in 24-hour HH:mm format. "2pm"=14:00, "9am"=09:00, "noon"=12:00
+- Always include the timezone offset in STARTS_AT (e.g. 2026-04-21T14:00:00+08:00)
+- If nothing should be created output exactly: NO_SUGGESTIONS between the markers
 
-Priority scale: 5=critical deadline, 4=high importance, 3=normal, 2=low priority, 1=someday.
-Cognitive load scale for every todo/timeBlock suggestion: "high" (writing, coding, problem-solving, deep analysis), "medium" (reading, planning, reviewing), "low" (admin, replies, organizing, simple errands). Always include cognitiveLoad in every suggestion.
-Confidence is 0.0 to 1.0 representing how well you understood the request.
-urgencyHours is how many hours until something is urgent, or null if not time-sensitive.
-You can produce timeBlocks for ANY date, not just today. Use the "date" field to specify which day. If user mentions "this week" produce blocks across Mon-Fri. If they mention "tomorrow" use the tomorrow date given above.`;
+Fields for CREATE_TODO: TITLE (required), PRIORITY 1-5 (default 3), STATUS today or inbox (default today), DURATION minutes (default 60), COGNITIVE_LOAD high/medium/low, DUE_AT ISO datetime (optional), NOTES (optional)
+Fields for CREATE_EVENT: TITLE (required), STARTS_AT full ISO datetime with timezone offset (required), PRIORITY 1-5 (default 3), ALL_DAY true/false (default false), NOTES (optional)
+Fields for CREATE_TIMEBLOCK: TITLE (required), DATE YYYY-MM-DD (required), START_TIME HH:mm (required), END_TIME HH:mm (required), PRIORITY 1-5 (default 3), COGNITIVE_LOAD high/medium/low
+
+Priority scale: 5=critical, 4=high, 3=normal, 2=low, 1=someday.
+Cognitive load: "high" (coding, writing, deep analysis), "medium" (reading, planning, reviewing), "low" (admin, replies, errands).
+
+--- EXAMPLE 1: Creating a todo ---
+User request: I need to review my autonomous code for FTC before Saturday
+Current date-time: 2026-04-20T09:00:00 (Monday)
+Timezone: Asia/Singapore (UTC+08:00)
+Today todos: Write report | Email coach
+Upcoming events: FTC scrimmage on 2026-04-25
+Active goals: Win FTC regionals
+
+Generate suggestions now.
+
+=== SUGGESTIONS START ===
+CREATE_TODO
+TITLE: Review FTC autonomous code
+PRIORITY: 4
+STATUS: today
+DURATION: 90
+COGNITIVE_LOAD: high
+=== SUGGESTIONS END ===
+
+--- EXAMPLE 2: Creating a time block ---
+User request: Block out time tomorrow morning for deep coding work on the robot
+Current date-time: 2026-04-20T09:00:00 (Monday)
+Timezone: Asia/Singapore (UTC+08:00)
+Today todos: FTC code review
+Upcoming events: none
+Active goals: none
+
+Generate suggestions now.
+
+=== SUGGESTIONS START ===
+CREATE_TIMEBLOCK
+TITLE: Deep coding session — robot
+DATE: 2026-04-21
+START_TIME: 09:00
+END_TIME: 11:00
+PRIORITY: 3
+COGNITIVE_LOAD: high
+=== SUGGESTIONS END ===
+
+--- EXAMPLE 3: Creating an event ---
+User request: Add FTC submission deadline on April 25th at 5pm Singapore time
+Current date-time: 2026-04-20T09:00:00 (Monday)
+Timezone: Asia/Singapore (UTC+08:00)
+Today todos: none
+Upcoming events: none
+Active goals: none
+
+Generate suggestions now.
+
+=== SUGGESTIONS START ===
+CREATE_EVENT
+TITLE: FTC Submission Deadline
+STARTS_AT: 2026-04-25T17:00:00+08:00
+PRIORITY: 5
+ALL_DAY: false
+=== SUGGESTIONS END ===`;
+}
+
+/** Shorter prompt used on retry attempt 2: format rules + one example, no mode context. */
+function buildShortSystemPrompt(): string {
+  return `You are a productivity assistant.
+Output ONLY suggestion blocks between the markers below. Nothing outside the markers is read.
+
+Format rules:
+- Wrap output between === SUGGESTIONS START === and === SUGGESTIONS END ===
+- Each block starts with CREATE_TODO, CREATE_EVENT, or CREATE_TIMEBLOCK on its own line
+- Each field is FIELDNAME: value on its own line
+- Blocks separated by one blank line
+- Times in 24-hour HH:mm. Always include timezone offset in STARTS_AT.
+- If nothing to create: output NO_SUGGESTIONS between the markers.
+
+Fields for CREATE_TODO: TITLE, PRIORITY 1-5 (default 3), STATUS today or inbox, COGNITIVE_LOAD high/medium/low
+Fields for CREATE_EVENT: TITLE, STARTS_AT full ISO datetime with offset, PRIORITY 1-5, ALL_DAY true/false
+Fields for CREATE_TIMEBLOCK: TITLE, DATE YYYY-MM-DD, START_TIME HH:mm, END_TIME HH:mm, PRIORITY 1-5, COGNITIVE_LOAD high/medium/low
+
+Example:
+User request: Review FTC code before Saturday
+
+=== SUGGESTIONS START ===
+CREATE_TODO
+TITLE: Review FTC autonomous code
+PRIORITY: 4
+STATUS: today
+COGNITIVE_LOAD: high
+=== SUGGESTIONS END ===`;
+}
+
+/** Minimal prompt used on retry attempt 3: just the bare format rules and user input. */
+function buildMinimalSystemPrompt(): string {
+  return `Output suggestion blocks using this exact format:
+=== SUGGESTIONS START ===
+CREATE_TODO
+TITLE: <action>
+PRIORITY: 3
+STATUS: today
+COGNITIVE_LOAD: medium
+=== SUGGESTIONS END ===
+If nothing to create output NO_SUGGESTIONS between the markers. No other text.`;
 }
 
 function buildModelCandidates(requestedModel: string) {
   return [requestedModel?.trim() || FIXED_MODEL];
+}
+
+/** Pause execution for the given number of milliseconds. */
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 function formatAttemptError(status: number | null, endpoint: string, model: string, detail?: string) {
@@ -244,7 +386,6 @@ async function attemptRequest(params: {
     model: `${params.model}:cerebras`,
     temperature: 0.1,
     max_tokens: 1000,
-    response_format: { type: 'json_object' },
     messages: [
       { role: 'system', content: params.systemPrompt },
       { role: 'user', content: params.userPrompt },
@@ -321,6 +462,10 @@ async function requestWithFallback(params: {
 
       if (result.status !== null && AUTH_FAILURE_CODES.has(result.status)) {
         throw new Error('Authentication failed. Check your Hugging Face key and permissions.');
+      }
+
+      if (result.status === 429) {
+        throw new Error('Rate limit reached. Please wait a moment before trying again.');
       }
     }
   }
@@ -452,46 +597,101 @@ export async function generateActionPlan(
   const offsetMins = String(Math.abs(offsetMin) % 60).padStart(2, '0');
   const offsetStr = `${offsetSign}${offsetHours}:${offsetMins}`;
 
+  const todoTitles = context.todoTitles.join(' | ') || 'none';
+  const eventTitles = context.upcomingEventTitles.join(' | ') || 'none';
+  const goalTitles = context.activeGoals || 'none';
+
   const userPrompt = [
-    `Current local date-time: ${localISO} (${dayName})`,
-    `User timezone: ${tz} (UTC${offsetStr})`,
-    `IMPORTANT: All times you produce must be interpreted in the user's local timezone.`,
-    `When user says "2pm" output "14:00". When user says "this Sunday" use the Sunday that comes AFTER today in user's timezone.`,
-    `All startsAt values in your JSON output MUST include the timezone offset ${offsetStr} (e.g. 2026-04-19T14:00:00${offsetStr})`,
-    `Existing todos: ${context.todoTitles.join(' | ') || 'none'}`,
-    `Upcoming events: ${context.upcomingEventTitles.join(' | ') || 'none'}`,
-    `Recent time blocks: ${context.recentBlockTitles.join(' | ') || 'none'}`,
-    `Unscheduled today todos: ${context.unscheduledTodayTodos.join(' | ') || 'none'}`,
-    `Overdue todos: ${context.overdueTodos.join(' | ') || 'none'}`,
-    `Current productivity streak: ${context.currentStreak} day${context.currentStreak !== 1 ? 's' : ''}`,
-    `Today focused minutes: ${context.todayFocusMinutes}`,
-    `Next event: ${context.nextEventDateTime ?? 'none'}`,
-    `Weekly skeleton summary: ${context.weeklySkeletonSummary || 'none'}`,
-    `Current location: ${context.currentLocation || 'unknown'}`,
-    `Peak focus hours today: ${context.peakFocusHoursToday.join(', ') || 'none'}`,
-    `Typical activities now: ${context.typicalActivitiesNow.join(', ') || 'none'}`,
-    context.activeGoals ? `Active goals: ${context.activeGoals}` : '',
-    context.activeGoals ? `When suggesting new todos, link them to a relevant goal (add a "goalNote" field with the goal title) where it makes sense.` : '',
-    ``,
     `User request: ${prompt.trim()}`,
-  ].filter(Boolean).join('\n');
+    `Current date-time: ${localISO} (${dayName})`,
+    `Timezone: ${tz} (UTC${offsetStr})`,
+    `Today todos: ${todoTitles}`,
+    `Upcoming events: ${eventTitles}`,
+    `Active goals: ${goalTitles}`,
+    ``,
+    `Generate suggestions now.`,
+  ].join('\n');
 
-  const body = await requestWithFallback({
-    apiKey: config.apiKey,
-    model: FIXED_MODEL,
-    systemPrompt,
-    userPrompt,
-  });
+  const parseResponseOrThrow = (body: any): AIAssistantResult => {
+    const textResponse =
+      body?.choices?.[0]?.message?.content ||
+      body?.generated_text ||
+      body?.[0]?.generated_text || '';
 
-  const textResponse =
-    body?.choices?.[0]?.message?.content ||
-    body?.generated_text ||
-    body?.[0]?.generated_text || '';
+    if (!textResponse || textResponse.trim().length === 0) {
+      const error = new Error('AI returned an empty response. Check your API key and try again.');
+      (error as Error & { code?: string }).code = 'EMPTY_RESPONSE';
+      throw error;
+    }
 
-  if (!textResponse || textResponse.trim().length === 0) {
-    throw new Error('AI returned an empty response. Check your API key and try again.');
+    const suggestions = parseTaggedSuggestions(textResponse);
+    if (suggestions.length === 0) {
+      const error = new Error('AI returned no actionable suggestions.');
+      (error as Error & { code?: string }).code = 'NO_SUGGESTIONS';
+      throw error;
+    }
+
+    return {
+      summary: 'Actions created.',
+      severity: 'medium',
+      urgencyHours: null,
+      confidence: 0.85,
+      suggestions,
+    };
+  };
+
+  const runRequest = async (inputSystemPrompt: string, inputUserPrompt: string) => {
+    const body = await requestWithFallback({
+      apiKey: config.apiKey,
+      model: FIXED_MODEL,
+      systemPrompt: inputSystemPrompt,
+      userPrompt: inputUserPrompt,
+    });
+    return parseResponseOrThrow(body);
+  };
+
+  /** Returns true for errors that should be retried (empty/no suggestions).
+   *  Returns false for errors that must surface immediately (auth, rate limit, network). */
+  const isRetryable = (err: unknown): boolean => {
+    const code = (err as Error & { code?: string }).code;
+    return code === 'EMPTY_RESPONSE' || code === 'NO_SUGGESTIONS';
+  };
+
+  const attemptDescriptions: string[] = [];
+
+  // Attempt 1 — full system prompt with mode directive and 3 examples
+  try {
+    return await runRequest(systemPrompt, userPrompt);
+  } catch (err1) {
+    if (!isRetryable(err1)) throw err1;
+    attemptDescriptions.push(`attempt 1 (full prompt): ${(err1 as Error).message}`);
   }
 
-  const parsed = JSON.parse(textResponse.trim());
-  return normalizeAIResponse(parsed);
+  // Attempt 2 — short system prompt (format rules + 1 example), simple user prompt
+  await sleep(1000);
+  const shortUserPrompt = [
+    `User request: ${prompt.trim()}`,
+    `Current date-time: ${localISO} (${dayName})`,
+    `Timezone: ${tz} (UTC${offsetStr})`,
+    ``,
+    `Generate suggestions now.`,
+  ].join('\n');
+  try {
+    return await runRequest(buildShortSystemPrompt(), shortUserPrompt);
+  } catch (err2) {
+    if (!isRetryable(err2)) throw err2;
+    attemptDescriptions.push(`attempt 2 (short prompt): ${(err2 as Error).message}`);
+  }
+
+  // Attempt 3 — minimal system prompt, bare user input
+  await sleep(2000);
+  const minimalUserPrompt = `User request: ${prompt.trim()}\n\nGenerate suggestions now.`;
+  try {
+    return await runRequest(buildMinimalSystemPrompt(), minimalUserPrompt);
+  } catch (err3) {
+    if (!isRetryable(err3)) throw err3;
+    attemptDescriptions.push(`attempt 3 (minimal prompt): ${(err3 as Error).message}`);
+  }
+
+  throw new Error(`AI failed after 3 attempts. ${attemptDescriptions.join('; ')}`);
 }

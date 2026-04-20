@@ -54,8 +54,12 @@ export function TodosView() {
 
   useEffect(() => {
     function onDataChange() { void loadData(); }
+    window.addEventListener('ghc-data-changed', onDataChange);
     window.addEventListener('app:datachange', onDataChange);
-    return () => window.removeEventListener('app:datachange', onDataChange);
+    return () => {
+      window.removeEventListener('ghc-data-changed', onDataChange);
+      window.removeEventListener('app:datachange', onDataChange);
+    };
   }, []);
 
   async function loadData() {
