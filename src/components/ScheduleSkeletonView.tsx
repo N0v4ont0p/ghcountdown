@@ -144,8 +144,8 @@ export function ScheduleSkeletonView() {
       toast.error('Routine title is required');
       return;
     }
-    if (entryForm.startTime >= entryForm.endTime) {
-      toast.error('End time must be after start time');
+    if (entryForm.startTime > entryForm.endTime) {
+      toast.error('End time must be after start time or equal for a moment entry');
       return;
     }
     if (entryForm.daysOfWeek.length === 0) {

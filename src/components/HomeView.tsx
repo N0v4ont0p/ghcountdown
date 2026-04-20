@@ -49,9 +49,41 @@ function HomeViewInner({
     return () => clearInterval(id);
   }, []);
 
-  const countdownTimeLeft = nextEvent
+  const currentHHMM = format(nowTick, 'HH:mm');
+  const activeBlock =
+    todayBlocks.find(b => b.startTime <= currentHHMM && currentHHMM < b.endTime) ?? null;
+  const nextUpcomingBlock = !activeBlock
+    ? (todayBlocks.find(b => b.startTime > currentHHMM) ?? null)
+    : null;
+  const timelineCountdownTarget = activeBlock
+    ? {
+        title: activeBlock.title,
+        startsAt: `${format(nowTick, 'yyyy-MM-dd')}T${activeBlock.endTime}:00`,
+        color: activeBlock.color,
+        label: 'Counting down to block end',
+        whenText: `Today • ${activeBlock.endTime}`,
+      }
+    : nextUpcomingBlock
+      ? {
+          title: nextUpcomingBlock.title,
+          startsAt: `${format(nowTick, 'yyyy-MM-dd')}T${nextUpcomingBlock.startTime}:00`,
+          color: nextUpcomingBlock.color,
+          label: 'Counting down to timeline block',
+          whenText: `Today • ${nextUpcomingBlock.startTime}`,
+        }
+      : null;
+  const countdownTarget = nextEvent
+    ? {
+        title: nextEvent.title,
+        startsAt: nextEvent.startsAt,
+        color: `var(--priority-${nextEvent.priority})`,
+        label: 'Counting down to',
+        whenText: format(new Date(nextEvent.startsAt), 'EEEE, MMMM d, yyyy • h:mm a'),
+      }
+    : timelineCountdownTarget;
+  const countdownTimeLeft = countdownTarget
     ? (() => {
-        const diff = new Date(nextEvent.startsAt).getTime() - countdownTick;
+        const diff = new Date(countdownTarget.startsAt).getTime() - countdownTick;
         if (diff <= 0) return null;
         return {
           days: Math.floor(diff / (1000 * 60 * 60 * 24)),
@@ -62,28 +94,21 @@ function HomeViewInner({
       })()
     : null;
 
-  const currentHHMM = format(nowTick, 'HH:mm');
-  const activeBlock =
-    todayBlocks.find(b => b.startTime <= currentHHMM && currentHHMM < b.endTime) ?? null;
-  const nextUpcomingBlock = !activeBlock
-    ? (todayBlocks.find(b => b.startTime > currentHHMM) ?? null)
-    : null;
-
   return (
     <div className="max-w-6xl mx-auto flex flex-col gap-8">
       {/* ── COUNTDOWN HERO ── */}
       <div key="countdown-hero" className="glass-card rounded-3xl p-8 md:p-12 relative overflow-hidden">
-        {nextEvent ? (
+        {countdownTarget ? (
           <>
             <div
               className="absolute top-0 left-0 right-0 h-1"
-              style={{ backgroundColor: `var(--priority-${nextEvent.priority})` }}
+              style={{ backgroundColor: countdownTarget.color }}
             />
             <div className="text-center mb-8">
-              <p className="text-xs uppercase tracking-widest text-muted-foreground mb-3">Counting down to</p>
-              <h1 className="text-3xl md:text-5xl font-bold tracking-tight mb-3">{nextEvent.title}</h1>
+              <p className="text-xs uppercase tracking-widest text-muted-foreground mb-3">{countdownTarget.label}</p>
+              <h1 className="text-3xl md:text-5xl font-bold tracking-tight mb-3">{countdownTarget.title}</h1>
               <p className="text-sm text-muted-foreground">
-                {format(new Date(nextEvent.startsAt), 'EEEE, MMMM d, yyyy • h:mm a')}
+                {countdownTarget.whenText}
               </p>
             </div>
             {countdownTimeLeft ? (
