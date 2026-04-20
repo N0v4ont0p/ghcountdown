@@ -42,6 +42,15 @@ import { detectDrift } from '@/lib/habitModel';
 import { weeklyReviewKey } from '@/lib/weeklyTrajectory';
 
 function App() {
+  function formatCountdown(seconds: number): string {
+    const safe = Math.max(0, seconds);
+    const h = Math.floor(safe / 3600);
+    const m = Math.floor((safe % 3600) / 60);
+    const s = safe % 60;
+    if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    return `${m}:${String(s).padStart(2, '0')}`;
+  }
+
   const [currentView, setCurrentView] = useState('home');
   const [nextEvent, setNextEvent] = useState<Event | null>(null);
   const [upcomingEvents, setUpcomingEvents] = useState<Event[]>([]);
@@ -487,18 +496,21 @@ function App() {
 
   const handleShowWeeklyReview = useCallback(() => setShowWeeklyReview(true), []);
 
-  const { activeRoutineBlock, nextRoutineBlock, activeRemainingMinutes } = useMemo(() => {
+  const { activeRoutineBlock, nextRoutineBlock, activeRemainingSeconds } = useMemo(() => {
     const currentHHMM = format(nowTick, 'HH:mm');
     const active = todayBlocks.find((block) => block.startTime <= currentHHMM && currentHHMM < block.endTime) ?? null;
     const next = todayBlocks.find((block) => block.startTime > currentHHMM) ?? null;
 
     if (!active) {
-      return { activeRoutineBlock: null, nextRoutineBlock: next, activeRemainingMinutes: null };
+      return { activeRoutineBlock: null, nextRoutineBlock: next, activeRemainingSeconds: null };
     }
 
     const [endHour, endMinute] = active.endTime.split(':').map(Number);
-    const remaining = Math.max(0, (endHour * 60 + endMinute) - (nowTick.getHours() * 60 + nowTick.getMinutes()));
-    return { activeRoutineBlock: active, nextRoutineBlock: next, activeRemainingMinutes: remaining };
+    const remaining = Math.max(
+      0,
+      (endHour * 3600 + endMinute * 60) - (nowTick.getHours() * 3600 + nowTick.getMinutes() * 60 + nowTick.getSeconds())
+    );
+    return { activeRoutineBlock: active, nextRoutineBlock: next, activeRemainingSeconds: remaining };
   }, [todayBlocks, nowTick]);
 
   if (isLoading) {
@@ -533,7 +545,7 @@ function App() {
             {currentView === 'home' && (
               <motion.div
                 key="home"
-                initial={{ opacity: 0, y: 20 }}
+                initial={false}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -20 }}
                 transition={{ duration: 0.3 }}
@@ -558,7 +570,7 @@ function App() {
             {currentView === 'events' && (
               <motion.div
                 key="events"
-                initial={{ opacity: 0, y: 20 }}
+                initial={false}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -20 }}
                 transition={{ duration: 0.3 }}
@@ -570,7 +582,7 @@ function App() {
             {currentView === 'todos' && (
               <motion.div
                 key="todos"
-                initial={{ opacity: 0, y: 20 }}
+                initial={false}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -20 }}
                 transition={{ duration: 0.3 }}
@@ -582,7 +594,7 @@ function App() {
             {currentView === 'timeline' && (
               <motion.div
                 key="timeline"
-                initial={{ opacity: 0, y: 20 }}
+                initial={false}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -20 }}
                 transition={{ duration: 0.3 }}
@@ -594,7 +606,7 @@ function App() {
             {currentView === 'statistics' && (
               <motion.div
                 key="statistics"
-                initial={{ opacity: 0, y: 20 }}
+                initial={false}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -20 }}
                 transition={{ duration: 0.3 }}
@@ -606,7 +618,7 @@ function App() {
             {currentView === 'settings' && (
               <motion.div
                 key="settings"
-                initial={{ opacity: 0, y: 20 }}
+                initial={false}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -20 }}
                 transition={{ duration: 0.3 }}
@@ -854,7 +866,7 @@ function App() {
                   <>
                     <p className="text-xs uppercase tracking-wide text-muted-foreground">Now</p>
                     <p className="text-sm font-semibold truncate">
-                      {activeRemainingMinutes ?? 0}m left · {activeRoutineBlock.title}
+                      {formatCountdown(activeRemainingSeconds ?? 0)} left · {activeRoutineBlock.title}
                     </p>
                   </>
                 ) : (

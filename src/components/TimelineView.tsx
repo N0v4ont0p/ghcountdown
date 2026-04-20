@@ -13,7 +13,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
-import { Plus, Play, Stop, Trash, Clock, CalendarBlank, CheckSquare, Lightning, Warning, CalendarDots, CaretLeft, CaretRight, MapPin } from '@phosphor-icons/react';
+import { Plus, Play, Stop, Trash, Clock, CalendarBlank, CheckSquare, Lightning, Warning, CalendarDots, CaretLeft, CaretRight, MapPin, MagnifyingGlassPlus, MagnifyingGlassMinus } from '@phosphor-icons/react';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -26,6 +26,9 @@ import { predictActivity } from '@/lib/habitModel';
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
 const TIMELINE_HOUR_HEIGHT = 80;
 const AUTO_FILL_THRESHOLD_MINUTES = 5;
+const TIMELINE_ZOOM_MIN = 0.75;
+const TIMELINE_ZOOM_MAX = 2;
+const TIMELINE_ZOOM_STEP = 0.25;
 
 const COGNITIVE_LOAD_COLORS = {
   high:   { bg: 'oklch(0.58 0.20 20)', text: 'oklch(0.50 0.20 20)' },
@@ -63,6 +66,8 @@ export function TimelineView() {
   const [ghostDismissedIds, setGhostDismissedIds] = useState<Set<string>>(new Set());
   const [ghostSuggestions, setGhostSuggestions] = useState<GhostSuggestion[]>([]);
   const [isRoutinePanelOpen, setIsRoutinePanelOpen] = useState(false);
+  const [timelineZoom, setTimelineZoom] = useState(1);
+  const timelineHourHeight = TIMELINE_HOUR_HEIGHT * timelineZoom;
 
   const [formData, setFormData] = useState({
     title: '',
@@ -77,12 +82,19 @@ export function TimelineView() {
 
   useEffect(() => {
     loadData();
-    const interval = setInterval(() => {
-      setCurrentTime(new Date());
-      checkAutoTracking();
+    void checkAutoTracking();
+    const checkInterval = setInterval(() => {
+      void checkAutoTracking();
     }, 30000);
-    return () => clearInterval(interval);
+    return () => clearInterval(checkInterval);
   }, [currentDate]);
+
+  useEffect(() => {
+    const clockInterval = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 1000);
+    return () => clearInterval(clockInterval);
+  }, []);
 
   useEffect(() => {
     function onDataChange() { void loadData(); }
@@ -150,10 +162,10 @@ export function TimelineView() {
     if (timelineRef.current) {
       const now = new Date();
       const currentHour = now.getHours();
-      const scrollTo = Math.max(0, (currentHour - 2) * TIMELINE_HOUR_HEIGHT);
+      const scrollTo = Math.max(0, (currentHour - 2) * timelineHourHeight);
       timelineRef.current.scrollTop = scrollTo;
     }
-  }, []);
+  }, [timelineHourHeight]);
 
   async function loadData() {
     const dateStr = format(currentDate, 'yyyy-MM-dd');
@@ -547,8 +559,8 @@ export function TimelineView() {
     const endMinutes = endHour * 60 + endMin;
     const duration = endMinutes - startMinutes;
     
-    const top = (startMinutes / 60) * TIMELINE_HOUR_HEIGHT;
-    const height = (duration / 60) * TIMELINE_HOUR_HEIGHT;
+    const top = (startMinutes / 60) * timelineHourHeight;
+    const height = (duration / 60) * timelineHourHeight;
     
     return { top, height };
   }
@@ -616,7 +628,7 @@ export function TimelineView() {
     const hours = currentTime.getHours();
     const minutes = currentTime.getMinutes();
     const totalMinutes = hours * 60 + minutes;
-    return (totalMinutes / 60) * TIMELINE_HOUR_HEIGHT;
+    return (totalMinutes / 60) * timelineHourHeight;
   }
 
   const todayEvents = events.filter(e => {
@@ -659,6 +671,36 @@ export function TimelineView() {
     ? `${(totalWorkloadMinutes / 60).toFixed(1)} h of work planned — over the 8 h baseline`
     : null;
   const hasTimelineContent = timeBlocks.length > 0 || skeletonEntries.length > 0 || ghostSuggestions.length > 0;
+
+  const activeTimelineBlock = useMemo(() => {
+    const nowHHMM = format(currentTime, 'HH:mm');
+    return timeBlocks.find((block) => block.startTime <= nowHHMM && nowHHMM < block.endTime) ?? null;
+  }, [timeBlocks, currentTime]);
+
+  const nextTimelineBlock = useMemo(() => {
+    if (activeTimelineBlock) return null;
+    const nowHHMM = format(currentTime, 'HH:mm');
+    return timeBlocks.find((block) => block.startTime > nowHHMM) ?? null;
+  }, [timeBlocks, currentTime, activeTimelineBlock]);
+
+  function formatRemaining(seconds: number): string {
+    const safe = Math.max(0, seconds);
+    const h = Math.floor(safe / 3600);
+    const m = Math.floor((safe % 3600) / 60);
+    const s = safe % 60;
+    if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    return `${m}:${String(s).padStart(2, '0')}`;
+  }
+
+  const activeRemainingSeconds = useMemo(() => {
+    if (!activeTimelineBlock) return null;
+    const [endHour, endMinute] = activeTimelineBlock.endTime.split(':').map(Number);
+    return Math.max(
+      0,
+      (endHour * 3600 + endMinute * 60)
+      - (currentTime.getHours() * 3600 + currentTime.getMinutes() * 60 + currentTime.getSeconds())
+    );
+  }, [activeTimelineBlock, currentTime]);
 
   return (
     <div className="max-w-7xl mx-auto flex flex-col gap-4 h-[calc(100vh-6rem)]">
@@ -712,6 +754,32 @@ export function TimelineView() {
               </Button>
             )}
 
+            <div className="flex items-center rounded-lg border bg-card shadow-sm overflow-hidden">
+              <button
+                onClick={() => setTimelineZoom((z) => Math.max(TIMELINE_ZOOM_MIN, Number((z - TIMELINE_ZOOM_STEP).toFixed(2))))}
+                className="px-2.5 py-2 hover:bg-muted transition-colors text-muted-foreground hover:text-foreground disabled:opacity-40"
+                aria-label="Zoom out timeline"
+                disabled={timelineZoom <= TIMELINE_ZOOM_MIN}
+              >
+                <MagnifyingGlassMinus size={14} />
+              </button>
+              <button
+                onClick={() => setTimelineZoom(1)}
+                className="px-2.5 py-2 text-[11px] font-semibold tabular-nums border-x border-border/60 hover:bg-muted transition-colors"
+                aria-label="Reset timeline zoom"
+              >
+                {Math.round(timelineZoom * 100)}%
+              </button>
+              <button
+                onClick={() => setTimelineZoom((z) => Math.min(TIMELINE_ZOOM_MAX, Number((z + TIMELINE_ZOOM_STEP).toFixed(2))))}
+                className="px-2.5 py-2 hover:bg-muted transition-colors text-muted-foreground hover:text-foreground disabled:opacity-40"
+                aria-label="Zoom in timeline"
+                disabled={timelineZoom >= TIMELINE_ZOOM_MAX}
+              >
+                <MagnifyingGlassPlus size={14} />
+              </button>
+            </div>
+
             <div className="h-4 w-px bg-border/60 hidden sm:block" />
 
             <Button variant="outline" size="sm" onClick={() => setIsRoutinePanelOpen(true)} className="gap-1.5">
@@ -746,6 +814,23 @@ export function TimelineView() {
             <span className="text-xs font-medium">{warningMessage}</span>
           </div>
         )}
+        {(activeTimelineBlock || nextTimelineBlock) && (
+          <div className="flex items-center gap-2 rounded-lg px-3 py-2 bg-primary/5 border border-primary/20">
+            <Clock size={13} className="text-primary shrink-0" />
+            {activeTimelineBlock ? (
+              <p className="text-xs font-medium min-w-0 truncate">
+                <span className="text-primary tabular-nums">{formatRemaining(activeRemainingSeconds ?? 0)}</span>
+                {' left · '}
+                {activeTimelineBlock.title}
+                <span className="text-muted-foreground"> ({activeTimelineBlock.startTime}–{activeTimelineBlock.endTime})</span>
+              </p>
+            ) : (
+              <p className="text-xs font-medium min-w-0 truncate">
+                Up next at <span className="tabular-nums">{nextTimelineBlock?.startTime}</span> · {nextTimelineBlock?.title}
+              </p>
+            )}
+          </div>
+        )}
       </div>
 
       {/* ── Body ────────────────────────────────────────────────────────── */}
@@ -772,7 +857,7 @@ export function TimelineView() {
             className="h-full overflow-y-auto overflow-x-hidden"
             style={{ scrollBehavior: 'smooth' }}
           >
-            <div className="relative select-none" style={{ height: HOURS.length * TIMELINE_HOUR_HEIGHT }}>
+            <div className="relative select-none" style={{ height: HOURS.length * timelineHourHeight }}>
 
               {/* ── Hour grid ── */}
               {HOURS.map((hour) => (
@@ -783,7 +868,7 @@ export function TimelineView() {
                     hour % 2 !== 0 ? "bg-muted/25" : "bg-transparent",
                     dragOverHour === hour && "bg-primary/5"
                   )}
-                  style={{ top: hour * TIMELINE_HOUR_HEIGHT, height: TIMELINE_HOUR_HEIGHT }}
+                  style={{ top: hour * timelineHourHeight, height: timelineHourHeight }}
                   onDragOver={(e) => { e.preventDefault(); setDragOverHour(hour); }}
                   onDragLeave={() => setDragOverHour(null)}
                   onDrop={(e) => handleTodoDrop(hour, e)}
@@ -859,7 +944,7 @@ export function TimelineView() {
                       className="absolute pointer-events-none overflow-hidden rounded-r-md"
                       style={{
                         top: style.top + 1,
-                        height: Math.max(style.height - 2, 10),
+                        height: Math.max(style.height - 2, 26),
                         left: 2,
                         right: 2,
                         borderLeft: `3px ${entry.kind === 'flex' ? 'dashed' : 'solid'} ${entry.color}`,
@@ -867,6 +952,9 @@ export function TimelineView() {
                       }}
                     >
                       <div className="px-2 py-1">
+                        <p className="text-[9px] text-muted-foreground/90 tabular-nums leading-tight mb-0.5">
+                          {entry.startTime}–{entry.endTime}
+                        </p>
                         <p className="text-[10px] font-medium truncate leading-tight" style={{ color: entry.color }}>
                           {entry.location ? `${entry.location.icon} ` : ''}{entry.title}
                           {entry.kind === 'flex' && <span className="opacity-50"> · flex</span>}
@@ -877,7 +965,7 @@ export function TimelineView() {
                 })}
 
                 {/* Ghost suggestions (habit predictions) */}
-                <AnimatePresence>
+                <AnimatePresence initial={false}>
                   {ghostSuggestions.map((ghost) => {
                     const style = getBlockStyle({
                       id: ghost.id,
@@ -900,7 +988,7 @@ export function TimelineView() {
                         className="absolute overflow-hidden rounded-r-md z-10"
                         style={{
                           top: style.top + 1,
-                          height: Math.max(style.height - 2, 28),
+                          height: Math.max(style.height - 2, 34),
                           left: 2,
                           right: 2,
                           borderLeft: `3px dashed ${withColorAlpha(ghost.color, 0.7)}`,
@@ -912,11 +1000,14 @@ export function TimelineView() {
                       >
                         <div className="flex items-center justify-between gap-1 h-full px-2 py-1">
                           <div className="min-w-0 flex-1">
+                            <p className="text-[11px] font-medium truncate leading-tight tabular-nums text-muted-foreground">
+                              {ghost.startTime}–{ghost.endTime}
+                            </p>
                             <p className="text-[11px] font-medium truncate leading-tight" style={{ color: ghost.color }}>
                               ✦ {ghost.title}
                             </p>
                             <p className="text-[10px] text-muted-foreground tabular-nums">
-                              {ghost.startTime}–{ghost.endTime} · {Math.round(ghost.confidence * 100)}% likely
+                              {Math.round(ghost.confidence * 100)}% likely
                             </p>
                           </div>
                           <div className="flex gap-0.5 shrink-0">
@@ -942,7 +1033,7 @@ export function TimelineView() {
                 </AnimatePresence>
 
                 {/* Actual time blocks */}
-                <AnimatePresence>
+                <AnimatePresence initial={false}>
                   {timeBlocks.map((block) => {
                     const style = getBlockStyle(block);
                     const isRunning = runningTimer?.timeBlockId === block.id;
@@ -953,6 +1044,10 @@ export function TimelineView() {
                     const layout = blockLayouts[block.id] ?? { colIndex: 0, colCount: 1 };
                     const leftPct = (layout.colIndex / layout.colCount) * 100;
                     const widthPct = 100 / layout.colCount;
+                    const rawHeight = Math.max(style.height - 2, 20);
+                    const visualHeight = Math.max(rawHeight, 34);
+                    const isCompact = visualHeight < 56;
+                    const isTiny = visualHeight < 44;
 
                     return (
                       <motion.div
@@ -965,7 +1060,7 @@ export function TimelineView() {
                         )}
                         style={{
                           top: style.top + 1,
-                          height: Math.max(style.height - 2, 24),
+                          height: visualHeight,
                           left: `${leftPct}%`,
                           width: `calc(${widthPct}% - 4px)`,
                           backgroundColor: withColorAlpha(block.color, 0.11),
@@ -978,6 +1073,7 @@ export function TimelineView() {
                         exit={{ opacity: 0, scale: 0.95, y: -2 }}
                         transition={{ type: 'spring', stiffness: 400, damping: 30 }}
                         onClick={() => handleEdit(block)}
+                        title={`${block.startTime}–${block.endTime} · ${block.title}`}
                       >
                         {/* Running timer glow bar */}
                         {isRunning && (
@@ -999,7 +1095,11 @@ export function TimelineView() {
                               {isConflicting && (
                                 <Warning size={10} className="text-red-500 shrink-0" weight="fill" />
                               )}
-                              <h4 className="text-xs font-semibold truncate leading-tight" style={{ color: block.color }}>
+                              <span className="text-[10px] tabular-nums font-medium text-muted-foreground shrink-0">
+                                {isTiny ? `${block.startTime}–${block.endTime}` : block.startTime}
+                              </span>
+                              {!isTiny && <span className="text-[10px] text-muted-foreground">–{block.endTime}</span>}
+                              <h4 className="text-xs font-semibold truncate leading-tight min-w-0" style={{ color: block.color }}>
                                 {isFlex ? '⚡ Flex' : block.title}
                               </h4>
                               {block.autoTrack && !isRunning && (
@@ -1013,20 +1113,22 @@ export function TimelineView() {
                             </div>
 
                             {/* Todo linked */}
-                            {todo && (
+                            {!isTiny && todo && (
                               <p className="text-[10px] truncate text-foreground/60 leading-tight">{todo.title}</p>
                             )}
-                            {isFlex && !todo && (
+                            {!isTiny && isFlex && !todo && (
                               <p className="text-[10px] truncate text-foreground/50 leading-tight italic">awaiting task</p>
                             )}
 
                             {/* Time range */}
-                            <p className="text-[10px] text-muted-foreground tabular-nums mt-0.5 leading-tight">
-                              {block.startTime}–{block.endTime}
-                            </p>
+                            {!isCompact && (
+                              <p className="text-[10px] text-muted-foreground tabular-nums mt-0.5 leading-tight">
+                                {block.startTime}–{block.endTime}
+                              </p>
+                            )}
 
                             {/* Project pill */}
-                            {project && (
+                            {!isCompact && project && (
                               <span
                                 className="inline-block mt-1 text-[9px] font-medium px-1.5 py-px rounded-full leading-tight"
                                 style={{
@@ -1079,11 +1181,11 @@ export function TimelineView() {
                   const eventDate = new Date(event.startsAt);
                   const hour = eventDate.getHours();
                   const minute = eventDate.getMinutes();
-                  const top = (hour * 60 + minute) / 60 * TIMELINE_HOUR_HEIGHT;
+                  const top = (hour * 60 + minute) / 60 * timelineHourHeight;
                   return (
                     <motion.div
                       key={event.id}
-                      className="absolute left-0.5 right-0.5 h-[22px] rounded overflow-hidden border-l-2"
+                      className="absolute left-0.5 right-0.5 min-h-[28px] rounded overflow-hidden border-l-2"
                       style={{
                         top: top + 1,
                         borderLeftColor: `oklch(0.60 0.18 ${event.priority * 50})`,
