@@ -826,7 +826,6 @@ export function TimelineView() {
                         height: style.height,
                         backgroundColor: withColorAlpha(entry.color, 0.22),
                         borderColor: entry.color,
-                        opacity: 1,
                         borderStyle: entry.kind === 'flex' ? 'dashed' : 'solid',
                       }}
                     >

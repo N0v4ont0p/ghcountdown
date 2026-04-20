@@ -209,7 +209,7 @@ function App() {
   }, [currentView, dataVersion]);
 
   useEffect(() => {
-    const timer = setInterval(() => setNowTick(new Date()), 30_000);
+    const timer = setInterval(() => setNowTick(new Date()), 1_000);
     return () => clearInterval(timer);
   }, []);
 
@@ -498,7 +498,7 @@ function App() {
     const next = todayBlocks.find((block) => block.startTime > currentHHMM) ?? null;
 
     if (!active) {
-      return { activeRoutineBlock: null, nextRoutineBlock: next, activeRemainingMinutes: null as number | null };
+      return { activeRoutineBlock: null, nextRoutineBlock: next, activeRemainingMinutes: null };
     }
 
     const [endHour, endMinute] = active.endTime.split(':').map(Number);
@@ -859,7 +859,7 @@ function App() {
                   <>
                     <p className="text-xs uppercase tracking-wide text-muted-foreground">Now</p>
                     <p className="text-sm font-semibold truncate">
-                      {activeRemainingMinutes}m left · {activeRoutineBlock.title}
+                      {activeRemainingMinutes ?? 0}m left · {activeRoutineBlock.title}
                     </p>
                   </>
                 ) : (

@@ -35,7 +35,7 @@ export function TodosView() {
 
   const [formData, setFormData] = useState({
     title: '',
-    status: 'today' as 'inbox' | 'today' | 'done' | 'someday',
+    status: 'today' as 'today' | 'done' | 'someday',
     dueAt: '',
     priority: 3 as 1 | 2 | 3 | 4 | 5,
     projectId: 'none',
