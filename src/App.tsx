@@ -934,22 +934,21 @@ function App() {
                       <>
                         <p className="text-xs uppercase tracking-wide text-muted-foreground">Next up</p>
                         <p className="text-sm font-semibold truncate">
-                          in {formatCountdown(nextStartsInSeconds ?? 0)} · {nextRoutineBlock?.title}
+                          In {formatCountdown(nextStartsInSeconds ?? 0)} · {nextRoutineBlock?.title}
                         </p>
                       </>
                     )}
-                    {nextRoutineBlock && (
+                    {nextRoutineBlock && activeRoutineBlock && (
                       <p className="text-xs text-muted-foreground truncate mt-1">
-                        Starts at {nextRoutineBlock.startTime}
+                        Next: {nextRoutineBlock.startTime}
                       </p>
                     )}
                     <div className="mt-2 h-1 rounded-full bg-primary/15 overflow-hidden">
                       <motion.div
                         className="h-full bg-primary"
-                        key={`${activeRoutineBlock?.id ?? 'next'}-${activeRemainingSeconds ?? nextStartsInSeconds ?? 0}`}
-                        initial={{ width: '100%' }}
-                        animate={{ width: '0%' }}
-                        transition={{ duration: 1, ease: 'linear' }}
+                        initial={false}
+                        animate={{ width: ['100%', '0%'] }}
+                        transition={{ duration: 1, ease: 'linear', repeat: Infinity }}
                       />
                     </div>
                   </div>

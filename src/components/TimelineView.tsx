@@ -31,6 +31,7 @@ const TIMELINE_ZOOM_MAX = 2;
 const TIMELINE_ZOOM_STEP = 0.25;
 const MIN_VISUAL_BLOCK_MINUTES = 15;
 const TIMELINE_COLUMN_GAP = 6;
+const EVENT_PROXY_DURATION_MINUTES = 20;
 
 const COGNITIVE_LOAD_COLORS = {
   high:   { bg: 'oklch(0.58 0.20 20)', text: 'oklch(0.50 0.20 20)' },
@@ -687,7 +688,7 @@ export function TimelineView() {
   const todayEventLayouts = useMemo(() => {
     const proxyBlocks: TimeBlock[] = todayEvents.map((event) => {
       const start = new Date(event.startsAt);
-      const end = new Date(start.getTime() + 20 * 60 * 1000);
+      const end = new Date(start.getTime() + EVENT_PROXY_DURATION_MINUTES * 60 * 1000);
       return {
         id: event.id,
         title: event.title,
