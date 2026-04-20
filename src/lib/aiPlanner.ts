@@ -316,8 +316,49 @@ ALL_DAY: false
 === SUGGESTIONS END ===`;
 }
 
-function buildModelCandidates(requestedModel: string) {
-  return [requestedModel?.trim() || FIXED_MODEL];
+/** Shorter prompt used on retry attempt 2: format rules + one example, no mode context. */
+function buildShortSystemPrompt(): string {
+  return `You are a productivity assistant.
+Output ONLY suggestion blocks between the markers below. Nothing outside the markers is read.
+
+Format rules:
+- Wrap output between === SUGGESTIONS START === and === SUGGESTIONS END ===
+- Each block starts with CREATE_TODO, CREATE_EVENT, or CREATE_TIMEBLOCK on its own line
+- Each field is FIELDNAME: value on its own line
+- Blocks separated by one blank line
+- Times in 24-hour HH:mm. Always include timezone offset in STARTS_AT.
+- If nothing to create: output NO_SUGGESTIONS between the markers.
+
+Fields for CREATE_TODO: TITLE, PRIORITY 1-5 (default 3), STATUS today or inbox, COGNITIVE_LOAD high/medium/low
+Fields for CREATE_EVENT: TITLE, STARTS_AT full ISO datetime with offset, PRIORITY 1-5, ALL_DAY true/false
+Fields for CREATE_TIMEBLOCK: TITLE, DATE YYYY-MM-DD, START_TIME HH:mm, END_TIME HH:mm, PRIORITY 1-5, COGNITIVE_LOAD high/medium/low
+
+Example:
+User request: Review FTC code before Saturday
+
+=== SUGGESTIONS START ===
+CREATE_TODO
+TITLE: Review FTC autonomous code
+PRIORITY: 4
+STATUS: today
+COGNITIVE_LOAD: high
+=== SUGGESTIONS END ===`;
+}
+
+/** Minimal prompt used on retry attempt 3: just the bare format rules and user input. */
+function buildMinimalSystemPrompt(): string {
+  return `Output suggestion blocks using this exact format:
+=== SUGGESTIONS START ===
+CREATE_TODO
+TITLE: <action>
+PRIORITY: 3
+STATUS: today
+COGNITIVE_LOAD: medium
+=== SUGGESTIONS END ===
+If nothing to create output NO_SUGGESTIONS between the markers. No other text.`;
+}
+
+function buildModelCandidates(requestedModel: string) {  return [requestedModel?.trim() || FIXED_MODEL];
 }
 
 function formatAttemptError(status: number | null, endpoint: string, model: string, detail?: string) {
@@ -415,6 +456,10 @@ async function requestWithFallback(params: {
 
       if (result.status !== null && AUTH_FAILURE_CODES.has(result.status)) {
         throw new Error('Authentication failed. Check your Hugging Face key and permissions.');
+      }
+
+      if (result.status === 429) {
+        throw new Error('Rate limit reached. Please wait a moment before trying again.');
       }
     }
   }
@@ -599,24 +644,50 @@ export async function generateActionPlan(
     return parseResponseOrThrow(body);
   };
 
+  const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
+
+  /** Returns true for errors that should be retried (empty/no suggestions).
+   *  Returns false for errors that must surface immediately (auth, rate limit, network). */
+  const isRetryable = (err: unknown): boolean => {
+    const code = (err as Error & { code?: string }).code;
+    return code === 'EMPTY_RESPONSE' || code === 'NO_SUGGESTIONS';
+  };
+
+  const attemptDescriptions: string[] = [];
+
+  // Attempt 1 — full system prompt with mode directive and 3 examples
   try {
     return await runRequest(systemPrompt, userPrompt);
-  } catch (firstError) {
-    const code = (firstError as Error & { code?: string }).code;
-    const shouldRetry = code === 'EMPTY_RESPONSE' || code === 'PARSE_FAILED' || code === 'NO_SUGGESTIONS';
-    if (!shouldRetry) throw firstError;
-
-    const retrySystemPrompt = `You are a productivity assistant. Output exactly one suggestion for the most important action.
-Use this exact format:
-=== SUGGESTIONS START ===
-CREATE_TODO
-TITLE: <the most important action>
-PRIORITY: 3
-STATUS: today
-COGNITIVE_LOAD: medium
-=== SUGGESTIONS END ===`;
-    const retryUserPrompt = `User request: ${prompt.trim()}\n\nGenerate suggestions now.`;
-
-    return runRequest(retrySystemPrompt, retryUserPrompt);
+  } catch (err1) {
+    if (!isRetryable(err1)) throw err1;
+    attemptDescriptions.push(`attempt 1 (full prompt): ${(err1 as Error).message}`);
   }
+
+  // Attempt 2 — short system prompt (format rules + 1 example), simple user prompt
+  await sleep(1000);
+  const shortUserPrompt = [
+    `User request: ${prompt.trim()}`,
+    `Current date-time: ${localISO} (${dayName})`,
+    `Timezone: ${tz} (UTC${offsetStr})`,
+    ``,
+    `Generate suggestions now.`,
+  ].join('\n');
+  try {
+    return await runRequest(buildShortSystemPrompt(), shortUserPrompt);
+  } catch (err2) {
+    if (!isRetryable(err2)) throw err2;
+    attemptDescriptions.push(`attempt 2 (short prompt): ${(err2 as Error).message}`);
+  }
+
+  // Attempt 3 — minimal system prompt, bare user input
+  await sleep(2000);
+  const minimalUserPrompt = `User request: ${prompt.trim()}\n\nGenerate suggestions now.`;
+  try {
+    return await runRequest(buildMinimalSystemPrompt(), minimalUserPrompt);
+  } catch (err3) {
+    if (!isRetryable(err3)) throw err3;
+    attemptDescriptions.push(`attempt 3 (minimal prompt): ${(err3 as Error).message}`);
+  }
+
+  throw new Error(`AI failed after 3 attempts. ${attemptDescriptions.join('; ')}`);
 }
