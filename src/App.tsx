@@ -59,15 +59,11 @@ function App() {
   const [bulkDeleteTarget, setBulkDeleteTarget] = useState<'events' | 'todos' | 'projects' | 'timeEntries' | 'timeBlocks' | 'all' | null>(null);
   const [showEveningFlow, setShowEveningFlow] = useState(false);
   const [showMorningFlow, setShowMorningFlow] = useState(false);
-  const [goals, setGoals] = useState<Goal[]>([]);
-  const [newGoalTitle, setNewGoalTitle] = useState('');
   const [showWeeklyReview, setShowWeeklyReview] = useState(false);
   const [weeklyIntention, setWeeklyIntention] = useState(() => localStorage.getItem('weeklyIntention') ?? '');
   const [activeGoals, setActiveGoals] = useState<Goal[]>([]);
   const [nowTick, setNowTick] = useState(new Date());
   const { theme, setTheme, resolvedTheme } = useTheme();
-
-  function invalidateCache() { setDataVersion(v => v + 1); }
 
   // Sync weeklyIntention from localStorage whenever the review modal closes
   useEffect(() => {
@@ -259,7 +255,6 @@ function App() {
     setTodayBlocks(blocks.sort((a, b) => a.startTime.localeCompare(b.startTime)));
 
     const allGoals = await getAllGoals();
-    setGoals(allGoals);
     setActiveGoals(allGoals.filter(g => g.status === 'active'));
 
     void generateNudges(upcoming, activeTodos);
@@ -284,7 +279,7 @@ function App() {
         : 'none';
       const briefingPrompt = [
         'Generate a short morning briefing (2-3 sentences max).',
-        `Today\'s tasks: ${todayTodos.map(t => `${t.title}(P${t.priority})`).join(', ') || 'none'}`,
+        `Today's tasks: ${todayTodos.map(t => `${t.title}(P${t.priority})`).join(', ') || 'none'}`,
         `Upcoming deadlines: ${urgentEvents.map(e => `${e.title} in ${Math.round((new Date(e.startsAt).getTime() - Date.now()) / 3600000)}h`).join(', ') || 'none'}`,
         `Active goals: ${goalsSummary}`,
         'Be specific, concise, and encouraging. Do not invent tasks.',

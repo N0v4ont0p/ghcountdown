@@ -34,7 +34,7 @@ export function QuickCapture({ open, onClose }: QuickCaptureProps) {
     if (!text) return;
 
     let priority: 1 | 2 | 3 | 4 | 5 = 3;
-    let status: 'inbox' | 'someday' = 'inbox';
+    let status: 'today' | 'someday' = 'today';
     if (/urgent|!!|asap/i.test(text)) priority = 5;
     else if (/important|!/i.test(text)) priority = 4;
     else if (/someday|maybe|eventually/i.test(text)) { priority = 1; status = 'someday'; }
@@ -54,6 +54,7 @@ export function QuickCapture({ open, onClose }: QuickCaptureProps) {
         priority,
         projectId: null,
         eventId: null,
+        estimatedMinutes: estimatedDurationMin,
       });
       toast.success('Captured');
       onClose();

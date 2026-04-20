@@ -69,6 +69,8 @@ export function RoutinePanel({ onClose: _onClose }: RoutinePanelProps) {
   const [aiPrompt, setAIPrompt] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [clearAllConfirmOpen, setClearAllConfirmOpen] = useState(false);
+  const [deleteEntryConfirmOpen, setDeleteEntryConfirmOpen] = useState(false);
+  const [entryToDelete, setEntryToDelete] = useState<string | null>(null);
   const [form, setForm] = useState(getDefaultForm());
 
   function dispatchDataChanged() {
@@ -153,10 +155,16 @@ export function RoutinePanel({ onClose: _onClose }: RoutinePanelProps) {
     dispatchDataChanged();
   }
 
-  async function handleDelete(id: string) {
-    if (!window.confirm('Delete this routine entry?')) return;
-    await deleteScheduleSkeletonEntry(id);
+  function handleDelete(id: string) {
+    setEntryToDelete(id);
+    setDeleteEntryConfirmOpen(true);
+  }
+
+  async function handleDeleteConfirm() {
+    if (!entryToDelete) return;
+    await deleteScheduleSkeletonEntry(entryToDelete);
     toast.success('Entry removed');
+    setEntryToDelete(null);
     await loadEntries();
     dispatchDataChanged();
   }
@@ -248,9 +256,11 @@ export function RoutinePanel({ onClose: _onClose }: RoutinePanelProps) {
       let created = 0;
       for (const item of entriesRaw) {
         if (!item || typeof item.title !== 'string' || !item.title.trim()) continue;
-        const days: number[] = Array.isArray(item.days)
+        // Use AI-provided days if valid, otherwise try text-based detection on the title, finally weekdays
+        const rawDays: number[] = Array.isArray(item.days)
           ? item.days.filter((d: unknown) => typeof d === 'number' && d >= 0 && d <= 6)
-          : [1, 2, 3, 4, 5];
+          : [];
+        const days: number[] = rawDays.length > 0 ? rawDays : detectDays(item.title);
         const startTime = typeof item.startTime === 'string' && /^\d{2}:\d{2}$/.test(item.startTime)
           ? item.startTime
           : '09:00';
@@ -350,7 +360,7 @@ export function RoutinePanel({ onClose: _onClose }: RoutinePanelProps) {
                   <button
                     type="button"
                     className="p-0.5 rounded bg-background/80 hover:bg-background text-destructive"
-                    onClick={() => void handleDelete(entry.id)}
+                    onClick={() => handleDelete(entry.id)}
                   >
                     <Trash size={10} />
                   </button>
@@ -535,6 +545,20 @@ export function RoutinePanel({ onClose: _onClose }: RoutinePanelProps) {
         confirmText="Clear All"
         cancelText="Cancel"
         onConfirm={handleClearAll}
+      />
+
+      <ConfirmDialog
+        open={deleteEntryConfirmOpen}
+        onOpenChange={(open) => {
+          setDeleteEntryConfirmOpen(open);
+          if (!open) setEntryToDelete(null);
+        }}
+        title="Delete routine entry?"
+        description="Are you sure you want to remove this entry from your routine?"
+        actionType="delete"
+        confirmText="Delete"
+        cancelText="Cancel"
+        onConfirm={handleDeleteConfirm}
       />
     </div>
   );
