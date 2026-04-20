@@ -58,6 +58,10 @@ export async function updateTodo(
 export async function deleteTodo(id: string): Promise<boolean> {
   const existing = await getTodoById(id);
   if (!existing) return false;
+
+  const linkedBlocks = await getAllByIndex<{ id: string }>(STORES.TIME_BLOCKS, 'todoId', id);
+  await Promise.all(linkedBlocks.map((block) => remove(STORES.TIME_BLOCKS, block.id)));
+
   await remove(STORES.TODOS, id);
   return true;
 }

@@ -654,6 +654,7 @@ export function TimelineView() {
   const warningMessage = isOverloaded
     ? `${(totalWorkloadMinutes / 60).toFixed(1)} h of work planned — over the 8 h baseline`
     : null;
+  const hasTimelineContent = timeBlocks.length > 0 || skeletonEntries.length > 0 || ghostSuggestions.length > 0;
 
   return (
     <div className="max-w-7xl mx-auto h-[calc(100vh-6rem)]">
@@ -665,13 +666,13 @@ export function TimelineView() {
           </span>
         </div>
       )}
-      <div className="mb-6 flex items-center justify-between">
+      <div className="mb-6 flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
         <div>
           <h2 className="text-3xl font-semibold mb-2">Timeline</h2>
           <p className="text-muted-foreground">Plan your day with time blocks and auto-tracking</p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center justify-end gap-2">
           <Button
             variant="outline"
             onClick={() => {
@@ -745,16 +746,9 @@ export function TimelineView() {
         </div>
       </div>
 
-      {warningMessage && (
-        <div className="mb-4 flex items-center gap-2 rounded-lg border border-yellow-400/60 bg-yellow-400/10 px-4 py-2 text-sm text-yellow-700 dark:text-yellow-300">
-          <Warning size={16} weight="fill" className="shrink-0 text-yellow-500" />
-          {warningMessage}
-        </div>
-      )}
-
-      <div className="grid grid-cols-[1fr_300px] gap-6 h-[calc(100%-5rem)]">
+      <div className="grid grid-cols-1 xl:grid-cols-[1fr_300px] gap-6 h-[calc(100%-5rem)]">
         <Card className="relative overflow-hidden">
-          {timeBlocks.length === 0 && (
+          {!hasTimelineContent && (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 z-10 pointer-events-none">
               <CalendarBlank weight="thin" size={48} className="text-muted-foreground" />
               <h3 className="text-lg font-semibold">No blocks today</h3>
@@ -830,13 +824,13 @@ export function TimelineView() {
                       style={{
                         top: style.top,
                         height: style.height,
-                        backgroundColor: withColorAlpha(entry.color, 0.08),
+                        backgroundColor: withColorAlpha(entry.color, 0.22),
                         borderColor: entry.color,
-                        opacity: 0.08,
+                        opacity: 1,
                         borderStyle: entry.kind === 'flex' ? 'dashed' : 'solid',
                       }}
                     >
-                      <p className="text-[11px] font-medium truncate" style={{ color: entry.color }}>
+                      <p className="text-[11px] font-semibold truncate" style={{ color: entry.color }}>
                         {entry.location ? `${entry.location.icon} ` : ''}{entry.title}
                       </p>
                     </div>
@@ -867,9 +861,9 @@ export function TimelineView() {
                       style={{
                         top: style.top,
                         height: style.height,
-                        backgroundColor: withColorAlpha(ghost.color, 0.3),
+                        backgroundColor: withColorAlpha(ghost.color, 0.5),
                         borderColor: ghost.color,
-                        opacity: 0.3,
+                        opacity: 0.55,
                       }}
                     >
                       <div className="flex items-center justify-between gap-2 h-full">
@@ -902,7 +896,7 @@ export function TimelineView() {
                       <motion.div
                         key={block.id}
                         className={cn(
-                          "absolute rounded-xl p-3 cursor-pointer group shadow-md",
+                          "absolute rounded-xl p-3 cursor-pointer group shadow-md z-20",
                           "hover:shadow-lg transition-all duration-200 border-2",
                           isRunning && "ring-2 ring-primary ring-offset-2 ring-offset-background",
                           isConflicting && "ring-2 ring-red-500 ring-offset-2 ring-offset-background"

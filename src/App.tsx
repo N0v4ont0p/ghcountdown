@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Toaster } from '@/components/ui/sonner';
 import { Sidebar } from '@/components/Sidebar';
@@ -26,7 +26,7 @@ import { getAllGoals, getActiveGoals, deleteAllGoals } from '@/db/repositories/g
 import { Event, Todo, TimeBlock, Settings, Goal } from '@/db/schema';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Sun, Moon, Monitor, DownloadSimple, UploadSimple, Trash, Sparkle, MagnifyingGlass, Plus } from '@phosphor-icons/react';
+import { Sun, Moon, Monitor, DownloadSimple, UploadSimple, Trash, Sparkle, MagnifyingGlass, Plus, Timer } from '@phosphor-icons/react';
 import { format } from 'date-fns';
 import { useTheme } from '@/hooks/use-theme';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -64,6 +64,7 @@ function App() {
   const [showWeeklyReview, setShowWeeklyReview] = useState(false);
   const [weeklyIntention, setWeeklyIntention] = useState(() => localStorage.getItem('weeklyIntention') ?? '');
   const [activeGoals, setActiveGoals] = useState<Goal[]>([]);
+  const [nowTick, setNowTick] = useState(new Date());
   const { theme, setTheme, resolvedTheme } = useTheme();
 
   function invalidateCache() { setDataVersion(v => v + 1); }
@@ -206,6 +207,38 @@ function App() {
       loadHomeData();
     }
   }, [currentView, dataVersion]);
+
+  useEffect(() => {
+    const timer = setInterval(() => setNowTick(new Date()), 30_000);
+    return () => clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    const refreshTodayBlocks = async () => {
+      const blocks = await getTimeBlocksByDate(format(new Date(), 'yyyy-MM-dd'));
+      if (active) {
+        setTodayBlocks(blocks.sort((a, b) => a.startTime.localeCompare(b.startTime)));
+      }
+    };
+
+    void refreshTodayBlocks();
+    const timer = setInterval(() => { void refreshTodayBlocks(); }, 30_000);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, []);
+
+  useEffect(() => {
+    const onDataChange = () => setDataVersion((v) => v + 1);
+    window.addEventListener('ghc-data-changed', onDataChange);
+    window.addEventListener('app:datachange', onDataChange);
+    return () => {
+      window.removeEventListener('ghc-data-changed', onDataChange);
+      window.removeEventListener('app:datachange', onDataChange);
+    };
+  }, []);
 
   async function loadHomeData() {
     const appSettings = await getSettings();
@@ -458,6 +491,20 @@ function App() {
   const handleDismissMorningBriefing = useCallback(() => setMorningBriefing(null), []);
 
   const handleShowWeeklyReview = useCallback(() => setShowWeeklyReview(true), []);
+
+  const { activeRoutineBlock, nextRoutineBlock, activeRemainingMinutes } = useMemo(() => {
+    const currentHHMM = format(nowTick, 'HH:mm');
+    const active = todayBlocks.find((block) => block.startTime <= currentHHMM && currentHHMM < block.endTime) ?? null;
+    const next = todayBlocks.find((block) => block.startTime > currentHHMM) ?? null;
+
+    if (!active) {
+      return { activeRoutineBlock: null, nextRoutineBlock: next, activeRemainingMinutes: null as number | null };
+    }
+
+    const [endHour, endMinute] = active.endTime.split(':').map(Number);
+    const remaining = Math.max(0, (endHour * 60 + endMinute) - (nowTick.getHours() * 60 + nowTick.getMinutes()));
+    return { activeRoutineBlock: active, nextRoutineBlock: next, activeRemainingMinutes: remaining };
+  }, [todayBlocks, nowTick]);
 
   if (isLoading) {
     return (
@@ -803,6 +850,35 @@ function App() {
       </div>
 
       <div className="fixed bottom-6 right-6 z-40 flex flex-col gap-2 items-end">
+        {(activeRoutineBlock || nextRoutineBlock) && (
+          <Card className="w-[320px] max-w-[calc(100vw-2rem)] p-3 shadow-lg border-primary/30 bg-card/95 backdrop-blur">
+            <div className="flex items-start gap-2">
+              <Timer size={16} className="mt-0.5 text-primary" />
+              <div className="min-w-0 flex-1">
+                {activeRoutineBlock ? (
+                  <>
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Now</p>
+                    <p className="text-sm font-semibold truncate">
+                      {activeRemainingMinutes}m left · {activeRoutineBlock.title}
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Next up</p>
+                    <p className="text-sm font-semibold truncate">
+                      {nextRoutineBlock?.startTime} · {nextRoutineBlock?.title}
+                    </p>
+                  </>
+                )}
+                {nextRoutineBlock && activeRoutineBlock && (
+                  <p className="text-xs text-muted-foreground truncate mt-1">
+                    Next: {nextRoutineBlock.startTime} · {nextRoutineBlock.title}
+                  </p>
+                )}
+              </div>
+            </div>
+          </Card>
+        )}
         <div className="flex gap-2">
           <Button
             size="sm"

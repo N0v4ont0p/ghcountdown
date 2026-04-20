@@ -15,7 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
-import { Plus, Trash, Folder, CheckCircle, Tray, CalendarCheck, Cloud } from '@phosphor-icons/react';
+import { Plus, Trash, Folder, CheckCircle, CalendarCheck, Cloud } from '@phosphor-icons/react';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -26,7 +26,7 @@ export function TodosView() {
   const [goals, setGoals] = useState<Goal[]>([]);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isProjectDialogOpen, setIsProjectDialogOpen] = useState(false);
-  const [currentTab, setCurrentTab] = useState<'inbox' | 'today' | 'projects'>('inbox');
+  const [currentTab, setCurrentTab] = useState<'today' | 'someday' | 'projects'>('today');
   const [selectedProjectId, _setSelectedProjectId] = useState<string | null>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [todoToDelete, setTodoToDelete] = useState<string | null>(null);
@@ -35,7 +35,7 @@ export function TodosView() {
 
   const [formData, setFormData] = useState({
     title: '',
-    status: 'inbox' as 'inbox' | 'today' | 'done',
+    status: 'today' as 'inbox' | 'today' | 'done' | 'someday',
     dueAt: '',
     priority: 3 as 1 | 2 | 3 | 4 | 5,
     projectId: 'none',
@@ -76,7 +76,7 @@ export function TodosView() {
   function resetForm() {
     setFormData({
       title: '',
-      status: currentTab === 'projects' ? 'inbox' : currentTab,
+      status: currentTab === 'projects' ? 'today' : currentTab,
       dueAt: '',
       priority: 3,
       projectId: selectedProjectId || 'none',
@@ -115,7 +115,7 @@ export function TodosView() {
   }
 
   async function handleToggle(todo: Todo) {
-    const newStatus = todo.status === 'done' ? 'inbox' : 'done';
+    const newStatus = todo.status === 'done' ? 'today' : 'done';
     await updateTodo(todo.id, { status: newStatus });
     if (newStatus === 'done') {
       // Stop any running time entries linked to this todo
@@ -207,15 +207,8 @@ export function TodosView() {
     }
   }
 
-  const inboxTodos = todos
-    .filter(t => t.status === 'inbox')
-    .sort((a, b) => {
-      const aOv = isOverdue(a) ? 0 : 1;
-      const bOv = isOverdue(b) ? 0 : 1;
-      return aOv - bOv;
-    });
   const todayTodos = todos
-    .filter(t => t.status === 'today')
+    .filter(t => t.status === 'today' || t.status === 'inbox')
     .sort((a, b) => {
       const aOv = isOverdue(a) ? 0 : 1;
       const bOv = isOverdue(b) ? 0 : 1;
@@ -325,21 +318,12 @@ export function TodosView() {
     <div className="max-w-4xl mx-auto">
       <div className="mb-6">
         <h2 className="text-3xl font-semibold mb-2">Todos</h2>
-        <p className="text-muted-foreground">Organize tasks by inbox, today, and projects</p>
+        <p className="text-muted-foreground">Organize tasks by today, someday, and projects</p>
       </div>
 
-      <Tabs value={currentTab} onValueChange={(v) => setCurrentTab(v as any)} className="space-y-6">
+      <Tabs value={currentTab} onValueChange={(v) => setCurrentTab(v as 'today' | 'someday' | 'projects')} className="space-y-6">
         <div className="flex items-center justify-between">
           <TabsList>
-            <TabsTrigger value="inbox" className="gap-2">
-              <Tray size={16} />
-              Inbox
-              {inboxTodos.length > 0 && (
-                <Badge variant="secondary" className="ml-1 h-5 min-w-5 px-1">
-                  {inboxTodos.length}
-                </Badge>
-              )}
-            </TabsTrigger>
             <TabsTrigger value="today" className="gap-2">
               <CalendarCheck size={16} />
               Today
@@ -468,8 +452,8 @@ export function TodosView() {
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="inbox">Inbox</SelectItem>
                           <SelectItem value="today">Today</SelectItem>
+                          <SelectItem value="someday">Someday</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
@@ -612,22 +596,6 @@ export function TodosView() {
             </Dialog>
           </div>
         </div>
-
-        <TabsContent value="inbox" className="space-y-3 mt-0">
-          {inboxTodos.length === 0 ? (
-            <Card className="p-12 text-center">
-              <Tray weight="thin" size={48} className="mx-auto mb-4 text-muted-foreground" />
-              <h3 className="text-lg font-semibold mb-2">All clear</h3>
-              <p className="text-sm text-muted-foreground">Tasks you capture land here</p>
-            </Card>
-          ) : (
-            <AnimatePresence mode="popLayout">
-              {inboxTodos.map((todo) => (
-                <TodoItem key={todo.id} todo={todo} showProject />
-              ))}
-            </AnimatePresence>
-          )}
-        </TabsContent>
 
         <TabsContent value="today" className="space-y-3 mt-0">
           {todayTodos.length === 0 ? (

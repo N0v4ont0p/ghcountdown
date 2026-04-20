@@ -11,11 +11,13 @@ import { toast } from 'sonner';
 import { ScheduleSkeletonEntry } from '@/db/schema';
 import {
   createScheduleSkeletonEntry,
+  deleteAllScheduleSkeletonEntries,
   deleteScheduleSkeletonEntry,
   getAllScheduleSkeletonEntries,
   updateScheduleSkeletonEntry,
 } from '@/db/repositories/scheduleSkeletonRepo';
 import { getAIConfiguration } from '@/lib/aiPlanner';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -66,7 +68,14 @@ export function RoutinePanel({ onClose: _onClose }: RoutinePanelProps) {
   const [isAIOpen, setIsAIOpen] = useState(false);
   const [aiPrompt, setAIPrompt] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
+  const [clearAllConfirmOpen, setClearAllConfirmOpen] = useState(false);
   const [form, setForm] = useState(getDefaultForm());
+
+  function dispatchDataChanged() {
+    const detail = { types: ['routine'] };
+    window.dispatchEvent(new CustomEvent('ghc-data-changed', { detail }));
+    window.dispatchEvent(new CustomEvent('app:datachange', { detail }));
+  }
 
   async function loadEntries() {
     const all = await getAllScheduleSkeletonEntries();
@@ -141,6 +150,7 @@ export function RoutinePanel({ onClose: _onClose }: RoutinePanelProps) {
     setIsAddOpen(false);
     setEditingEntry(null);
     await loadEntries();
+    dispatchDataChanged();
   }
 
   async function handleDelete(id: string) {
@@ -148,6 +158,14 @@ export function RoutinePanel({ onClose: _onClose }: RoutinePanelProps) {
     await deleteScheduleSkeletonEntry(id);
     toast.success('Entry removed');
     await loadEntries();
+    dispatchDataChanged();
+  }
+
+  async function handleClearAll() {
+    await deleteAllScheduleSkeletonEntries();
+    toast.success('Routine cleared');
+    await loadEntries();
+    dispatchDataChanged();
   }
 
   async function handleAIBuild() {
@@ -270,6 +288,7 @@ export function RoutinePanel({ onClose: _onClose }: RoutinePanelProps) {
       setIsAIOpen(false);
       setAIPrompt('');
       await loadEntries();
+      dispatchDataChanged();
       toast.success('Routine built');
     } catch (err) {
       const msg = err instanceof Error ? err.message : '';
@@ -287,6 +306,12 @@ export function RoutinePanel({ onClose: _onClose }: RoutinePanelProps) {
           Define your normal week so Timeline can suggest what goes in free slots.
         </p>
         <div className="flex gap-2 shrink-0">
+          {entries.length > 0 && (
+            <Button variant="outline" size="sm" className="gap-2" onClick={() => setClearAllConfirmOpen(true)}>
+              <Trash size={14} />
+              Clear All
+            </Button>
+          )}
           <Button variant="outline" size="sm" className="gap-2" onClick={() => setIsAIOpen(true)}>
             <Sparkle size={14} weight="fill" />
             AI Build
@@ -500,6 +525,17 @@ export function RoutinePanel({ onClose: _onClose }: RoutinePanelProps) {
           <Badge variant="secondary">{entries.length} entries</Badge>
         </div>
       )}
+
+      <ConfirmDialog
+        open={clearAllConfirmOpen}
+        onOpenChange={setClearAllConfirmOpen}
+        title="Clear all routine entries?"
+        description="This removes all weekly routine entries created manually or by AI."
+        actionType="delete"
+        confirmText="Clear All"
+        cancelText="Cancel"
+        onConfirm={handleClearAll}
+      />
     </div>
   );
 }
