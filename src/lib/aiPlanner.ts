@@ -159,7 +159,7 @@ export function parseTaggedSuggestions(raw: string): AISuggestion[] {
       }
 
       const title = fields['TITLE'] || 'Untitled action';
-      const priority = normalizePriority(fields['PRIORITY'] ?? 3);
+      const priority = normalizePriority(fields['PRIORITY'] ?? '3');
       const cognitiveLoad = normalizeCognitiveLoad(
         (fields['COGNITIVE_LOAD'] ?? fields['COGNITIVE'] ?? '').toLowerCase() || null
       );
