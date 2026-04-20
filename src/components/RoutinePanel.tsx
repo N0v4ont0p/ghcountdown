@@ -217,7 +217,7 @@ export function RoutinePanel({ onClose: _onClose }: RoutinePanelProps) {
 
       let responseJson: unknown = null;
 
-      const electronAPI = typeof window !== 'undefined' && (window as any).electronAPI;
+      const electronAPI = typeof window !== 'undefined' && (window as { electronAPI?: { aiRequest?: (opts: { url: string; method: string; headers: Record<string, string>; body: string }) => Promise<{ ok: boolean; status: number; body: string }> } }).electronAPI;
       if (electronAPI?.aiRequest) {
         const raw: { ok: boolean; status: number; body: string } = await electronAPI.aiRequest({
           url: endpointUrl,
@@ -242,12 +242,12 @@ export function RoutinePanel({ onClose: _onClose }: RoutinePanelProps) {
       }
 
       const content: string =
-        (responseJson as any)?.choices?.[0]?.message?.content ?? '';
+        (responseJson as { choices?: Array<{ message?: { content?: string } }> })?.choices?.[0]?.message?.content ?? '';
 
       let parsed: unknown = null;
       try { parsed = JSON.parse(content); } catch { /* invalid JSON */ }
 
-      const entriesRaw = (parsed as any)?.entries;
+      const entriesRaw = (parsed as { entries?: unknown[] } | null)?.entries;
       if (!Array.isArray(entriesRaw) || entriesRaw.length === 0) {
         toast.error('Could not parse routine — check your API key is set in Settings');
         return;

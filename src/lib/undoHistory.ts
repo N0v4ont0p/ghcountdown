@@ -1,4 +1,4 @@
-interface UndoEntry { type: string; data: any; ts: number; }
+interface UndoEntry { type: string; data: unknown; ts: number; }
 let stack: UndoEntry | null = null;
 export const pushUndo = (e: UndoEntry) => { stack = e; };
 export const popUndo = () => { const e = stack; stack = null; return e; };

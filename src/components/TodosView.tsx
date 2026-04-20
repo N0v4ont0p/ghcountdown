@@ -446,7 +446,7 @@ export function TodosView() {
                       <Label htmlFor="status">Status</Label>
                       <Select
                         value={formData.status}
-                        onValueChange={(val: any) => setFormData({ ...formData, status: val })}
+                        onValueChange={(val) => setFormData({ ...formData, status: val as 'today' | 'done' | 'someday' })}
                       >
                         <SelectTrigger id="status">
                           <SelectValue />
@@ -462,7 +462,7 @@ export function TodosView() {
                       <Label htmlFor="priority">Priority</Label>
                       <Select
                         value={formData.priority.toString()}
-                        onValueChange={(val) => setFormData({ ...formData, priority: parseInt(val) as any })}
+                        onValueChange={(val) => setFormData({ ...formData, priority: parseInt(val) as 1 | 2 | 3 | 4 | 5 })}
                       >
                         <SelectTrigger id="priority">
                           <SelectValue />

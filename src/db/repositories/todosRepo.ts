@@ -61,6 +61,8 @@ export async function deleteTodo(id: string): Promise<boolean> {
   const existing = await getTodoById(id);
   if (!existing) return false;
 
+  // Cascade: remove all timeline blocks that reference this todo so they
+  // don't become orphaned references showing up in the timeline.
   const linkedBlocks = await getAllByIndex<{ id: string }>(STORES.TIME_BLOCKS, 'todoId', id);
   await Promise.all(linkedBlocks.map((block) => remove(STORES.TIME_BLOCKS, block.id)));
 

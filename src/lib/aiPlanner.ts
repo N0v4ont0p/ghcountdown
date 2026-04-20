@@ -398,7 +398,11 @@ async function attemptRequest(params: {
   };
 
   // In Electron the main-process bridge is available; it bypasses CORS entirely.
-  const electronAPI = typeof window !== 'undefined' && (window as any).electronAPI;
+  const electronAPI = typeof window !== 'undefined' && (window as {
+    electronAPI?: {
+      aiRequest?: (opts: { url: string; method: string; headers: Record<string, string>; body: string }) => Promise<{ ok: boolean; status: number; body: string }>;
+    };
+  }).electronAPI;
   if (electronAPI?.aiRequest) {
     let raw: { ok: boolean; status: number; body: string };
     try {
@@ -436,8 +440,7 @@ async function requestWithFallback(params: {
   model: string;
   systemPrompt: string;
   userPrompt: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-}): Promise<any> {
+}): Promise<unknown> {
   const modelCandidates = buildModelCandidates(params.model);
   let attempts = 0;
   let finalError = 'AI request failed.';
@@ -452,10 +455,11 @@ async function requestWithFallback(params: {
         return result.json;
       }
 
-      const detail = typeof (result.json as any)?.error?.message === 'string'
-        ? (result.json as any).error.message
-        : typeof (result.json as any)?.error === 'string'
-          ? (result.json as any).error
+      const errJson = result.json as { error?: { message?: string } | string } | null;
+      const detail = typeof (errJson?.error as { message?: string } | undefined)?.message === 'string'
+        ? (errJson!.error as { message: string }).message
+        : typeof errJson?.error === 'string'
+          ? errJson.error
           : result.error || '';
 
       finalError = formatAttemptError(result.status, endpointUrl, model, detail);
@@ -475,14 +479,16 @@ async function requestWithFallback(params: {
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 function validateAndRepairResult(
-  raw: any,
+  raw: unknown,
   _prompt: string
 ): { valid: boolean; result?: AIAssistantResult; error?: string } {
   if (!raw || typeof raw !== 'object') {
     return { valid: false, error: 'Response is not a JSON object' };
   }
 
-  if (!Array.isArray(raw.suggestions) || raw.suggestions.length === 0) {
+  const rawObj = raw as Record<string, unknown>;
+
+  if (!Array.isArray(rawObj.suggestions) || rawObj.suggestions.length === 0) {
     return { valid: false, error: 'No suggestions in response' };
   }
 
@@ -490,18 +496,19 @@ function validateAndRepairResult(
   const today = new Date().toISOString().split('T')[0];
   const repairedSuggestions: AISuggestion[] = [];
 
-  for (const s of raw.suggestions) {
-    if (!s || typeof s.title !== 'string' || !s.title.trim()) continue;
+  for (const s of rawObj.suggestions) {
+    const sObj = s as Record<string, unknown>;
+    if (!sObj || typeof sObj.title !== 'string' || !(sObj.title as string).trim()) continue;
 
     // Repair type
     const validTypes = ['todo', 'event', 'timeBlock'];
-    const type = validTypes.includes(s.type) ? s.type : 'todo';
+    const type = validTypes.includes(sObj.type as string) ? sObj.type as 'todo' | 'event' | 'timeBlock' : 'todo';
 
     // Repair priority
-    const priority = normalizePriority(s.priority);
+    const priority = normalizePriority(sObj.priority);
 
     // Repair dates — try multiple common formats the model produces
-    let startsAt = s.startsAt;
+    let startsAt = sObj.startsAt as string | undefined;
     if (startsAt && isNaN(new Date(startsAt).getTime())) {
       // Try to parse natural language the model snuck in
       const parsed = new Date(startsAt);
@@ -511,8 +518,8 @@ function validateAndRepairResult(
     }
 
     // Repair timeBlock times — accept "9am", "9:00am", "09:00", "9"
-    let startTime = s.startTime || '09:00';
-    let endTime = s.endTime || '10:00';
+    let startTime = (sObj.startTime as string) || '09:00';
+    let endTime = (sObj.endTime as string) || '10:00';
 
     const parseTime = (t: string): string => {
       if (/^([01]\d|2[0-3]):[0-5]\d$/.test(t)) return t;
@@ -541,17 +548,17 @@ function validateAndRepairResult(
     repairedSuggestions.push({
       id: crypto.randomUUID(),
       type,
-      title: s.title.trim(),
+      title: (sObj.title as string).trim(),
       priority,
-      cognitiveLoad: normalizeCognitiveLoad(s.cognitiveLoad),
-      notes: typeof s.notes === 'string' ? s.notes.trim() : undefined,
-      dueAt: s.dueAt ? (isNaN(new Date(s.dueAt).getTime()) ? null : new Date(s.dueAt).toISOString()) : null,
+      cognitiveLoad: normalizeCognitiveLoad(sObj.cognitiveLoad),
+      notes: typeof sObj.notes === 'string' ? sObj.notes.trim() : undefined,
+      dueAt: sObj.dueAt ? (isNaN(new Date(sObj.dueAt as string).getTime()) ? null : new Date(sObj.dueAt as string).toISOString()) : null,
       startsAt: startsAt || new Date().toISOString(),
-      allDay: Boolean(s.allDay),
-      date: /^\d{4}-\d{2}-\d{2}$/.test(s.date) ? s.date : today,
+      allDay: Boolean(sObj.allDay),
+      date: /^\d{4}-\d{2}-\d{2}$/.test(sObj.date as string) ? sObj.date as string : today,
       startTime,
       endTime,
-      autoTrack: s.autoTrack !== false,
+      autoTrack: sObj.autoTrack !== false,
     });
   }
 
@@ -562,10 +569,10 @@ function validateAndRepairResult(
   return {
     valid: true,
     result: {
-      summary: typeof raw.summary === 'string' ? raw.summary : 'Actions created.',
-      severity: normalizeSeverity(raw.severity),
-      urgencyHours: Number.isFinite(Number(raw.urgencyHours)) ? Number(raw.urgencyHours) : null,
-      confidence: Math.max(0, Math.min(1, Number(raw.confidence) || 0.7)),
+      summary: typeof rawObj.summary === 'string' ? rawObj.summary : 'Actions created.',
+      severity: normalizeSeverity(rawObj.severity),
+      urgencyHours: Number.isFinite(Number(rawObj.urgencyHours)) ? Number(rawObj.urgencyHours) : null,
+      confidence: Math.max(0, Math.min(1, Number(rawObj.confidence) || 0.7)),
       suggestions: repairedSuggestions,
     },
   };
@@ -612,11 +619,13 @@ export async function generateActionPlan(
     `Generate suggestions now.`,
   ].join('\n');
 
-  const parseResponseOrThrow = (body: any): AIAssistantResult => {
+  const parseResponseOrThrow = (body: unknown): AIAssistantResult => {
+    const bodyAny = body as { choices?: Array<{ message?: { content?: string } }>; generated_text?: string } | Array<{ generated_text?: string }> | null;
     const textResponse =
-      body?.choices?.[0]?.message?.content ||
-      body?.generated_text ||
-      body?.[0]?.generated_text || '';
+      Array.isArray(bodyAny)
+        ? (bodyAny[0]?.generated_text || '')
+        : ((bodyAny as { choices?: Array<{ message?: { content?: string } }> })?.choices?.[0]?.message?.content ||
+           (bodyAny as { generated_text?: string })?.generated_text || '');
 
     if (!textResponse || textResponse.trim().length === 0) {
       const error = new Error('AI returned an empty response. Check your API key and try again.');
