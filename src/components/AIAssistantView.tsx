@@ -160,12 +160,10 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
         ]);
         const scheduledIds = new Set(todayBlocks.map(b => b.todoId).filter(Boolean) as string[]);
         const unscheduled = todayTodos.filter(t => !scheduledIds.has(t.id));
-        const result = await scheduleMyDay(today, unscheduled, todayBlocks);
-        if (result.created > 0) {
+        const created = await scheduleMyDay(today, unscheduled, todayBlocks);
+        if (created > 0) {
           dispatchDataChanged(new Set<ChangedDataType>(['timeBlocks', 'todos']));
-        }
-        if (result.created > 0) {
-          toast.success(`Scheduled ${result.created} todo${result.created !== 1 ? 's' : ''} for today`);
+          toast.success(`Scheduled ${created} todo${created !== 1 ? 's' : ''} for today`);
         } else {
           toast.info('All todos are already scheduled');
         }

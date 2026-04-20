@@ -11,11 +11,13 @@ import { toast } from 'sonner';
 import { ScheduleSkeletonEntry } from '@/db/schema';
 import {
   createScheduleSkeletonEntry,
+  deleteAllScheduleSkeletonEntries,
   deleteScheduleSkeletonEntry,
   getAllScheduleSkeletonEntries,
   updateScheduleSkeletonEntry,
 } from '@/db/repositories/scheduleSkeletonRepo';
 import { getAIConfiguration } from '@/lib/aiPlanner';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -66,7 +68,16 @@ export function RoutinePanel({ onClose: _onClose }: RoutinePanelProps) {
   const [isAIOpen, setIsAIOpen] = useState(false);
   const [aiPrompt, setAIPrompt] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
+  const [clearAllConfirmOpen, setClearAllConfirmOpen] = useState(false);
+  const [deleteEntryConfirmOpen, setDeleteEntryConfirmOpen] = useState(false);
+  const [entryToDelete, setEntryToDelete] = useState<string | null>(null);
   const [form, setForm] = useState(getDefaultForm());
+
+  function dispatchDataChanged() {
+    const detail = { types: ['routine'] };
+    window.dispatchEvent(new CustomEvent('ghc-data-changed', { detail }));
+    window.dispatchEvent(new CustomEvent('app:datachange', { detail }));
+  }
 
   async function loadEntries() {
     const all = await getAllScheduleSkeletonEntries();
@@ -141,13 +152,28 @@ export function RoutinePanel({ onClose: _onClose }: RoutinePanelProps) {
     setIsAddOpen(false);
     setEditingEntry(null);
     await loadEntries();
+    dispatchDataChanged();
   }
 
-  async function handleDelete(id: string) {
-    if (!window.confirm('Delete this routine entry?')) return;
-    await deleteScheduleSkeletonEntry(id);
+  function handleDelete(id: string) {
+    setEntryToDelete(id);
+    setDeleteEntryConfirmOpen(true);
+  }
+
+  async function handleDeleteConfirm() {
+    if (!entryToDelete) return;
+    await deleteScheduleSkeletonEntry(entryToDelete);
     toast.success('Entry removed');
+    setEntryToDelete(null);
     await loadEntries();
+    dispatchDataChanged();
+  }
+
+  async function handleClearAll() {
+    await deleteAllScheduleSkeletonEntries();
+    toast.success('Routine cleared');
+    await loadEntries();
+    dispatchDataChanged();
   }
 
   async function handleAIBuild() {
@@ -191,7 +217,7 @@ export function RoutinePanel({ onClose: _onClose }: RoutinePanelProps) {
 
       let responseJson: unknown = null;
 
-      const electronAPI = typeof window !== 'undefined' && (window as any).electronAPI;
+      const electronAPI = typeof window !== 'undefined' && (window as { electronAPI?: { aiRequest?: (opts: { url: string; method: string; headers: Record<string, string>; body: string }) => Promise<{ ok: boolean; status: number; body: string }> } }).electronAPI;
       if (electronAPI?.aiRequest) {
         const raw: { ok: boolean; status: number; body: string } = await electronAPI.aiRequest({
           url: endpointUrl,
@@ -216,12 +242,12 @@ export function RoutinePanel({ onClose: _onClose }: RoutinePanelProps) {
       }
 
       const content: string =
-        (responseJson as any)?.choices?.[0]?.message?.content ?? '';
+        (responseJson as { choices?: Array<{ message?: { content?: string } }> })?.choices?.[0]?.message?.content ?? '';
 
       let parsed: unknown = null;
       try { parsed = JSON.parse(content); } catch { /* invalid JSON */ }
 
-      const entriesRaw = (parsed as any)?.entries;
+      const entriesRaw = (parsed as { entries?: unknown[] } | null)?.entries;
       if (!Array.isArray(entriesRaw) || entriesRaw.length === 0) {
         toast.error('Could not parse routine — check your API key is set in Settings');
         return;
@@ -230,9 +256,11 @@ export function RoutinePanel({ onClose: _onClose }: RoutinePanelProps) {
       let created = 0;
       for (const item of entriesRaw) {
         if (!item || typeof item.title !== 'string' || !item.title.trim()) continue;
-        const days: number[] = Array.isArray(item.days)
+        // Use AI-provided days if valid, otherwise try text-based detection on the title, finally weekdays
+        const rawDays: number[] = Array.isArray(item.days)
           ? item.days.filter((d: unknown) => typeof d === 'number' && d >= 0 && d <= 6)
-          : [1, 2, 3, 4, 5];
+          : [];
+        const days: number[] = rawDays.length > 0 ? rawDays : detectDays(item.title);
         const startTime = typeof item.startTime === 'string' && /^\d{2}:\d{2}$/.test(item.startTime)
           ? item.startTime
           : '09:00';
@@ -270,6 +298,7 @@ export function RoutinePanel({ onClose: _onClose }: RoutinePanelProps) {
       setIsAIOpen(false);
       setAIPrompt('');
       await loadEntries();
+      dispatchDataChanged();
       toast.success('Routine built');
     } catch (err) {
       const msg = err instanceof Error ? err.message : '';
@@ -287,6 +316,12 @@ export function RoutinePanel({ onClose: _onClose }: RoutinePanelProps) {
           Define your normal week so Timeline can suggest what goes in free slots.
         </p>
         <div className="flex gap-2 shrink-0">
+          {entries.length > 0 && (
+            <Button variant="outline" size="sm" className="gap-2" onClick={() => setClearAllConfirmOpen(true)}>
+              <Trash size={14} />
+              Clear All
+            </Button>
+          )}
           <Button variant="outline" size="sm" className="gap-2" onClick={() => setIsAIOpen(true)}>
             <Sparkle size={14} weight="fill" />
             AI Build
@@ -325,7 +360,7 @@ export function RoutinePanel({ onClose: _onClose }: RoutinePanelProps) {
                   <button
                     type="button"
                     className="p-0.5 rounded bg-background/80 hover:bg-background text-destructive"
-                    onClick={() => void handleDelete(entry.id)}
+                    onClick={() => handleDelete(entry.id)}
                   >
                     <Trash size={10} />
                   </button>
@@ -500,6 +535,31 @@ export function RoutinePanel({ onClose: _onClose }: RoutinePanelProps) {
           <Badge variant="secondary">{entries.length} entries</Badge>
         </div>
       )}
+
+      <ConfirmDialog
+        open={clearAllConfirmOpen}
+        onOpenChange={setClearAllConfirmOpen}
+        title="Clear all routine entries?"
+        description="This removes all weekly routine entries created manually or by AI."
+        actionType="delete"
+        confirmText="Clear All"
+        cancelText="Cancel"
+        onConfirm={handleClearAll}
+      />
+
+      <ConfirmDialog
+        open={deleteEntryConfirmOpen}
+        onOpenChange={(open) => {
+          setDeleteEntryConfirmOpen(open);
+          if (!open) setEntryToDelete(null);
+        }}
+        title="Delete routine entry?"
+        description="Are you sure you want to remove this entry from your routine?"
+        actionType="delete"
+        confirmText="Delete"
+        cancelText="Cancel"
+        onConfirm={handleDeleteConfirm}
+      />
     </div>
   );
 }

@@ -19,10 +19,11 @@ export async function getTodosByProject(projectId: string): Promise<Todo[]> {
 }
 
 export async function createTodo(
-  data: Omit<Todo, 'id' | 'createdAt' | 'updatedAt' | 'locationId' | 'cognitiveLoad' | 'goalId'> & {
+  data: Omit<Todo, 'id' | 'createdAt' | 'updatedAt' | 'locationId' | 'cognitiveLoad' | 'goalId' | 'estimatedMinutes'> & {
     locationId?: string | null;
     cognitiveLoad?: 'high' | 'medium' | 'low' | null;
     goalId?: string | null;
+    estimatedMinutes?: number | null;
   }
 ): Promise<Todo> {
   const now = new Date().toISOString();
@@ -31,6 +32,7 @@ export async function createTodo(
     locationId: data.locationId ?? null,
     cognitiveLoad: data.cognitiveLoad ?? null,
     goalId: data.goalId ?? null,
+    estimatedMinutes: data.estimatedMinutes ?? null,
     id: uuidv4(),
     createdAt: now,
     updatedAt: now,
@@ -58,6 +60,12 @@ export async function updateTodo(
 export async function deleteTodo(id: string): Promise<boolean> {
   const existing = await getTodoById(id);
   if (!existing) return false;
+
+  // Cascade: remove all timeline blocks that reference this todo so they
+  // don't become orphaned references showing up in the timeline.
+  const linkedBlocks = await getAllByIndex<{ id: string }>(STORES.TIME_BLOCKS, 'todoId', id);
+  await Promise.all(linkedBlocks.map((block) => remove(STORES.TIME_BLOCKS, block.id)));
+
   await remove(STORES.TODOS, id);
   return true;
 }

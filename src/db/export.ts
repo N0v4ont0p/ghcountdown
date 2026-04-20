@@ -91,7 +91,7 @@ export function downloadJSON(data: ExportData, filename: string = 'ghcountdown-b
   URL.revokeObjectURL(url);
 }
 
-export function downloadCSV(data: any[], filename: string) {
+export function downloadCSV(data: Record<string, unknown>[], filename: string) {
   if (data.length === 0) {
     throw new Error('No data to export');
   }

@@ -37,9 +37,9 @@ interface ActionConfig {
   bgGradient: string;
   iconBg: string;
   iconAnimation: {
-    initial: Record<string, any>;
-    animate: Record<string, any>;
-    transition: Record<string, any>;
+    initial: Record<string, unknown>;
+    animate: Record<string, unknown>;
+    transition: Record<string, unknown>;
   };
   buttonVariant: 'default' | 'destructive';
   particles: boolean;

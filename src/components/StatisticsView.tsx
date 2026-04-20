@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import type React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -67,7 +68,7 @@ interface ProductivityInsight {
   type: 'success' | 'warning' | 'info';
   title: string;
   description: string;
-  icon: any;
+  icon: React.FC<{ size?: number; weight?: string; className?: string }>;
 }
 
 export function StatisticsView() {

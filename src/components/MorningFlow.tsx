@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
-import { format } from 'date-fns';
 import { getAllTodos } from '@/db/repositories/todosRepo';
 import { getTimeBlocksByDate } from '@/db/repositories/timeBlocksRepo';
 import { scheduleMyDay, PRIORITY_COLORS } from '@/lib/schedulingUtils';
