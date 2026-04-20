@@ -233,10 +233,10 @@ export function TodosView() {
     return (
       <motion.div
         layout
-        initial={{ opacity: 0, scale: 0.95 }}
+        initial={false}
         animate={{ opacity: 1, scale: 1 }}
         exit={{ opacity: 0, scale: 0.95 }}
-        transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+        transition={{ type: 'spring', stiffness: 420, damping: 34, mass: 0.45 }}
       >
         <Card className={cn(
           "p-3 group hover:shadow-sm transition-all duration-200",
@@ -585,7 +585,7 @@ export function TodosView() {
               <p className="text-sm text-muted-foreground">Move tasks here to focus</p>
             </Card>
           ) : (
-            <AnimatePresence mode="popLayout">
+            <AnimatePresence initial={false} mode="popLayout">
               {todayTodos.map((todo) => (
                 <TodoItem key={todo.id} todo={todo} showProject />
               ))}
@@ -601,7 +601,7 @@ export function TodosView() {
               <p className="text-sm text-muted-foreground">Capture ideas without committing</p>
             </Card>
           ) : (
-            <AnimatePresence mode="popLayout">
+            <AnimatePresence initial={false} mode="popLayout">
               {someDayTodos.map((todo) => (
                 <TodoItem key={todo.id} todo={todo} showProject />
               ))}
@@ -648,7 +648,7 @@ export function TodosView() {
                     </div>
                     
                     <div className="space-y-2">
-                      <AnimatePresence mode="popLayout">
+                      <AnimatePresence initial={false} mode="popLayout">
                         {projectTodos.length === 0 ? (
                           <p className="text-sm text-muted-foreground text-center py-4">
                             No todos in this project
@@ -676,7 +676,7 @@ export function TodosView() {
             <Badge variant="outline">{doneTodos.length}</Badge>
           </div>
           <div className="space-y-2">
-            <AnimatePresence mode="popLayout">
+            <AnimatePresence initial={false} mode="popLayout">
               {doneTodos.slice(0, 5).map((todo) => (
                 <TodoItem key={todo.id} todo={todo} showProject />
               ))}
