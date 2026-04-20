@@ -7,15 +7,13 @@ import { getAllEvents } from '@/db/repositories/eventsRepo';
 import { getAllProjects } from '@/db/repositories/projectsRepo';
 import { createTimeEntry, getRunningTimer, updateTimeEntry } from '@/db/repositories/timeRepo';
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
-import { Badge } from '@/components/ui/badge';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
-import { Plus, Play, Stop, Trash, Clock, CalendarBlank, CheckSquare, Lightning, Warning, CalendarDots } from '@phosphor-icons/react';
+import { Plus, Play, Stop, Trash, Clock, CalendarBlank, CheckSquare, Lightning, Warning, CalendarDots, CaretLeft, CaretRight, MapPin } from '@phosphor-icons/react';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -657,115 +655,123 @@ export function TimelineView() {
   const hasTimelineContent = timeBlocks.length > 0 || skeletonEntries.length > 0 || ghostSuggestions.length > 0;
 
   return (
-    <div className="max-w-7xl mx-auto h-[calc(100vh-6rem)]">
-      {warningMessage && (
-        <div className="mb-3 flex items-center gap-2 rounded-lg px-4 py-2 bg-yellow-500/15 border border-yellow-500/40 text-yellow-700 dark:text-yellow-400">
-          <Warning size={16} weight="fill" />
-          <span className="text-sm font-medium">
-            {warningMessage}
-          </span>
-        </div>
-      )}
-      <div className="mb-6 flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-        <div>
-          <h2 className="text-3xl font-semibold mb-2">Timeline</h2>
-          <p className="text-muted-foreground">Plan your day with time blocks and auto-tracking</p>
-        </div>
+    <div className="max-w-7xl mx-auto flex flex-col gap-4 h-[calc(100vh-6rem)]">
 
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          <Button
-            variant="outline"
-            onClick={() => {
-              const newDate = new Date(currentDate);
-              newDate.setDate(newDate.getDate() - 1);
-              setCurrentDate(newDate);
-            }}
-            className="hover:scale-105 active:scale-95 transition-transform"
-          >
-            Previous
-          </Button>
-          
-          <div className="px-4 py-2 bg-card border rounded-lg">
-            <p className="font-semibold">{format(currentDate, 'EEEE, MMM d')}</p>
+      {/* ── Header ─────────────────────────────────────────────────────── */}
+      <div className="flex flex-col gap-2 shrink-0">
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+          {/* Left: title + subtitle */}
+          <div>
+            <h2 className="text-2xl font-bold tracking-tight">Timeline</h2>
+            <p className="text-sm text-muted-foreground flex items-center gap-1.5 mt-0.5">
+              {format(currentDate, 'EEEE, MMMM d, yyyy')}
+              {currentLocationLabel && (
+                <span className="flex items-center gap-1 text-xs bg-muted px-2 py-0.5 rounded-full border border-border/60 ml-1">
+                  <MapPin size={10} weight="fill" className="shrink-0" />
+                  {currentLocationLabel}
+                </span>
+              )}
+            </p>
           </div>
 
-          <Button
-            variant="outline"
-            onClick={() => {
-              const newDate = new Date(currentDate);
-              newDate.setDate(newDate.getDate() + 1);
-              setCurrentDate(newDate);
-            }}
-            className="hover:scale-105 active:scale-95 transition-transform"
-          >
-            Next
-          </Button>
+          {/* Right: toolbar */}
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Date navigator — unified pill */}
+            <div className="flex items-center rounded-lg border bg-card shadow-sm overflow-hidden">
+              <button
+                onClick={() => { const d = new Date(currentDate); d.setDate(d.getDate() - 1); setCurrentDate(d); }}
+                className="px-2.5 py-2 hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+                aria-label="Previous day"
+              >
+                <CaretLeft size={14} />
+              </button>
+              <div className="px-3 py-2 min-w-[120px] text-center text-sm font-semibold border-x border-border/60 select-none">
+                {format(currentDate, 'EEE, MMM d')}
+              </div>
+              <button
+                onClick={() => { const d = new Date(currentDate); d.setDate(d.getDate() + 1); setCurrentDate(d); }}
+                className="px-2.5 py-2 hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+                aria-label="Next day"
+              >
+                <CaretRight size={14} />
+              </button>
+            </div>
 
-          {!isToday && (
-            <Button
-              variant="ghost"
-              onClick={() => setCurrentDate(new Date())}
-              className="hover:scale-105 active:scale-95 transition-transform"
-            >
-              Today
+            {!isToday && (
+              <Button variant="ghost" size="sm" onClick={() => setCurrentDate(new Date())} className="text-muted-foreground">
+                Today
+              </Button>
+            )}
+
+            <div className="h-4 w-px bg-border/60 hidden sm:block" />
+
+            <Button variant="outline" size="sm" onClick={() => setIsRoutinePanelOpen(true)} className="gap-1.5">
+              <CalendarDots size={14} />
+              Routine
             </Button>
-          )}
 
-          <Button onClick={() => setIsDialogOpen(true)} className="gap-2">
-            <Plus size={16} weight="bold" />
-            Add Block
-          </Button>
+            {unscheduledTodayTodos.length > 0 && (
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={handleScheduleMyDay}
+                disabled={isScheduling}
+                className="gap-1.5"
+              >
+                <Lightning size={14} weight="bold" />
+                {isScheduling ? 'Scheduling…' : 'Schedule Day'}
+              </Button>
+            )}
 
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setIsRoutinePanelOpen(true)}
-            className="gap-2"
-          >
-            <CalendarDots size={16} />
-            Routine
-          </Button>
-
-          {unscheduledTodayTodos.length > 0 && (
-            <Button
-              variant="secondary"
-              onClick={handleScheduleMyDay}
-              disabled={isScheduling}
-              className="gap-2 hover:scale-105 active:scale-95 transition-transform"
-            >
-              <Lightning size={16} weight="bold" />
-              {isScheduling ? 'Scheduling…' : 'Schedule My Day'}
+            <Button size="sm" onClick={() => setIsDialogOpen(true)} className="gap-1.5">
+              <Plus size={14} weight="bold" />
+              Add Block
             </Button>
-          )}
-
-          {currentLocationLabel && (
-            <Badge variant="secondary" className="h-8 px-3">
-              Current location: {currentLocationLabel}
-            </Badge>
-          )}
+          </div>
         </div>
+
+        {/* Overload warning — inline under header */}
+        {warningMessage && (
+          <div className="flex items-center gap-2 rounded-lg px-3 py-2 bg-amber-500/10 border border-amber-500/25 text-amber-700 dark:text-amber-400">
+            <Warning size={14} weight="fill" className="shrink-0" />
+            <span className="text-xs font-medium">{warningMessage}</span>
+          </div>
+        )}
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-[1fr_300px] gap-6 h-[calc(100%-5rem)]">
-        <Card className="relative overflow-hidden">
+      {/* ── Body ────────────────────────────────────────────────────────── */}
+      <div className="flex-1 min-h-0 grid grid-cols-1 xl:grid-cols-[1fr_272px] gap-4">
+
+        {/* ── Timeline canvas ──────────────────────────────────────────── */}
+        <div className="relative bg-card border border-border rounded-xl overflow-hidden shadow-sm">
+          {/* Empty state */}
           {!hasTimelineContent && (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 z-10 pointer-events-none">
-              <CalendarBlank weight="thin" size={48} className="text-muted-foreground" />
-              <h3 className="text-lg font-semibold">No blocks today</h3>
-              <p className="text-sm text-muted-foreground">Drag a task or add a block to get started</p>
+              <div className="w-14 h-14 rounded-2xl bg-muted/80 flex items-center justify-center">
+                <CalendarBlank weight="light" size={28} className="text-muted-foreground" />
+              </div>
+              <div className="text-center">
+                <p className="text-sm font-semibold">Nothing planned</p>
+                <p className="text-xs text-muted-foreground mt-0.5">Drag a task here or click Add Block</p>
+              </div>
             </div>
           )}
+
+          {/* Scrollable timeline */}
           <div
             ref={timelineRef}
-            className="h-full overflow-y-auto overflow-x-hidden relative"
+            className="h-full overflow-y-auto overflow-x-hidden"
             style={{ scrollBehavior: 'smooth' }}
           >
-            <div className="relative" style={{ height: HOURS.length * TIMELINE_HOUR_HEIGHT }}>
+            <div className="relative select-none" style={{ height: HOURS.length * TIMELINE_HOUR_HEIGHT }}>
+
+              {/* ── Hour grid ── */}
               {HOURS.map((hour) => (
                 <div
                   key={hour}
                   className={cn(
-                    "absolute left-0 right-0 border-t border-border transition-colors",
+                    "absolute left-0 right-0 border-t border-border/40",
+                    hour % 2 !== 0 ? "bg-muted/25" : "bg-transparent",
                     dragOverHour === hour && "bg-primary/5"
                   )}
                   style={{ top: hour * TIMELINE_HOUR_HEIGHT, height: TIMELINE_HOUR_HEIGHT }}
@@ -773,33 +779,55 @@ export function TimelineView() {
                   onDragLeave={() => setDragOverHour(null)}
                   onDrop={(e) => handleTodoDrop(hour, e)}
                 >
-                  <div className="flex items-start gap-4 px-4 py-2">
-                    <div className="w-20 text-sm text-muted-foreground font-medium z-20 bg-background/80 backdrop-blur-sm rounded px-2 py-0.5">
-                      {format(new Date().setHours(hour, 0, 0, 0), 'h:mm a')}
-                    </div>
-                    <div className={cn(
-                      "flex-1 h-full border-l border-border/50 relative",
-                      dragOverHour === hour && "border-primary/50"
-                    )}></div>
+                  {/* Time label */}
+                  <div className="absolute left-0 top-0 w-14 flex items-start justify-end pr-2 pt-1.5 pointer-events-none">
+                    <span className={cn(
+                      "text-[10px] font-mono tabular-nums leading-none",
+                      hour === 0 || hour % 6 === 0
+                        ? "text-muted-foreground/90 font-semibold"
+                        : "text-muted-foreground/50"
+                    )}>
+                      {format(new Date().setHours(hour, 0, 0, 0), 'h a')}
+                    </span>
                   </div>
+                  {/* Vertical divider */}
+                  <div className={cn(
+                    "absolute left-14 top-0 bottom-0 right-0 border-l border-border/30",
+                    dragOverHour === hour && "border-primary/40 bg-primary/5 border-l-2"
+                  )} />
                 </div>
               ))}
 
+              {/* ── Current time indicator ── */}
               {isToday && (
                 <motion.div
-                  className="absolute left-24 right-4 z-30 pointer-events-none"
+                  className="absolute left-0 right-0 z-30 pointer-events-none"
                   style={{ top: getCurrentTimePosition() }}
                   animate={{ top: getCurrentTimePosition() }}
                   transition={{ type: 'tween', duration: 0.5 }}
                 >
-                  <div className="flex items-center relative">
-                    <div className="absolute -left-1.5 w-4 h-4 rounded-full bg-red-500 shadow-lg shadow-red-500/50 border-2 border-background"></div>
-                    <div className="flex-1 h-0.5 bg-red-500/80 shadow-sm"></div>
+                  {/* Time readout */}
+                  <div className="absolute left-0 w-14 flex justify-end pr-1.5">
+                    <span className="text-[9px] font-mono tabular-nums text-red-500 bg-card px-0.5 rounded -translate-y-2/3 leading-none">
+                      {format(currentTime, 'HH:mm')}
+                    </span>
+                  </div>
+                  {/* Line + dot */}
+                  <div className="absolute left-14 right-0 flex items-center">
+                    <motion.div
+                      className="w-2.5 h-2.5 rounded-full bg-red-500 shrink-0 -ml-[5px] shadow-[0_0_0_3px_oklch(0.58_0.20_20_/_0.25)]"
+                      animate={{ scale: [1, 1.2, 1] }}
+                      transition={{ duration: 2, repeat: Infinity }}
+                    />
+                    <div className="flex-1 h-px bg-red-500/75" />
                   </div>
                 </motion.div>
               )}
 
-              <div className="absolute left-20 right-4 top-0 bottom-0">
+              {/* ── Block rendering area ── */}
+              <div className="absolute left-14 right-2 top-0 bottom-0">
+
+                {/* Skeleton / routine entries */}
                 {skeletonEntries.map((entry) => {
                   const style = getBlockStyle({
                     id: entry.id,
@@ -816,69 +844,95 @@ export function TimelineView() {
                     createdAt: '',
                     updatedAt: '',
                   });
-
                   return (
                     <div
                       key={`skeleton-${entry.id}-${entry.startTime}`}
-                      className="absolute left-2 right-2 rounded-xl border p-2 pointer-events-none"
+                      className="absolute pointer-events-none overflow-hidden rounded-r-md"
                       style={{
-                        top: style.top,
-                        height: style.height,
-                        backgroundColor: withColorAlpha(entry.color, 0.22),
-                        borderColor: entry.color,
-                        borderStyle: entry.kind === 'flex' ? 'dashed' : 'solid',
+                        top: style.top + 1,
+                        height: Math.max(style.height - 2, 10),
+                        left: 2,
+                        right: 2,
+                        borderLeft: `3px ${entry.kind === 'flex' ? 'dashed' : 'solid'} ${entry.color}`,
+                        backgroundColor: withColorAlpha(entry.color, 0.07),
                       }}
                     >
-                      <p className="text-[11px] font-semibold truncate" style={{ color: entry.color }}>
-                        {entry.location ? `${entry.location.icon} ` : ''}{entry.title}
-                      </p>
-                    </div>
-                  );
-                })}
-
-                {ghostSuggestions.map((ghost) => {
-                  const style = getBlockStyle({
-                    id: ghost.id,
-                    title: ghost.title,
-                    date: format(currentDate, 'yyyy-MM-dd'),
-                    startTime: ghost.startTime,
-                    endTime: ghost.endTime,
-                    todoId: null,
-                    projectId: null,
-                    locationId: ghost.locationId,
-                    color: ghost.color,
-                    autoTrack: false,
-                    slotType: 'flex-todo',
-                    createdAt: '',
-                    updatedAt: '',
-                  });
-
-                  return (
-                    <div
-                      key={`ghost-${ghost.id}`}
-                      className="absolute left-2 right-2 rounded-xl border border-dashed p-2 z-10"
-                      style={{
-                        top: style.top,
-                        height: style.height,
-                        backgroundColor: withColorAlpha(ghost.color, 0.5),
-                        borderColor: ghost.color,
-                        opacity: 0.55,
-                      }}
-                    >
-                      <div className="flex items-center justify-between gap-2 h-full">
-                        <div className="min-w-0">
-                          <p className="text-xs font-medium truncate">{ghost.title}</p>
-                          <p className="text-[10px] text-muted-foreground">{ghost.startTime} - {ghost.endTime}</p>
-                        </div>
-                        <div className="flex gap-1">
-                          <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => void handleAcceptGhost(ghost)} aria-label="Accept suggestion">+</Button>
-                          <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => handleDismissGhost(ghost)} aria-label="Dismiss suggestion">✕</Button>
-                        </div>
+                      <div className="px-2 py-1">
+                        <p className="text-[10px] font-medium truncate leading-tight" style={{ color: entry.color }}>
+                          {entry.location ? `${entry.location.icon} ` : ''}{entry.title}
+                          {entry.kind === 'flex' && <span className="opacity-50"> · flex</span>}
+                        </p>
                       </div>
                     </div>
                   );
                 })}
 
+                {/* Ghost suggestions (habit predictions) */}
+                <AnimatePresence>
+                  {ghostSuggestions.map((ghost) => {
+                    const style = getBlockStyle({
+                      id: ghost.id,
+                      title: ghost.title,
+                      date: format(currentDate, 'yyyy-MM-dd'),
+                      startTime: ghost.startTime,
+                      endTime: ghost.endTime,
+                      todoId: null,
+                      projectId: null,
+                      locationId: ghost.locationId,
+                      color: ghost.color,
+                      autoTrack: false,
+                      slotType: 'flex-todo',
+                      createdAt: '',
+                      updatedAt: '',
+                    });
+                    return (
+                      <motion.div
+                        key={`ghost-${ghost.id}`}
+                        className="absolute overflow-hidden rounded-r-md z-10"
+                        style={{
+                          top: style.top + 1,
+                          height: Math.max(style.height - 2, 28),
+                          left: 2,
+                          right: 2,
+                          borderLeft: `3px dashed ${withColorAlpha(ghost.color, 0.7)}`,
+                          backgroundColor: withColorAlpha(ghost.color, 0.06),
+                        }}
+                        initial={{ opacity: 0, x: -4 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0, x: -4 }}
+                      >
+                        <div className="flex items-center justify-between gap-1 h-full px-2 py-1">
+                          <div className="min-w-0 flex-1">
+                            <p className="text-[11px] font-medium truncate leading-tight" style={{ color: ghost.color }}>
+                              ✦ {ghost.title}
+                            </p>
+                            <p className="text-[10px] text-muted-foreground tabular-nums">
+                              {ghost.startTime}–{ghost.endTime} · {Math.round(ghost.confidence * 100)}% likely
+                            </p>
+                          </div>
+                          <div className="flex gap-0.5 shrink-0">
+                            <button
+                              onClick={() => void handleAcceptGhost(ghost)}
+                              className="w-6 h-6 rounded flex items-center justify-center hover:bg-green-500/20 text-green-600 transition-colors"
+                              aria-label="Accept suggestion"
+                            >
+                              <CheckSquare size={12} />
+                            </button>
+                            <button
+                              onClick={() => handleDismissGhost(ghost)}
+                              className="w-6 h-6 rounded flex items-center justify-center hover:bg-muted text-muted-foreground transition-colors text-[10px] font-medium"
+                              aria-label="Dismiss suggestion"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        </div>
+                      </motion.div>
+                    );
+                  })}
+                </AnimatePresence>
+
+                {/* Actual time blocks */}
                 <AnimatePresence>
                   {timeBlocks.map((block) => {
                     const style = getBlockStyle(block);
@@ -895,89 +949,115 @@ export function TimelineView() {
                       <motion.div
                         key={block.id}
                         className={cn(
-                          "absolute rounded-xl p-3 cursor-pointer group shadow-md z-20",
-                          "hover:shadow-lg transition-all duration-200 border-2",
-                          isRunning && "ring-2 ring-primary ring-offset-2 ring-offset-background",
-                          isConflicting && "ring-2 ring-red-500 ring-offset-2 ring-offset-background"
+                          "absolute overflow-hidden cursor-pointer group z-20 rounded-r-lg",
+                          "transition-shadow duration-150 hover:shadow-md",
+                          isRunning && "shadow-[0_0_0_2px_var(--primary)] shadow-primary/20",
+                          isConflicting && "shadow-[0_0_0_2px_oklch(0.58_0.20_20)]",
                         )}
                         style={{
-                          top: style.top,
-                          height: style.height,
-                          left: `calc(${leftPct}% + 4px)`,
-                          width: `calc(${widthPct}% - 8px)`,
-                          backgroundColor: withColorAlpha(block.color, 0.15),
-                          borderColor: block.color,
-                          borderStyle: isFlex ? 'dashed' : 'solid',
+                          top: style.top + 1,
+                          height: Math.max(style.height - 2, 24),
+                          left: `${leftPct}%`,
+                          width: `calc(${widthPct}% - 4px)`,
+                          backgroundColor: withColorAlpha(block.color, 0.11),
+                          borderLeft: isFlex
+                            ? `3px dashed ${block.color}`
+                            : `3px solid ${block.color}`,
                         }}
-                        initial={{ opacity: 0, scale: 0.95 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        exit={{ opacity: 0, scale: 0.95 }}
-                        transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                        initial={{ opacity: 0, scale: 0.97, y: 3 }}
+                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                        exit={{ opacity: 0, scale: 0.95, y: -2 }}
+                        transition={{ type: 'spring', stiffness: 400, damping: 30 }}
                         onClick={() => handleEdit(block)}
                       >
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-1">
-                              <h4 className="font-semibold text-sm truncate">
-                                {isFlex ? (
-                                  <><span aria-hidden="true">⚡</span> Flex slot</>
-                                ) : block.title}
-                              </h4>
-                              {isConflicting && (
-                                <Warning size={12} className="text-red-500 shrink-0" weight="fill" />
+                        {/* Running timer glow bar */}
+                        {isRunning && (
+                          <motion.div
+                            className="absolute top-0 left-0 right-0 h-[2px] bg-green-500 origin-left"
+                            animate={{ opacity: [1, 0.35, 1] }}
+                            transition={{ duration: 1.8, repeat: Infinity }}
+                          />
+                        )}
+
+                        <div className="flex items-start justify-between gap-1 px-2 py-1.5 h-full overflow-hidden">
+                          {/* Content */}
+                          <div className="flex-1 min-w-0 overflow-hidden">
+                            {/* Title row */}
+                            <div className="flex items-center gap-1 mb-0.5">
+                              {isRunning && (
+                                <span className="w-1.5 h-1.5 rounded-full bg-green-500 shrink-0 animate-pulse" />
                               )}
-                              {block.autoTrack && (
-                                <Badge variant="outline" className="h-4 text-[10px] px-1">Auto</Badge>
+                              {isConflicting && (
+                                <Warning size={10} className="text-red-500 shrink-0" weight="fill" />
+                              )}
+                              <h4 className="text-xs font-semibold truncate leading-tight" style={{ color: block.color }}>
+                                {isFlex ? '⚡ Flex' : block.title}
+                              </h4>
+                              {block.autoTrack && !isRunning && (
+                                <span
+                                  className="text-[8px] font-medium px-1 py-px rounded border shrink-0 leading-tight"
+                                  style={{ borderColor: withColorAlpha(block.color, 0.35), color: withColorAlpha(block.color, 0.8) }}
+                                >
+                                  auto
+                                </span>
                               )}
                             </div>
-                            {isFlex && (
-                              <p className="text-xs truncate text-foreground/70 mb-0.5">
-                                {todo ? todo.title : block.title}
-                              </p>
+
+                            {/* Todo linked */}
+                            {todo && (
+                              <p className="text-[10px] truncate text-foreground/60 leading-tight">{todo.title}</p>
                             )}
-                            <p className="text-xs text-muted-foreground">
-                              {block.startTime} - {block.endTime}
+                            {isFlex && !todo && (
+                              <p className="text-[10px] truncate text-foreground/50 leading-tight italic">awaiting task</p>
+                            )}
+
+                            {/* Time range */}
+                            <p className="text-[10px] text-muted-foreground tabular-nums mt-0.5 leading-tight">
+                              {block.startTime}–{block.endTime}
                             </p>
-                            {!isFlex && todo && (
-                              <p className="text-xs mt-1 truncate text-foreground/70">{todo.title}</p>
-                            )}
+
+                            {/* Project pill */}
                             {project && (
-                              <Badge variant="secondary" className="mt-1 h-4 text-[10px]">
+                              <span
+                                className="inline-block mt-1 text-[9px] font-medium px-1.5 py-px rounded-full leading-tight"
+                                style={{
+                                  backgroundColor: withColorAlpha(block.color, 0.16),
+                                  color: block.color,
+                                }}
+                              >
                                 {project.name}
-                              </Badge>
+                              </span>
                             )}
                           </div>
 
-                          <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                          {/* Hover actions */}
+                          <div
+                            className="flex flex-col gap-px opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
                             onClick={(e) => e.stopPropagation()}
                           >
                             {block.todoId && (
-                              <Button
-                                size="icon"
-                                variant="ghost"
+                              <button
                                 onClick={() => handleCompleteBlock(block)}
-                                className="h-6 w-6 text-green-600 hover:scale-110 active:scale-95 transition-transform"
-                                title="Mark todo as done"
+                                className="w-5 h-5 rounded flex items-center justify-center hover:bg-green-500/20 text-green-600 transition-colors"
+                                title="Mark as done"
                               >
-                                <CheckSquare size={12} />
-                              </Button>
+                                <CheckSquare size={10} />
+                              </button>
                             )}
-                            <Button
-                              size="icon"
-                              variant="ghost"
+                            <button
                               onClick={() => handleManualTimer(block)}
-                              className="h-6 w-6 hover:scale-110 active:scale-95 transition-transform"
+                              className="w-5 h-5 rounded flex items-center justify-center hover:bg-muted text-muted-foreground transition-colors"
+                              title={isRunning ? 'Stop timer' : 'Start timer'}
                             >
-                              {isRunning ? <Stop size={12} /> : <Play size={12} />}
-                            </Button>
-                            <Button
-                              size="icon"
-                              variant="ghost"
+                              {isRunning ? <Stop size={10} /> : <Play size={10} />}
+                            </button>
+                            <button
                               onClick={() => handleDelete(block.id)}
-                              className="h-6 w-6 text-destructive hover:scale-110 active:scale-95 transition-transform"
+                              className="w-5 h-5 rounded flex items-center justify-center hover:bg-destructive/15 text-destructive transition-colors"
+                              title="Delete block"
                             >
-                              <Trash size={12} />
-                            </Button>
+                              <Trash size={10} />
+                            </button>
                           </div>
                         </div>
                       </motion.div>
@@ -985,27 +1065,28 @@ export function TimelineView() {
                   })}
                 </AnimatePresence>
 
+                {/* Calendar events */}
                 {todayEvents.map((event) => {
                   const eventDate = new Date(event.startsAt);
                   const hour = eventDate.getHours();
                   const minute = eventDate.getMinutes();
                   const top = (hour * 60 + minute) / 60 * TIMELINE_HOUR_HEIGHT;
-
                   return (
                     <motion.div
                       key={event.id}
-                      className="absolute left-2 right-2 rounded-lg p-2 border-l-4 bg-accent/10"
+                      className="absolute left-0.5 right-0.5 h-[22px] rounded overflow-hidden border-l-2"
                       style={{
-                        top,
-                        borderLeftColor: `var(--priority-${event.priority})`,
+                        top: top + 1,
+                        borderLeftColor: `oklch(0.60 0.18 ${event.priority * 50})`,
+                        backgroundColor: `oklch(0.60 0.18 ${event.priority * 50} / 0.08)`,
                       }}
-                      initial={{ opacity: 0, x: -10 }}
+                      initial={{ opacity: 0, x: -6 }}
                       animate={{ opacity: 1, x: 0 }}
                     >
-                      <div className="flex items-center gap-2">
-                        <CalendarBlank size={14} weight="fill" className="text-muted-foreground" />
-                        <p className="text-xs font-medium">{event.title}</p>
-                        <p className="text-xs text-muted-foreground">{format(eventDate, 'h:mm a')}</p>
+                      <div className="flex items-center gap-1.5 px-2 h-full">
+                        <CalendarBlank size={9} weight="fill" className="text-muted-foreground shrink-0" />
+                        <p className="text-[10px] font-medium truncate flex-1">{event.title}</p>
+                        <p className="text-[10px] text-muted-foreground shrink-0 tabular-nums">{format(eventDate, 'h:mm a')}</p>
                       </div>
                     </motion.div>
                   );
@@ -1013,142 +1094,191 @@ export function TimelineView() {
               </div>
             </div>
           </div>
-        </Card>
+        </div>
 
-        <div className="space-y-3 overflow-y-auto">
-          {/* 1. Today's progress bar */}
-          <Card className="p-3">
-            <div className="flex items-center justify-between mb-1.5">
-              <span className="text-xs font-medium">Today's Progress</span>
-              <span className="text-xs text-muted-foreground">
-                {todayTodos.length - unscheduledTodayTodos.length}/{todayTodos.length} scheduled
-              </span>
-            </div>
-            <div className="w-full bg-muted rounded-full h-1.5">
-              <div
-                className="bg-primary rounded-full h-1.5 transition-all"
-                style={{
-                  width: todayTodos.length > 0
-                    ? `${((todayTodos.length - unscheduledTodayTodos.length) / todayTodos.length) * 100}%`
-                    : '0%',
-                }}
-              />
-            </div>
-          </Card>
+        {/* ── Sidebar ──────────────────────────────────────────────────── */}
+        <div className="flex flex-col gap-3 overflow-y-auto min-h-0">
 
-          {/* 2. Current location badge */}
-          {currentLocationLabel && (
-            <div className="px-1">
-              <Badge variant="secondary" className="h-7 px-3 text-xs w-full justify-center">
-                📍 {currentLocationLabel}
-              </Badge>
+          {/* Day overview */}
+          <div className="bg-card border border-border rounded-xl shadow-sm p-4">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Day Overview</span>
+              <span className="text-xs text-muted-foreground">{isToday ? 'Today' : format(currentDate, 'MMM d')}</span>
             </div>
-          )}
 
-          {/* 3. Drag to schedule chips */}
-          <Card className="p-3">
-            {todayTodos.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-3">No todos for today</p>
-            ) : unscheduledTodayTodos.length === 0 ? (
-              <p className="text-sm text-green-500 text-center py-3 font-medium">All tasks scheduled ✓</p>
-            ) : (
-              <>
-                <p className="text-xs text-muted-foreground mb-2">Drag to schedule →</p>
-                <div className="space-y-1.5">
-                  {unscheduledTodayTodos.map((todo, index) => (
-                    <motion.div
-                      key={todo.id}
-                      draggable={true}
-                      tabIndex={0}
-                      role="button"
-                      aria-label={`${todo.title}, Priority ${todo.priority}. Press Enter to schedule.`}
-                      onDragStart={(e) => {
-                        e.dataTransfer.setData('todoId', todo.id);
-                        e.dataTransfer.setData('todoTitle', todo.title);
-                        e.dataTransfer.setData('todoPriority', String(todo.priority));
-                        e.dataTransfer.effectAllowed = 'copy';
-                      }}
-                      onKeyDown={(e) => handleChipKeyDown(e, todo)}
-                      className="flex items-center gap-2 rounded-lg px-3 py-2 cursor-grab active:cursor-grabbing border border-border/50 select-none focus:outline-none focus:ring-2 focus:ring-primary"
-                      style={{
-                        backgroundColor: withColorAlpha(PRIORITY_COLORS[todo.priority] ?? PRIORITY_COLORS[3], 0.2),
-                      }}
-                      initial={{ opacity: 0, x: 20 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={{ delay: index * 0.05 }}
-                    >
-                      <Badge
-                        variant="outline"
-                        className="text-[10px] px-1 h-4 shrink-0"
-                        aria-label={`Priority ${todo.priority}`}
-                      >
-                        P{todo.priority}
-                      </Badge>
-                      <span className="text-sm truncate flex-1">{todo.title}</span>
-                      {todo.cognitiveLoad && (
-                        <span
-                          className="w-2 h-2 rounded-full shrink-0"
-                          style={{
-                            backgroundColor:
-                              todo.cognitiveLoad === 'high'
-                                ? 'oklch(0.58 0.20 20)'
-                                : todo.cognitiveLoad === 'medium'
-                                ? 'oklch(0.75 0.18 75)'
-                                : 'oklch(0.65 0.17 145)',
-                          }}
-                          aria-label={`Cognitive load: ${todo.cognitiveLoad}`}
-                          title={
-                            todo.cognitiveLoad === 'high'
-                              ? 'Deep work'
-                              : todo.cognitiveLoad === 'medium'
-                              ? 'Medium effort'
-                              : 'Easy'
-                          }
-                        />
-                      )}
-                    </motion.div>
-                  ))}
+            {/* Progress bar */}
+            <div className="space-y-1.5 mb-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-muted-foreground">Scheduled</span>
+                <span className="text-xs font-semibold tabular-nums">
+                  {todayTodos.length - unscheduledTodayTodos.length}
+                  <span className="font-normal text-muted-foreground">/{todayTodos.length}</span>
+                </span>
+              </div>
+              <div className="w-full bg-muted rounded-full h-1.5 overflow-hidden">
+                <motion.div
+                  className="h-full rounded-full bg-primary"
+                  initial={{ width: 0 }}
+                  animate={{
+                    width: todayTodos.length > 0
+                      ? `${((todayTodos.length - unscheduledTodayTodos.length) / todayTodos.length) * 100}%`
+                      : '0%',
+                  }}
+                  transition={{ type: 'spring', stiffness: 180, damping: 28 }}
+                />
+              </div>
+            </div>
+
+            {/* Stats grid */}
+            <div className="grid grid-cols-3 gap-2 pt-3 border-t border-border/50">
+              <div className="text-center">
+                <p className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium">Blocks</p>
+                <p className="text-xl font-bold tabular-nums mt-0.5">{timeBlocks.length}</p>
+              </div>
+              <div className="text-center">
+                <p className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium">Auto</p>
+                <p className="text-xl font-bold tabular-nums mt-0.5">{timeBlocks.filter(b => b.autoTrack).length}</p>
+              </div>
+              <div className="text-center">
+                <p className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium">Load</p>
+                <p className={cn("text-xl font-bold tabular-nums mt-0.5", isOverloaded && "text-amber-500")}>
+                  {(totalWorkloadMinutes / 60).toFixed(1)}
+                  <span className="text-[10px] font-normal text-muted-foreground">h</span>
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Running timer */}
+          <AnimatePresence>
+            {runningTimer && (
+              <motion.div
+                initial={{ opacity: 0, y: -6, scale: 0.97 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: -6, scale: 0.97 }}
+                transition={{ type: 'spring', stiffness: 300, damping: 25 }}
+              >
+                <div className="bg-card border border-green-500/30 bg-green-500/5 rounded-xl shadow-sm px-3 py-2.5 flex items-center gap-2.5">
+                  <motion.div
+                    className="w-2 h-2 rounded-full bg-green-500 shrink-0"
+                    animate={{ scale: [1, 1.35, 1], opacity: [1, 0.6, 1] }}
+                    transition={{ duration: 1.6, repeat: Infinity }}
+                  />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-semibold text-green-700 dark:text-green-400 leading-tight">Timer running</p>
+                    <p className="text-[10px] text-muted-foreground truncate leading-tight mt-0.5">{runningTimer.note}</p>
+                  </div>
+                  <button
+                    onClick={async () => {
+                      await updateTimeEntry(runningTimer.id, { endAt: new Date().toISOString() });
+                      toast.success('Timer stopped');
+                      loadData();
+                    }}
+                    className="shrink-0 h-6 px-2.5 rounded text-[10px] font-semibold bg-green-500/15 hover:bg-green-500/30 text-green-700 dark:text-green-400 transition-colors"
+                  >
+                    Stop
+                  </button>
                 </div>
-              </>
+              </motion.div>
             )}
-          </Card>
+          </AnimatePresence>
 
-          {/* 4. Quick stats */}
-          <Card className="p-3">
-            <h3 className="font-semibold mb-2 flex items-center gap-2 text-sm">
-              <Clock size={16} />
-              Quick Stats
-            </h3>
-            <div className="space-y-1.5">
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Time blocks:</span>
-                <span className="font-semibold">{timeBlocks.length}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Auto-tracking:</span>
-                <span className="font-semibold">{timeBlocks.filter(b => b.autoTrack).length}</span>
-              </div>
+          {/* Unscheduled todos */}
+          <div className="bg-card border border-border rounded-xl shadow-sm p-3 flex-1 min-h-0 flex flex-col">
+            <div className="flex items-center justify-between mb-2 shrink-0">
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                Unscheduled
+              </span>
+              {unscheduledTodayTodos.length > 0 && (
+                <span className="text-[10px] font-medium text-muted-foreground tabular-nums bg-muted px-1.5 py-0.5 rounded-full">
+                  {unscheduledTodayTodos.length}
+                </span>
+              )}
             </div>
-          </Card>
 
-          {/* 5. Running timer */}
-          {runningTimer && (
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-            >
-              <Card className="p-3 border-primary bg-primary/5">
-                <div className="flex items-center gap-2 mb-1">
-                  <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
-                  <h3 className="font-semibold text-sm">Timer Running</h3>
-                </div>
-                <p className="text-xs text-muted-foreground">{runningTimer.note}</p>
-              </Card>
-            </motion.div>
-          )}
+            {todayTodos.length === 0 ? (
+              <div className="flex-1 flex flex-col items-center justify-center py-4 text-center">
+                <Clock size={22} weight="light" className="text-muted-foreground mb-1.5" />
+                <p className="text-xs text-muted-foreground">No todos for today</p>
+              </div>
+            ) : unscheduledTodayTodos.length === 0 ? (
+              <div className="flex-1 flex flex-col items-center justify-center py-4 text-center">
+                <CheckSquare size={22} weight="fill" className="text-green-500 mb-1.5" />
+                <p className="text-xs font-medium text-green-600 dark:text-green-400">All tasks scheduled</p>
+              </div>
+            ) : (
+              <div className="flex-1 overflow-y-auto min-h-0 flex flex-col gap-1.5">
+                <p className="text-[10px] text-muted-foreground shrink-0">Drag onto the timeline →</p>
+                {unscheduledTodayTodos.map((todo, index) => (
+                  <motion.div
+                    key={todo.id}
+                    draggable={true}
+                    tabIndex={0}
+                    role="button"
+                    aria-label={`${todo.title}, Priority ${todo.priority}. Press Enter to schedule.`}
+                    onDragStart={(e) => {
+                      e.dataTransfer.setData('todoId', todo.id);
+                      e.dataTransfer.setData('todoTitle', todo.title);
+                      e.dataTransfer.setData('todoPriority', String(todo.priority));
+                      e.dataTransfer.effectAllowed = 'copy';
+                    }}
+                    onKeyDown={(e) => handleChipKeyDown(e, todo)}
+                    className={cn(
+                      "flex items-center gap-2 rounded-lg px-2.5 py-2 cursor-grab active:cursor-grabbing select-none",
+                      "border border-border/50 hover:border-border bg-background hover:bg-muted/40",
+                      "focus:outline-none focus:ring-2 focus:ring-ring transition-colors",
+                    )}
+                    initial={{ opacity: 0, x: 10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: index * 0.04 }}
+                  >
+                    {/* Priority dot */}
+                    <div
+                      className="w-2 h-2 rounded-full shrink-0"
+                      style={{ backgroundColor: PRIORITY_COLORS[todo.priority] ?? PRIORITY_COLORS[3] }}
+                    />
+
+                    {/* Title */}
+                    <span className="text-xs truncate flex-1 font-medium leading-tight">{todo.title}</span>
+
+                    {/* Estimated minutes */}
+                    {todo.estimatedMinutes && (
+                      <span className="text-[9px] text-muted-foreground shrink-0 tabular-nums">
+                        {todo.estimatedMinutes}m
+                      </span>
+                    )}
+
+                    {/* Cognitive load chip */}
+                    {todo.cognitiveLoad && (
+                      <span
+                        className="text-[9px] font-semibold px-1.5 py-px rounded-full shrink-0 leading-tight"
+                        style={{
+                          backgroundColor: withColorAlpha(
+                            todo.cognitiveLoad === 'high' ? 'oklch(0.58 0.20 20)' :
+                            todo.cognitiveLoad === 'medium' ? 'oklch(0.75 0.18 75)' : 'oklch(0.65 0.17 145)',
+                            0.14
+                          ),
+                          color: todo.cognitiveLoad === 'high' ? 'oklch(0.50 0.20 20)' :
+                            todo.cognitiveLoad === 'medium' ? 'oklch(0.58 0.18 75)' : 'oklch(0.48 0.17 145)',
+                        }}
+                        title={
+                          todo.cognitiveLoad === 'high' ? 'Deep work' :
+                          todo.cognitiveLoad === 'medium' ? 'Medium effort' : 'Easy'
+                        }
+                        aria-label={`Cognitive load: ${todo.cognitiveLoad}`}
+                      >
+                        {todo.cognitiveLoad === 'high' ? '⚡' : todo.cognitiveLoad === 'medium' ? '◈' : '○'}
+                      </span>
+                    )}
+                  </motion.div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
+      {/* ── Dialogs ─────────────────────────────────────────────────────── */}
       <Dialog open={isDialogOpen} onOpenChange={(open) => {
         setIsDialogOpen(open);
         if (!open) resetForm();
@@ -1157,7 +1287,7 @@ export function TimelineView() {
           <DialogHeader>
             <DialogTitle>{editingBlock ? 'Edit Time Block' : 'Create Time Block'}</DialogTitle>
           </DialogHeader>
-          
+
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <Label htmlFor="blockType">Block type</Label>
@@ -1199,7 +1329,6 @@ export function TimelineView() {
                   required
                 />
               </div>
-
               <div>
                 <Label htmlFor="endTime">End Time *</Label>
                 <Input
@@ -1224,60 +1353,54 @@ export function TimelineView() {
                 <SelectContent>
                   <SelectItem value="none">None</SelectItem>
                   {todos.map((todo) => (
-                    <SelectItem key={todo.id} value={todo.id}>
-                      {todo.title}
-                    </SelectItem>
+                    <SelectItem key={todo.id} value={todo.id}>{todo.title}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
 
             {formData.slotType !== 'flex-project' && (
-            <div>
-              <Label htmlFor="project">Project (optional)</Label>
-              <Select
-                value={formData.projectId}
-                onValueChange={(val) => setFormData({ ...formData, projectId: val })}
-              >
-                <SelectTrigger id="project">
-                  <SelectValue placeholder="None" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">None</SelectItem>
-                  {projects.map((project) => (
-                    <SelectItem key={project.id} value={project.id}>
-                      {project.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+              <div>
+                <Label htmlFor="project">Project (optional)</Label>
+                <Select
+                  value={formData.projectId}
+                  onValueChange={(val) => setFormData({ ...formData, projectId: val })}
+                >
+                  <SelectTrigger id="project">
+                    <SelectValue placeholder="None" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">None</SelectItem>
+                    {projects.map((project) => (
+                      <SelectItem key={project.id} value={project.id}>{project.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             )}
 
             {formData.slotType === 'flex-project' && (
-            <div>
-              <Label htmlFor="flexProject">Project to pull from *</Label>
-              <Select
-                value={formData.projectId}
-                onValueChange={(val) => setFormData({ ...formData, projectId: val })}
-              >
-                <SelectTrigger id="flexProject">
-                  <SelectValue placeholder="Select project" />
-                </SelectTrigger>
-                <SelectContent>
-                  {projects.map((project) => (
-                    <SelectItem key={project.id} value={project.id}>
-                      {project.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+              <div>
+                <Label htmlFor="flexProject">Project to pull from *</Label>
+                <Select
+                  value={formData.projectId}
+                  onValueChange={(val) => setFormData({ ...formData, projectId: val })}
+                >
+                  <SelectTrigger id="flexProject">
+                    <SelectValue placeholder="Select project" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {projects.map((project) => (
+                      <SelectItem key={project.id} value={project.id}>{project.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             )}
 
             <div>
               <Label>Block Color</Label>
-              <div className="grid grid-cols-6 gap-2 mt-2">
+              <div className="flex gap-2 mt-2 flex-wrap">
                 {[
                   'oklch(0.60 0.19 250)',
                   'oklch(0.65 0.20 150)',
@@ -1291,8 +1414,10 @@ export function TimelineView() {
                     type="button"
                     onClick={() => setFormData({ ...formData, color })}
                     className={cn(
-                      "w-10 h-10 rounded-lg border-2 transition-all",
-                      formData.color === color ? "border-foreground scale-110" : "border-transparent"
+                      "w-8 h-8 rounded-full border-2 transition-all hover:scale-110",
+                      formData.color === color
+                        ? "border-foreground scale-110 shadow-md"
+                        : "border-transparent opacity-70 hover:opacity-100"
                     )}
                     style={{ backgroundColor: color }}
                   />
@@ -1300,25 +1425,22 @@ export function TimelineView() {
               </div>
             </div>
 
-            <div className="flex items-center space-x-2">
+            <div className="flex items-center gap-3 py-1">
               <Switch
                 id="autoTrack"
                 checked={formData.autoTrack}
                 onCheckedChange={(checked) => setFormData({ ...formData, autoTrack: checked })}
               />
-              <Label htmlFor="autoTrack" className="cursor-pointer">
-                Auto-start timer when time block begins
+              <Label htmlFor="autoTrack" className="cursor-pointer text-sm font-normal">
+                Auto-start timer when block begins
               </Label>
             </div>
 
-            <div className="flex justify-end gap-2 pt-4">
+            <div className="flex justify-end gap-2 pt-2">
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => {
-                  setIsDialogOpen(false);
-                  resetForm();
-                }}
+                onClick={() => { setIsDialogOpen(false); resetForm(); }}
               >
                 Cancel
               </Button>
