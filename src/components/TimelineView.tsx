@@ -27,6 +27,12 @@ const HOURS = Array.from({ length: 24 }, (_, i) => i);
 const TIMELINE_HOUR_HEIGHT = 80;
 const AUTO_FILL_THRESHOLD_MINUTES = 5;
 
+const COGNITIVE_LOAD_COLORS = {
+  high:   { bg: 'oklch(0.58 0.20 20)', text: 'oklch(0.50 0.20 20)' },
+  medium: { bg: 'oklch(0.75 0.18 75)', text: 'oklch(0.58 0.18 75)' },
+  low:    { bg: 'oklch(0.65 0.17 145)', text: 'oklch(0.48 0.17 145)' },
+} as const;
+
 interface GhostSuggestion {
   id: string;
   title: string;
@@ -685,7 +691,10 @@ export function TimelineView() {
               >
                 <CaretLeft size={14} />
               </button>
-              <div className="px-3 py-2 min-w-[120px] text-center text-sm font-semibold border-x border-border/60 select-none">
+              <div
+                className="px-3 py-2 min-w-[120px] text-center text-sm font-semibold border-x border-border/60 select-none"
+                aria-label={`Currently viewing ${format(currentDate, 'EEEE, MMMM d, yyyy')}`}
+              >
                 {format(currentDate, 'EEE, MMM d')}
               </div>
               <button
@@ -1226,7 +1235,7 @@ export function TimelineView() {
                     className={cn(
                       "flex items-center gap-2 rounded-lg px-2.5 py-2 cursor-grab active:cursor-grabbing select-none",
                       "border border-border/50 hover:border-border bg-background hover:bg-muted/40",
-                      "focus:outline-none focus:ring-2 focus:ring-ring transition-colors",
+                      "focus:outline-none focus:ring-2 focus:ring-ring focus:bg-muted/50 transition-colors",
                     )}
                     initial={{ opacity: 0, x: 10 }}
                     animate={{ opacity: 1, x: 0 }}
@@ -1253,13 +1262,8 @@ export function TimelineView() {
                       <span
                         className="text-[9px] font-semibold px-1.5 py-px rounded-full shrink-0 leading-tight"
                         style={{
-                          backgroundColor: withColorAlpha(
-                            todo.cognitiveLoad === 'high' ? 'oklch(0.58 0.20 20)' :
-                            todo.cognitiveLoad === 'medium' ? 'oklch(0.75 0.18 75)' : 'oklch(0.65 0.17 145)',
-                            0.14
-                          ),
-                          color: todo.cognitiveLoad === 'high' ? 'oklch(0.50 0.20 20)' :
-                            todo.cognitiveLoad === 'medium' ? 'oklch(0.58 0.18 75)' : 'oklch(0.48 0.17 145)',
+                          backgroundColor: withColorAlpha(COGNITIVE_LOAD_COLORS[todo.cognitiveLoad].bg, 0.14),
+                          color: COGNITIVE_LOAD_COLORS[todo.cognitiveLoad].text,
                         }}
                         title={
                           todo.cognitiveLoad === 'high' ? 'Deep work' :
