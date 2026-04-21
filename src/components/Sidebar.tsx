@@ -17,6 +17,7 @@ const navItems = [
   { id: 'statistics', label: 'Stats', icon: ChartBar, group: 'Insights' },
   { id: 'settings', label: 'Settings', icon: Gear, group: 'System' },
 ];
+const navGroups = Array.from(new Set(navItems.map((item) => item.group)));
 
 export function Sidebar({ currentView, onNavigate }: SidebarProps) {
   return (
@@ -40,7 +41,7 @@ export function Sidebar({ currentView, onNavigate }: SidebarProps) {
       </div>
 
       <nav className="flex-1 px-3 py-2 overflow-y-auto">
-        {Array.from(new Set(navItems.map((item) => item.group))).map((group, groupIndex) => (
+        {navGroups.map((group, groupIndex) => (
           <div key={group} className="mb-4 last:mb-0">
             <p className="px-3 mb-1.5 text-[10px] uppercase tracking-widest text-muted-foreground/80">{group}</p>
             <div className="space-y-1">
