@@ -1,9 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Button } from '@/components/ui/button';
 import { getAllTodos } from '@/db/repositories/todosRepo';
 import { getTimeBlocksByDate } from '@/db/repositories/timeBlocksRepo';
-import { scheduleMyDay, PRIORITY_COLORS } from '@/lib/schedulingUtils';
+import { PRIORITY_COLORS } from '@/lib/schedulingUtils';
 import { Todo, TimeBlock } from '@/db/schema';
 
 interface Props {
@@ -18,7 +17,6 @@ export function MorningFlow({ briefing, onDismiss }: Props) {
   const [secondsLeft, setSecondsLeft] = useState(MAX_SECONDS);
   const [todayBlocks, setTodayBlocks] = useState<TimeBlock[]>([]);
   const [unscheduled, setUnscheduled] = useState<Todo[]>([]);
-  const [isScheduling, setIsScheduling] = useState(false);
   const dismissed = useRef(false);
 
   function dismiss() {
@@ -50,16 +48,6 @@ export function MorningFlow({ briefing, onDismiss }: Props) {
     const id = setTimeout(() => setSecondsLeft(s => s - 1), 1000);
     return () => clearTimeout(id);
   }, [secondsLeft]);
-
-  async function handleScheduleMyDay() {
-    setIsScheduling(true);
-    try {
-      await scheduleMyDay(today, unscheduled, todayBlocks);
-    } finally {
-      setIsScheduling(false);
-      dismiss();
-    }
-  }
 
   return (
     <motion.div
@@ -123,20 +111,11 @@ export function MorningFlow({ briefing, onDismiss }: Props) {
             </div>
           )}
 
-          <Button
-            className="w-full"
-            size="lg"
-            onClick={handleScheduleMyDay}
-            disabled={isScheduling}
-          >
-            {isScheduling ? 'Scheduling…' : 'Schedule My Day'}
-          </Button>
-
           <button
-            className="w-full text-sm text-muted-foreground hover:text-foreground transition-colors"
+            className="w-full rounded-lg border border-border/60 px-4 py-2.5 text-sm text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors"
             onClick={dismiss}
           >
-            I'll plan manually →
+            Open app →
           </button>
         </div>
       </motion.div>

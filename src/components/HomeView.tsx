@@ -251,7 +251,7 @@ function HomeViewInner({
                 onClick={() => onNavigate('timeline')}
                 className="text-sm text-muted-foreground hover:text-foreground transition-colors"
               >
-                Nothing scheduled — Schedule My Day →
+                Nothing scheduled yet — Open Timeline →
               </button>
             )}
           </motion.div>
