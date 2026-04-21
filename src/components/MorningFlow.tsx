@@ -64,12 +64,22 @@ export function MorningFlow({ briefing, onDismiss }: Props) {
         transition={{ duration: 0.3 }}
         className="bg-background rounded-2xl shadow-2xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto"
       >
+        {/* Auto-dismiss countdown progress bar */}
+        <div className="h-1 w-full rounded-t-2xl overflow-hidden bg-amber-200/40 dark:bg-amber-900/30">
+          <motion.div
+            className="h-full bg-amber-500"
+            initial={{ width: '100%' }}
+            animate={{ width: `${(secondsLeft / MAX_SECONDS) * 100}%` }}
+            transition={{ duration: 1, ease: 'linear' }}
+          />
+        </div>
+
         <div className="p-8 space-y-6">
           <div className="flex items-start justify-between">
             <h1 className="text-3xl font-semibold text-amber-600 dark:text-amber-400">
               Good morning
             </h1>
-            <span className="text-xs text-muted-foreground mt-2">{secondsLeft}s</span>
+            <span className="text-xs text-muted-foreground mt-2 tabular-nums">{secondsLeft}s</span>
           </div>
 
           <p className="text-base leading-relaxed">

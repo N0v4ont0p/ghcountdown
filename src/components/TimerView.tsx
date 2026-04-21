@@ -1,7 +1,7 @@
 import { motion } from 'framer-motion';
 import { Event, TimeBlock } from '@/db/schema';
 import { Button } from '@/components/ui/button';
-import { Hourglass, CalendarBlank, ClockCountdown } from '@phosphor-icons/react';
+import { Hourglass, CalendarBlank, ClockCountdown, ArrowRight } from '@phosphor-icons/react';
 import { format } from 'date-fns';
 
 interface TimerViewProps {
@@ -10,6 +10,7 @@ interface TimerViewProps {
   nextBlock: TimeBlock | null;
   activeRemainingSeconds: number | null;
   nextStartsInSeconds: number | null;
+  activeRemainingPercent: number | null;
   onNavigate: (view: string) => void;
 }
 
@@ -28,6 +29,7 @@ export function TimerView({
   nextBlock,
   activeRemainingSeconds,
   nextStartsInSeconds,
+  activeRemainingPercent,
   onNavigate,
 }: TimerViewProps) {
   const timerHeadline = activeBlock
@@ -79,6 +81,27 @@ export function TimerView({
             <p className="text-4xl md:text-6xl font-bold tabular-nums tracking-tight text-primary">
               {timerHeadline.time}
             </p>
+
+            {/* Progress bar — 100% at start → 0% when block ends */}
+            {activeBlock && activeRemainingPercent !== null && (
+              <div className="mt-6">
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-xs text-muted-foreground">Time remaining</span>
+                  <span className="text-xs font-semibold tabular-nums" style={{ color: timerHeadline.color }}>
+                    {Math.round(activeRemainingPercent)}%
+                  </span>
+                </div>
+                <div className="h-2 rounded-full overflow-hidden" style={{ backgroundColor: `${timerHeadline.color}22` }}>
+                  <motion.div
+                    className="h-full rounded-full"
+                    style={{ backgroundColor: timerHeadline.color }}
+                    initial={false}
+                    animate={{ width: `${Math.max(0, Math.min(100, activeRemainingPercent))}%` }}
+                    transition={{ duration: 1, ease: 'linear' }}
+                  />
+                </div>
+              </div>
+            )}
           </motion.div>
         ) : (
           <div className="rounded-2xl border bg-card/40 p-6 text-center">
@@ -105,7 +128,9 @@ export function TimerView({
         )}
 
         <div className="mt-6 flex flex-wrap gap-2">
-          <Button onClick={() => onNavigate('timeline')} className="rounded-full">Open Timeline</Button>
+          <Button onClick={() => onNavigate('timeline')} className="rounded-full gap-1.5">
+            Open Timeline <ArrowRight size={14} />
+          </Button>
           <Button variant="outline" onClick={() => onNavigate('home')} className="rounded-full">Go Home</Button>
         </div>
       </motion.div>

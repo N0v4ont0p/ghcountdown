@@ -648,10 +648,10 @@ function App() {
             {currentView === 'home' && (
               <motion.div
                 key="home"
-                initial={false}
+                initial={{ opacity: 0, y: 16 }}
                 animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -20 }}
-                transition={{ duration: 0.3 }}
+                exit={{ opacity: 0, y: -16 }}
+                transition={{ duration: 0.25 }}
               >
                 <HomeView
                   nextEvent={nextEvent}
@@ -673,10 +673,10 @@ function App() {
             {currentView === 'events' && (
               <motion.div
                 key="events"
-                initial={false}
+                initial={{ opacity: 0, y: 16 }}
                 animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -20 }}
-                transition={{ duration: 0.3 }}
+                exit={{ opacity: 0, y: -16 }}
+                transition={{ duration: 0.25 }}
               >
                 <EventsView />
               </motion.div>
@@ -685,10 +685,10 @@ function App() {
             {currentView === 'todos' && (
               <motion.div
                 key="todos"
-                initial={false}
+                initial={{ opacity: 0, y: 16 }}
                 animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -20 }}
-                transition={{ duration: 0.3 }}
+                exit={{ opacity: 0, y: -16 }}
+                transition={{ duration: 0.25 }}
               >
                 <TodosView />
               </motion.div>
@@ -697,10 +697,10 @@ function App() {
             {currentView === 'timeline' && (
               <motion.div
                 key="timeline"
-                initial={false}
+                initial={{ opacity: 0, y: 16 }}
                 animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -20 }}
-                transition={{ duration: 0.3 }}
+                exit={{ opacity: 0, y: -16 }}
+                transition={{ duration: 0.25 }}
               >
                 <TimelineView />
               </motion.div>
@@ -709,10 +709,10 @@ function App() {
             {currentView === 'timer' && (
               <motion.div
                 key="timer"
-                initial={false}
+                initial={{ opacity: 0, y: 16 }}
                 animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -20 }}
-                transition={{ duration: 0.3 }}
+                exit={{ opacity: 0, y: -16 }}
+                transition={{ duration: 0.25 }}
               >
                 <TimerView
                   nextEvent={nextEvent}
@@ -720,6 +720,7 @@ function App() {
                   nextBlock={nextRoutineBlock}
                   activeRemainingSeconds={activeRemainingSeconds}
                   nextStartsInSeconds={nextStartsInSeconds}
+                  activeRemainingPercent={activeRemainingPercent}
                   onNavigate={setCurrentView}
                 />
               </motion.div>
@@ -728,10 +729,10 @@ function App() {
             {currentView === 'statistics' && (
               <motion.div
                 key="statistics"
-                initial={false}
+                initial={{ opacity: 0, y: 16 }}
                 animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -20 }}
-                transition={{ duration: 0.3 }}
+                exit={{ opacity: 0, y: -16 }}
+                transition={{ duration: 0.25 }}
               >
                 <StatisticsView />
               </motion.div>
@@ -740,10 +741,10 @@ function App() {
             {currentView === 'settings' && (
               <motion.div
                 key="settings"
-                initial={false}
+                initial={{ opacity: 0, y: 16 }}
                 animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -20 }}
-                transition={{ duration: 0.3 }}
+                exit={{ opacity: 0, y: -16 }}
+                transition={{ duration: 0.25 }}
                 className="max-w-2xl mx-auto"
               >
                 <div className="mb-6">
@@ -1034,13 +1035,14 @@ function App() {
                     )}
                     {activeRoutineBlock && (
                       <p className="text-[11px] text-muted-foreground mt-2">
-                        {Math.round(clamp(activeRemainingPercent ?? 0, 0, 100))}% of this block left
+                        {Math.round(clamp(activeRemainingPercent ?? 0, 0, 100))}% of this block remaining
                       </p>
                     )}
                     <div className="mt-3 h-1.5 rounded-full bg-primary/15 overflow-hidden">
                       {activeRoutineBlock ? (
                         <motion.div
-                          className="h-full bg-primary"
+                          className="h-full rounded-full"
+                          style={{ backgroundColor: activeRoutineBlock.color ?? 'var(--primary)' }}
                           initial={false}
                           animate={{ width: `${clamp(activeRemainingPercent ?? 0, 0, 100)}%` }}
                           transition={{ duration: 0.9, ease: 'linear' }}
