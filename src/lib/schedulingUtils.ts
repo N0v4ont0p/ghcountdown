@@ -35,6 +35,7 @@ export const DEFAULT_TODO_MINUTES = 60;
 const SCHEDULING_GRANULARITY_MINUTES = 15;
 const MIN_TODO_MINUTES = 30;
 const MAX_TODO_MINUTES = 180;
+const EVENT_BUSY_BUFFER_MINUTES = 60;
 
 /**
  * Compute a combined score for a todo used to rank it under capacity constraints.
@@ -128,16 +129,19 @@ export async function scheduleMyDay(
   const now = new Date();
   const todayStr = format(now, 'yyyy-MM-dd');
   const minStartMinute = dateStr === todayStr
-    ? Math.max(DAY_START, now.getHours() * 60 + now.getMinutes())
+    ? Math.max(
+        DAY_START,
+        Math.ceil((now.getHours() * 60 + now.getMinutes()) / SCHEDULING_GRANULARITY_MINUTES) * SCHEDULING_GRANULARITY_MINUTES
+      )
     : DAY_START;
 
-  const existingIntervals = existingBlocks.map((block) => {
+  const existingIntervals = existingBlocks.flatMap((block) => {
     const start = toMinutes(block.startTime);
     const end = toMinutes(block.endTime);
-    return {
-      start,
-      end: end > start ? end : start + MIN_TODO_MINUTES,
-    };
+    if (end <= start) {
+      return [];
+    }
+    return [{ start, end }];
   });
   const existingMinutes = existingIntervals.reduce((sum, interval) => sum + (interval.end - interval.start), 0);
 
@@ -167,7 +171,9 @@ export async function scheduleMyDay(
     .map((event) => {
       const startsAt = new Date(event.startsAt);
       const start = startsAt.getHours() * 60 + startsAt.getMinutes();
-      const end = start + DEFAULT_TODO_MINUTES;
+      // Events currently only store startsAt (no explicit end time),
+      // so reserve a conservative one-hour conflict buffer.
+      const end = start + EVENT_BUSY_BUFFER_MINUTES;
       return { start, end };
     });
 
@@ -259,8 +265,8 @@ export async function scheduleMyDay(
 
     const nextIntervals: Array<{ start: number; end: number }> = [];
     for (const interval of freeIntervals) {
-      if (interval.start === winner.start && interval.end === winner.end) {
-        if (interval.start < startMinute) {
+      if (interval.start <= startMinute && interval.end >= endMinute) {
+        if (interval.start < winner.start) {
           nextIntervals.push({ start: interval.start, end: startMinute });
         }
         if (endMinute < interval.end) {

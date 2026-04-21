@@ -44,6 +44,13 @@ import { detectDrift } from '@/lib/habitModel';
 import { weeklyReviewKey } from '@/lib/weeklyTrajectory';
 import { getEffectiveScheduleForDate } from '@/lib/effectiveSchedule';
 
+const ROUTINE_POPOVER_CLOSE_DELAY_MS = 180;
+const MIN_BLOCK_DURATION_SECONDS = 1;
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
 function App() {
   function formatCountdown(seconds: number): string {
     const safe = Math.max(0, seconds);
@@ -219,13 +226,12 @@ function App() {
 
   useEffect(() => {
     const timer = setInterval(() => setNowTick(new Date()), 1_000);
-    return () => clearInterval(timer);
-  }, []);
-
-  useEffect(() => () => {
-    if (routinePopoverCloseTimerRef.current !== null) {
-      window.clearTimeout(routinePopoverCloseTimerRef.current);
-    }
+    return () => {
+      clearInterval(timer);
+      if (routinePopoverCloseTimerRef.current !== null) {
+        window.clearTimeout(routinePopoverCloseTimerRef.current);
+      }
+    };
   }, []);
 
   useEffect(() => {
@@ -575,7 +581,8 @@ function App() {
           const [endHour, endMinute] = active.endTime.split(':').map(Number);
           const startSeconds = (startHour * 3600) + (startMinute * 60);
           const endSeconds = Math.max(startSeconds + 1, (endHour * 3600) + (endMinute * 60));
-          const total = endSeconds - startSeconds;
+          // Ensure a non-zero denominator if block times are malformed/equal.
+          const total = Math.max(MIN_BLOCK_DURATION_SECONDS, endSeconds - startSeconds);
           const elapsed = Math.min(total, Math.max(0, nowSeconds - startSeconds));
           return (elapsed / total) * 100;
         })()
@@ -605,7 +612,7 @@ function App() {
     routinePopoverCloseTimerRef.current = window.setTimeout(() => {
       setIsRoutinePopoverOpen(false);
       routinePopoverCloseTimerRef.current = null;
-    }, 180);
+    }, ROUTINE_POPOVER_CLOSE_DELAY_MS);
   }, []);
 
   const showFloatingRoutineCard = currentView !== 'home' && Boolean(activeRoutineBlock || nextRoutineBlock);
@@ -1031,7 +1038,7 @@ function App() {
                         <motion.div
                           className="h-full bg-primary"
                           initial={false}
-                          animate={{ width: `${Math.max(0, Math.min(100, activeProgressPercent ?? 0))}%` }}
+                          animate={{ width: `${clamp(activeProgressPercent ?? 0, 0, 100)}%` }}
                           transition={{ duration: 0.9, ease: 'linear' }}
                         />
                       ) : (
