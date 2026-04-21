@@ -7,6 +7,7 @@ import { GoalsSettingsCard } from '@/components/GoalsSettingsCard';
 import { EventsView } from '@/components/EventsView';
 import { TodosView } from '@/components/TodosView';
 import { TimelineView } from '@/components/TimelineView';
+import { TimerView } from '@/components/TimerView';
 import { StatisticsView } from '@/components/StatisticsView';
 import { AIAssistantView } from '@/components/AIAssistantView';
 import { QuickCapture } from '@/components/QuickCapture';
@@ -34,6 +35,7 @@ import { Label } from '@/components/ui/label';
 import { exportAllData, downloadJSON, exportTimeEntriesCSV, exportEventsCSV, exportTodosCSV, importAllData, ExportData } from '@/db/export';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { toast as notifications } from 'sonner';
 import { getAIConfiguration, updateAIConfiguration, generateActionPlan } from '@/lib/aiPlanner';
 import { performDailyRollover } from '@/lib/rollover';
@@ -62,6 +64,7 @@ function App() {
   const [isAIPopupOpen, setIsAIPopupOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isQuickCaptureOpen, setIsQuickCaptureOpen] = useState(false);
+  const [isRoutinePopoverOpen, setIsRoutinePopoverOpen] = useState(false);
   const [morningBriefing, setMorningBriefing] = useState<string | null>(null);
   const [aiNudges, setAiNudges] = useState<string[]>([]);
   const [dataVersion, setDataVersion] = useState(0);
@@ -652,6 +655,25 @@ function App() {
               </motion.div>
             )}
 
+            {currentView === 'timer' && (
+              <motion.div
+                key="timer"
+                initial={false}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                transition={{ duration: 0.3 }}
+              >
+                <TimerView
+                  nextEvent={nextEvent}
+                  activeBlock={activeRoutineBlock}
+                  nextBlock={nextRoutineBlock}
+                  activeRemainingSeconds={activeRemainingSeconds}
+                  nextStartsInSeconds={nextStartsInSeconds}
+                  onNavigate={setCurrentView}
+                />
+              </motion.div>
+            )}
+
             {currentView === 'statistics' && (
               <motion.div
                 key="statistics"
@@ -905,7 +927,7 @@ function App() {
         </main>
       </div>
 
-      <div className="fixed bottom-6 right-6 z-40 flex flex-col gap-2 items-end">
+      <div className="fixed bottom-6 right-6 z-40 flex flex-col gap-2.5 items-end">
         <AnimatePresence>
           {showFloatingRoutineCard && (
             <motion.div
@@ -913,37 +935,47 @@ function App() {
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 10, scale: 0.97 }}
               transition={{ type: 'spring', stiffness: 260, damping: 24 }}
+              onMouseEnter={() => setIsRoutinePopoverOpen(true)}
+              onMouseLeave={() => setIsRoutinePopoverOpen(false)}
             >
-              <Card className="w-[320px] max-w-[calc(100vw-2rem)] p-3 shadow-lg border-primary/30 bg-card/95 backdrop-blur">
-                <div className="flex items-start gap-2">
-                  <motion.div
-                    animate={{ y: [0, -2, 0] }}
-                    transition={{ duration: 2.2, repeat: Infinity, ease: 'easeInOut' }}
+              <Popover open={isRoutinePopoverOpen} onOpenChange={setIsRoutinePopoverOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="rounded-full px-3.5 h-9 border-primary/30 bg-card/85 backdrop-blur shadow gap-2"
                   >
-                    <Timer size={16} className="mt-0.5 text-primary" />
-                  </motion.div>
-                  <div className="min-w-0 flex-1">
+                    <motion.div
+                      animate={{ y: [0, -2, 0] }}
+                      transition={{ duration: 2.2, repeat: Infinity, ease: 'easeInOut' }}
+                    >
+                      <Timer size={14} className="text-primary" />
+                    </motion.div>
+                    <span className="text-xs font-medium">
+                      {activeRoutineBlock ? `Now · ${formatCountdown(activeRemainingSeconds ?? 0)}` : `Next · ${formatCountdown(nextStartsInSeconds ?? 0)}`}
+                    </span>
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent side="top" align="end" className="w-[320px] p-0 rounded-2xl border-primary/30 bg-card/95 backdrop-blur">
+                  <div className="p-4">
+                    <p className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground mb-1">Dynamic Timer</p>
                     {activeRoutineBlock ? (
                       <>
-                        <p className="text-xs uppercase tracking-wide text-muted-foreground">Now</p>
-                        <p className="text-sm font-semibold truncate">
-                          {formatCountdown(activeRemainingSeconds ?? 0)} left · {activeRoutineBlock.title}
-                        </p>
+                        <p className="text-sm font-semibold truncate">{activeRoutineBlock.title}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">{activeRoutineBlock.startTime}–{activeRoutineBlock.endTime}</p>
+                        <p className="mt-2 text-xl font-semibold tabular-nums text-primary">{formatCountdown(activeRemainingSeconds ?? 0)} left</p>
                       </>
                     ) : (
                       <>
-                        <p className="text-xs uppercase tracking-wide text-muted-foreground">Next up</p>
-                        <p className="text-sm font-semibold truncate">
-                          In {formatCountdown(nextStartsInSeconds ?? 0)} · {nextRoutineBlock?.title}
-                        </p>
+                        <p className="text-sm font-semibold truncate">{nextRoutineBlock?.title}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">{nextRoutineBlock?.startTime} starts next</p>
+                        <p className="mt-2 text-xl font-semibold tabular-nums text-primary">In {formatCountdown(nextStartsInSeconds ?? 0)}</p>
                       </>
                     )}
                     {nextRoutineBlock && activeRoutineBlock && (
-                      <p className="text-xs text-muted-foreground truncate mt-1">
-                        Next: {nextRoutineBlock.startTime}
-                      </p>
+                      <p className="text-xs text-muted-foreground mt-2">Next: {nextRoutineBlock.startTime} · {nextRoutineBlock.title}</p>
                     )}
-                    <div className="mt-2 h-1 rounded-full bg-primary/15 overflow-hidden">
+                    <div className="mt-3 h-1.5 rounded-full bg-primary/15 overflow-hidden">
                       <motion.div
                         className="h-full bg-primary"
                         initial={false}
@@ -951,37 +983,54 @@ function App() {
                         transition={{ duration: 1, ease: 'linear', repeat: Infinity }}
                       />
                     </div>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => {
+                        setCurrentView('timer');
+                        setIsRoutinePopoverOpen(false);
+                      }}
+                      className="mt-3 w-full rounded-lg"
+                    >
+                      Open Timer tab
+                    </Button>
                   </div>
-                </div>
-              </Card>
+                </PopoverContent>
+              </Popover>
             </motion.div>
           )}
         </AnimatePresence>
-        <div className="flex gap-2">
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => setIsSearchOpen(true)}
-            className="text-xs gap-1.5 rounded-full shadow"
-          >
-            <MagnifyingGlass size={13} /> ⌘F
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => setIsQuickCaptureOpen(true)}
-            className="text-xs gap-1.5 rounded-full shadow"
-          >
-            <Plus size={13} /> ⌘N
-          </Button>
-        </div>
-        <Button
-          onClick={() => setIsAIPopupOpen(true)}
-          className="rounded-full shadow-lg px-4 gap-2"
+
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1 }}
+          className="rounded-2xl border border-border/70 bg-card/90 backdrop-blur shadow-xl p-1.5 flex flex-col gap-1"
         >
-          <Sparkle size={16} />
-          AI <span className="text-xs opacity-70">⌘K</span>
-        </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => setIsSearchOpen(true)}
+            className="h-8 px-2.5 text-xs gap-1.5 rounded-xl justify-start"
+          >
+            <MagnifyingGlass size={13} /> Search <span className="ml-auto opacity-60">⌘F</span>
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => setIsQuickCaptureOpen(true)}
+            className="h-8 px-2.5 text-xs gap-1.5 rounded-xl justify-start"
+          >
+            <Plus size={13} /> Quick add <span className="ml-auto opacity-60">⌘N</span>
+          </Button>
+          <Button
+            size="sm"
+            onClick={() => setIsAIPopupOpen(true)}
+            className="h-8 px-2.5 text-xs gap-1.5 rounded-xl justify-start"
+          >
+            <Sparkle size={14} /> AI Assistant <span className="ml-auto opacity-80">⌘K</span>
+          </Button>
+        </motion.div>
       </div>
 
       <Dialog open={isAIPopupOpen} onOpenChange={setIsAIPopupOpen}>
