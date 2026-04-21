@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Toaster } from '@/components/ui/sonner';
 import { Sidebar } from '@/components/Sidebar';
@@ -44,6 +44,13 @@ import { detectDrift } from '@/lib/habitModel';
 import { weeklyReviewKey } from '@/lib/weeklyTrajectory';
 import { getEffectiveScheduleForDate } from '@/lib/effectiveSchedule';
 
+const ROUTINE_POPOVER_CLOSE_DELAY_MS = 180;
+const MIN_BLOCK_DURATION_SECONDS = 1;
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
 function App() {
   function formatCountdown(seconds: number): string {
     const safe = Math.max(0, seconds);
@@ -76,6 +83,7 @@ function App() {
   const [weeklyIntention, setWeeklyIntention] = useState(() => localStorage.getItem('weeklyIntention') ?? '');
   const [activeGoals, setActiveGoals] = useState<Goal[]>([]);
   const [nowTick, setNowTick] = useState(new Date());
+  const routinePopoverCloseTimerRef = useRef<number | null>(null);
   const { theme, setTheme, resolvedTheme } = useTheme();
 
   // Sync weeklyIntention from localStorage whenever the review modal closes
@@ -218,7 +226,12 @@ function App() {
 
   useEffect(() => {
     const timer = setInterval(() => setNowTick(new Date()), 1_000);
-    return () => clearInterval(timer);
+    return () => {
+      clearInterval(timer);
+      if (routinePopoverCloseTimerRef.current !== null) {
+        window.clearTimeout(routinePopoverCloseTimerRef.current);
+      }
+    };
   }, []);
 
   useEffect(() => {
@@ -526,7 +539,13 @@ function App() {
       .sort((a, b) => a.startTime.localeCompare(b.startTime));
   }
 
-  const { activeRoutineBlock, nextRoutineBlock, activeRemainingSeconds, nextStartsInSeconds } = useMemo(() => {
+  const {
+    activeRoutineBlock,
+    nextRoutineBlock,
+    activeRemainingSeconds,
+    nextStartsInSeconds,
+    activeProgressPercent,
+  } = useMemo(() => {
     const currentHHMM = format(nowTick, 'HH:mm');
     const active = todayBlocks.find((block) => block.startTime <= currentHHMM && currentHHMM < block.endTime) ?? null;
     const next = todayBlocks.find((block) => block.startTime > currentHHMM) ?? null;
@@ -537,6 +556,7 @@ function App() {
         nextRoutineBlock: null,
         activeRemainingSeconds: null,
         nextStartsInSeconds: null,
+        activeProgressPercent: null,
       };
     }
 
@@ -555,13 +575,45 @@ function App() {
         })()
       : null;
 
+    const activeProgress = active
+      ? (() => {
+          const [startHour, startMinute] = active.startTime.split(':').map(Number);
+          const [endHour, endMinute] = active.endTime.split(':').map(Number);
+          const startSeconds = (startHour * 3600) + (startMinute * 60);
+          const endSeconds = Math.max(startSeconds + 1, (endHour * 3600) + (endMinute * 60));
+          // Ensure a non-zero denominator if block times are malformed/equal.
+          const total = Math.max(MIN_BLOCK_DURATION_SECONDS, endSeconds - startSeconds);
+          const elapsed = Math.min(total, Math.max(0, nowSeconds - startSeconds));
+          return (elapsed / total) * 100;
+        })()
+      : null;
+
     return {
       activeRoutineBlock: active,
       nextRoutineBlock: next,
       activeRemainingSeconds: activeRemaining,
       nextStartsInSeconds: nextStartsIn,
+      activeProgressPercent: activeProgress,
     };
   }, [todayBlocks, nowTick]);
+
+  const openRoutinePopover = useCallback(() => {
+    if (routinePopoverCloseTimerRef.current !== null) {
+      window.clearTimeout(routinePopoverCloseTimerRef.current);
+      routinePopoverCloseTimerRef.current = null;
+    }
+    setIsRoutinePopoverOpen(true);
+  }, []);
+
+  const scheduleRoutinePopoverClose = useCallback(() => {
+    if (routinePopoverCloseTimerRef.current !== null) {
+      window.clearTimeout(routinePopoverCloseTimerRef.current);
+    }
+    routinePopoverCloseTimerRef.current = window.setTimeout(() => {
+      setIsRoutinePopoverOpen(false);
+      routinePopoverCloseTimerRef.current = null;
+    }, ROUTINE_POPOVER_CLOSE_DELAY_MS);
+  }, []);
 
   const showFloatingRoutineCard = currentView !== 'home' && Boolean(activeRoutineBlock || nextRoutineBlock);
 
@@ -935,8 +987,6 @@ function App() {
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 10, scale: 0.97 }}
               transition={{ type: 'spring', stiffness: 260, damping: 24 }}
-              onMouseEnter={() => setIsRoutinePopoverOpen(true)}
-              onMouseLeave={() => setIsRoutinePopoverOpen(false)}
             >
               <Popover open={isRoutinePopoverOpen} onOpenChange={setIsRoutinePopoverOpen}>
                 <PopoverTrigger asChild>
@@ -944,6 +994,8 @@ function App() {
                     size="sm"
                     variant="outline"
                     className="rounded-full px-3.5 h-9 border-primary/30 bg-card/85 backdrop-blur shadow gap-2"
+                    onMouseEnter={openRoutinePopover}
+                    onMouseLeave={scheduleRoutinePopoverClose}
                   >
                     <motion.div
                       animate={{ y: [0, -2, 0] }}
@@ -956,7 +1008,13 @@ function App() {
                     </span>
                   </Button>
                 </PopoverTrigger>
-                <PopoverContent side="top" align="end" className="w-[320px] p-0 rounded-2xl border-primary/30 bg-card/95 backdrop-blur">
+                <PopoverContent
+                  side="top"
+                  align="end"
+                  className="w-[320px] p-0 rounded-2xl border-primary/30 bg-card/95 backdrop-blur"
+                  onMouseEnter={openRoutinePopover}
+                  onMouseLeave={scheduleRoutinePopoverClose}
+                >
                   <div className="p-4">
                     <p className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground mb-1">Dynamic Timer</p>
                     {activeRoutineBlock ? (
@@ -976,12 +1034,21 @@ function App() {
                       <p className="text-xs text-muted-foreground mt-2">Next: {nextRoutineBlock.startTime} · {nextRoutineBlock.title}</p>
                     )}
                     <div className="mt-3 h-1.5 rounded-full bg-primary/15 overflow-hidden">
-                      <motion.div
-                        className="h-full bg-primary"
-                        initial={false}
-                        animate={{ width: ['100%', '0%'] }}
-                        transition={{ duration: 1, ease: 'linear', repeat: Infinity }}
-                      />
+                      {activeRoutineBlock ? (
+                        <motion.div
+                          className="h-full bg-primary"
+                          initial={false}
+                          animate={{ width: `${clamp(activeProgressPercent ?? 0, 0, 100)}%` }}
+                          transition={{ duration: 0.9, ease: 'linear' }}
+                        />
+                      ) : (
+                        <motion.div
+                          className="h-full w-1/2 bg-primary/55"
+                          initial={false}
+                          animate={{ x: ['-100%', '100%'] }}
+                          transition={{ duration: 1.8, ease: 'linear', repeat: Infinity }}
+                        />
+                      )}
                     </div>
                     <Button
                       size="sm"
