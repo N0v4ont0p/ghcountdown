@@ -599,37 +599,43 @@ export function TimelineView() {
     };
     }).sort((a, b) => a.start - b.start || a.end - b.end);
 
-    // columns[c] = end time of the last block placed in column c
-    const columns: number[] = [];
-    const colAssignment: Record<string, number> = {};
-
-    for (const item of items) {
-      let placed = false;
-      for (let c = 0; c < columns.length; c++) {
-        if (columns[c] <= item.start) {
-          columns[c] = item.end;
-          colAssignment[item.id] = c;
-          placed = true;
-          break;
-        }
-      }
-      if (!placed) {
-        colAssignment[item.id] = columns.length;
-        columns.push(item.end);
-      }
-    }
-
-    // Second pass: determine colCount for each block
     const result: Record<string, { colIndex: number; colCount: number }> = {};
-    for (const item of items) {
-      let maxCol = colAssignment[item.id];
-      for (const other of items) {
-        if (other.id === item.id) continue;
-        if (item.start < other.end && item.end > other.start) {
-          maxCol = Math.max(maxCol, colAssignment[other.id]);
+
+    let i = 0;
+    while (i < items.length) {
+      const group: typeof items = [items[i]];
+      let groupEnd = items[i].end;
+      i += 1;
+
+      while (i < items.length && items[i].start < groupEnd) {
+        group.push(items[i]);
+        groupEnd = Math.max(groupEnd, items[i].end);
+        i += 1;
+      }
+
+      const columns: number[] = [];
+      const colAssignment: Record<string, number> = {};
+
+      for (const item of group) {
+        let placed = false;
+        for (let c = 0; c < columns.length; c++) {
+          if (columns[c] <= item.start) {
+            columns[c] = item.end;
+            colAssignment[item.id] = c;
+            placed = true;
+            break;
+          }
+        }
+        if (!placed) {
+          colAssignment[item.id] = columns.length;
+          columns.push(item.end);
         }
       }
-      result[item.id] = { colIndex: colAssignment[item.id], colCount: maxCol + 1 };
+
+      const colCount = Math.max(1, columns.length);
+      for (const item of group) {
+        result[item.id] = { colIndex: colAssignment[item.id], colCount };
+      }
     }
 
     return result;

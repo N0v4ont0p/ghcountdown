@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { House, CalendarBlank, ListChecks, Clock, Gear, ChartBar } from '@phosphor-icons/react';
+import { House, CalendarBlank, ListChecks, Clock, Gear, ChartBar, ClockCountdown } from '@phosphor-icons/react';
 import { cn } from '@/lib/utils';
 import logoUrl from '@/assets/logo.svg';
 
@@ -9,13 +9,15 @@ interface SidebarProps {
 }
 
 const navItems = [
-  { id: 'home', label: 'Home', icon: House },
-  { id: 'timeline', label: 'Timeline', icon: Clock },
-  { id: 'todos', label: 'Todos', icon: ListChecks },
-  { id: 'events', label: 'Events', icon: CalendarBlank },
-  { id: 'statistics', label: 'Stats', icon: ChartBar },
-  { id: 'settings', label: 'Settings', icon: Gear },
+  { id: 'home', label: 'Home', icon: House, group: 'Core' },
+  { id: 'timer', label: 'Timer', icon: ClockCountdown, group: 'Core' },
+  { id: 'timeline', label: 'Timeline', icon: Clock, group: 'Core' },
+  { id: 'todos', label: 'Todos', icon: ListChecks, group: 'Manage' },
+  { id: 'events', label: 'Events', icon: CalendarBlank, group: 'Manage' },
+  { id: 'statistics', label: 'Stats', icon: ChartBar, group: 'Insights' },
+  { id: 'settings', label: 'Settings', icon: Gear, group: 'System' },
 ];
+const navGroups = Array.from(new Set(navItems.map((item) => item.group)));
 
 export function Sidebar({ currentView, onNavigate }: SidebarProps) {
   return (
@@ -38,45 +40,52 @@ export function Sidebar({ currentView, onNavigate }: SidebarProps) {
         </motion.div>
       </div>
 
-      <nav className="flex-1 px-4 py-2 space-y-0.5 overflow-y-auto">
-        {navItems.map((item, index) => {
-          const Icon = item.icon;
-          const isActive = currentView === item.id;
+      <nav className="flex-1 px-3 py-2 overflow-y-auto">
+        {navGroups.map((group, groupIndex) => (
+          <div key={group} className="mb-4 last:mb-0">
+            <p className="px-3 mb-1.5 text-[10px] uppercase tracking-widest text-muted-foreground/80">{group}</p>
+            <div className="space-y-1">
+              {navItems.filter((item) => item.group === group).map((item, index) => {
+                const Icon = item.icon;
+                const isActive = currentView === item.id;
 
-          return (
-            <motion.button
-              key={item.id}
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: index * 0.04, duration: 0.3 }}
-              onClick={() => onNavigate(item.id)}
-              className={cn(
-                'no-drag w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all relative',
-                isActive
-                  ? 'bg-primary text-primary-foreground shadow-sm'
-                  : 'text-foreground/70 hover:text-foreground hover:bg-muted'
-              )}
-              whileHover={{ scale: 1.02, x: 4 }}
-              whileTap={{ scale: 0.98 }}
-            >
-              <motion.div
-                animate={isActive ? { rotate: [0, -10, 10, -10, 0] } : {}}
-                transition={{ duration: 0.5 }}
-              >
-                <Icon size={18} weight={isActive ? 'fill' : 'regular'} />
-              </motion.div>
-              {item.label}
+                return (
+                  <motion.button
+                    key={item.id}
+                    initial={{ opacity: 0, x: -16 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: (groupIndex * 0.08) + (index * 0.04), duration: 0.28 }}
+                    onClick={() => onNavigate(item.id)}
+                    className={cn(
+                      'no-drag w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium transition-all relative text-left',
+                      isActive
+                        ? 'text-primary-foreground shadow-sm'
+                        : 'text-foreground/70 hover:text-foreground hover:bg-muted/70'
+                    )}
+                    whileHover={{ scale: 1.01, x: 2 }}
+                    whileTap={{ scale: 0.99 }}
+                  >
+                    <motion.div
+                      animate={isActive ? { rotate: [0, -8, 8, 0] } : {}}
+                      transition={{ duration: 0.42 }}
+                    >
+                      <Icon size={17} weight={isActive ? 'fill' : 'regular'} />
+                    </motion.div>
+                    {item.label}
 
-              {isActive && (
-                <motion.div
-                  layoutId="activeTab"
-                  className="absolute inset-0 bg-primary rounded-lg -z-10"
-                  transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-                />
-              )}
-            </motion.button>
-          );
-        })}
+                    {isActive && (
+                      <motion.div
+                        layoutId="activeTab"
+                        className="absolute inset-0 bg-primary rounded-xl -z-10"
+                        transition={{ type: 'spring', stiffness: 420, damping: 30 }}
+                      />
+                    )}
+                  </motion.button>
+                );
+              })}
+            </div>
+          </div>
+        ))}
       </nav>
 
       <motion.div
