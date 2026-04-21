@@ -523,22 +523,44 @@ function App() {
       .sort((a, b) => a.startTime.localeCompare(b.startTime));
   }
 
-  const { activeRoutineBlock, nextRoutineBlock, activeRemainingSeconds } = useMemo(() => {
+  const { activeRoutineBlock, nextRoutineBlock, activeRemainingSeconds, nextStartsInSeconds } = useMemo(() => {
     const currentHHMM = format(nowTick, 'HH:mm');
     const active = todayBlocks.find((block) => block.startTime <= currentHHMM && currentHHMM < block.endTime) ?? null;
     const next = todayBlocks.find((block) => block.startTime > currentHHMM) ?? null;
 
-    if (!active) {
-      return { activeRoutineBlock: null, nextRoutineBlock: next, activeRemainingSeconds: null };
+    if (!active && !next) {
+      return {
+        activeRoutineBlock: null,
+        nextRoutineBlock: null,
+        activeRemainingSeconds: null,
+        nextStartsInSeconds: null,
+      };
     }
 
-    const [endHour, endMinute] = active.endTime.split(':').map(Number);
-    const remaining = Math.max(
-      0,
-      (endHour * 3600 + endMinute * 60) - (nowTick.getHours() * 3600 + nowTick.getMinutes() * 60 + nowTick.getSeconds())
-    );
-    return { activeRoutineBlock: active, nextRoutineBlock: next, activeRemainingSeconds: remaining };
+    const nowSeconds = nowTick.getHours() * 3600 + nowTick.getMinutes() * 60 + nowTick.getSeconds();
+    const activeRemaining = active
+      ? (() => {
+          const [endHour, endMinute] = active.endTime.split(':').map(Number);
+          return Math.max(0, (endHour * 3600 + endMinute * 60) - nowSeconds);
+        })()
+      : null;
+
+    const nextStartsIn = next
+      ? (() => {
+          const [startHour, startMinute] = next.startTime.split(':').map(Number);
+          return Math.max(0, (startHour * 3600 + startMinute * 60) - nowSeconds);
+        })()
+      : null;
+
+    return {
+      activeRoutineBlock: active,
+      nextRoutineBlock: next,
+      activeRemainingSeconds: activeRemaining,
+      nextStartsInSeconds: nextStartsIn,
+    };
   }, [todayBlocks, nowTick]);
+
+  const showFloatingRoutineCard = currentView !== 'home' && Boolean(activeRoutineBlock || nextRoutineBlock);
 
   if (isLoading) {
     return (
@@ -884,35 +906,57 @@ function App() {
       </div>
 
       <div className="fixed bottom-6 right-6 z-40 flex flex-col gap-2 items-end">
-        {(activeRoutineBlock || nextRoutineBlock) && (
-          <Card className="w-[320px] max-w-[calc(100vw-2rem)] p-3 shadow-lg border-primary/30 bg-card/95 backdrop-blur">
-            <div className="flex items-start gap-2">
-              <Timer size={16} className="mt-0.5 text-primary" />
-              <div className="min-w-0 flex-1">
-                {activeRoutineBlock ? (
-                  <>
-                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Now</p>
-                    <p className="text-sm font-semibold truncate">
-                      {formatCountdown(activeRemainingSeconds ?? 0)} left · {activeRoutineBlock.title}
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Next up</p>
-                    <p className="text-sm font-semibold truncate">
-                      {nextRoutineBlock?.startTime} · {nextRoutineBlock?.title}
-                    </p>
-                  </>
-                )}
-                {nextRoutineBlock && activeRoutineBlock && (
-                  <p className="text-xs text-muted-foreground truncate mt-1">
-                    Next: {nextRoutineBlock.startTime} · {nextRoutineBlock.title}
-                  </p>
-                )}
-              </div>
-            </div>
-          </Card>
-        )}
+        <AnimatePresence>
+          {showFloatingRoutineCard && (
+            <motion.div
+              initial={{ opacity: 0, y: 12, scale: 0.97 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 10, scale: 0.97 }}
+              transition={{ type: 'spring', stiffness: 260, damping: 24 }}
+            >
+              <Card className="w-[320px] max-w-[calc(100vw-2rem)] p-3 shadow-lg border-primary/30 bg-card/95 backdrop-blur">
+                <div className="flex items-start gap-2">
+                  <motion.div
+                    animate={{ y: [0, -2, 0] }}
+                    transition={{ duration: 2.2, repeat: Infinity, ease: 'easeInOut' }}
+                  >
+                    <Timer size={16} className="mt-0.5 text-primary" />
+                  </motion.div>
+                  <div className="min-w-0 flex-1">
+                    {activeRoutineBlock ? (
+                      <>
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground">Now</p>
+                        <p className="text-sm font-semibold truncate">
+                          {formatCountdown(activeRemainingSeconds ?? 0)} left · {activeRoutineBlock.title}
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground">Next up</p>
+                        <p className="text-sm font-semibold truncate">
+                          In {formatCountdown(nextStartsInSeconds ?? 0)} · {nextRoutineBlock?.title}
+                        </p>
+                      </>
+                    )}
+                    {nextRoutineBlock && activeRoutineBlock && (
+                      <p className="text-xs text-muted-foreground truncate mt-1">
+                        Next: {nextRoutineBlock.startTime}
+                      </p>
+                    )}
+                    <div className="mt-2 h-1 rounded-full bg-primary/15 overflow-hidden">
+                      <motion.div
+                        className="h-full bg-primary"
+                        initial={false}
+                        animate={{ width: ['100%', '0%'] }}
+                        transition={{ duration: 1, ease: 'linear', repeat: Infinity }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </Card>
+            </motion.div>
+          )}
+        </AnimatePresence>
         <div className="flex gap-2">
           <Button
             size="sm"

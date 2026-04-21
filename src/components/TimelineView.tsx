@@ -30,6 +30,8 @@ const TIMELINE_ZOOM_MIN = 0.75;
 const TIMELINE_ZOOM_MAX = 2;
 const TIMELINE_ZOOM_STEP = 0.25;
 const MIN_VISUAL_BLOCK_MINUTES = 15;
+const TIMELINE_COLUMN_GAP = 6;
+const EVENT_PROXY_DURATION_MINUTES = 20;
 
 const COGNITIVE_LOAD_COLORS = {
   high:   { bg: 'oklch(0.58 0.20 20)', text: 'oklch(0.50 0.20 20)' },
@@ -683,6 +685,28 @@ export function TimelineView() {
     ),
     [skeletonEntries, currentDate]
   );
+  const todayEventLayouts = useMemo(() => {
+    const proxyBlocks: TimeBlock[] = todayEvents.map((event) => {
+      const start = new Date(event.startsAt);
+      const end = new Date(start.getTime() + EVENT_PROXY_DURATION_MINUTES * 60 * 1000);
+      return {
+        id: event.id,
+        title: event.title,
+        date: format(currentDate, 'yyyy-MM-dd'),
+        startTime: format(start, 'HH:mm'),
+        endTime: format(end, 'HH:mm'),
+        todoId: null,
+        projectId: null,
+        locationId: null,
+        color: `oklch(0.60 0.18 ${event.priority * 50})`,
+        autoTrack: false,
+        slotType: 'fixed',
+        createdAt: '',
+        updatedAt: '',
+      };
+    });
+    return computeBlockLayouts(proxyBlocks);
+  }, [todayEvents, currentDate]);
 
   // Daily workload estimate: sum block durations + DEFAULT_TODO_MINUTES per unscheduled todo
   const totalWorkloadMinutes = useMemo(() => {
@@ -971,6 +995,8 @@ export function TimelineView() {
                   const layout = skeletonLayouts[skeletonId] ?? { colIndex: 0, colCount: 1 };
                   const leftPct = (layout.colIndex / layout.colCount) * 100;
                   const widthPct = 100 / layout.colCount;
+                  const columnOffsetPx = (layout.colIndex * TIMELINE_COLUMN_GAP) / layout.colCount;
+                  const columnWidthShrinkPx = (TIMELINE_COLUMN_GAP * (layout.colCount - 1)) / layout.colCount;
                   return (
                     <div
                       key={skeletonId}
@@ -978,8 +1004,8 @@ export function TimelineView() {
                       style={{
                         top: style.top + 1,
                         height: Math.max(style.height - 2, 36),
-                        left: `${leftPct}%`,
-                        width: `calc(${widthPct}% - 4px)`,
+                        left: `calc(${leftPct}% + ${columnOffsetPx}px)`,
+                        width: `calc(${widthPct}% - ${columnWidthShrinkPx}px)`,
                         borderLeft: `3px ${entry.kind === 'flex' ? 'dashed' : 'solid'} ${entry.color}`,
                         backgroundColor: withColorAlpha(entry.color, 0.07),
                       }}
@@ -1077,6 +1103,8 @@ export function TimelineView() {
                     const layout = blockLayouts[block.id] ?? { colIndex: 0, colCount: 1 };
                     const leftPct = (layout.colIndex / layout.colCount) * 100;
                     const widthPct = 100 / layout.colCount;
+                    const columnOffsetPx = (layout.colIndex * TIMELINE_COLUMN_GAP) / layout.colCount;
+                    const columnWidthShrinkPx = (TIMELINE_COLUMN_GAP * (layout.colCount - 1)) / layout.colCount;
                     const rawHeight = Math.max(style.height - 2, 20);
                     const visualHeight = Math.max(rawHeight, 34);
                     const isCompact = visualHeight < 56;
@@ -1094,8 +1122,8 @@ export function TimelineView() {
                         style={{
                           top: style.top + 1,
                           height: visualHeight,
-                          left: `${leftPct}%`,
-                          width: `calc(${widthPct}% - 4px)`,
+                          left: `calc(${leftPct}% + ${columnOffsetPx}px)`,
+                          width: `calc(${widthPct}% - ${columnWidthShrinkPx}px)`,
                           backgroundColor: withColorAlpha(block.color, 0.11),
                           borderLeft: isFlex
                             ? `3px dashed ${block.color}`
@@ -1104,6 +1132,7 @@ export function TimelineView() {
                         initial={{ opacity: 0, scale: 0.97, y: 3 }}
                         animate={{ opacity: 1, scale: 1, y: 0 }}
                         exit={{ opacity: 0, scale: 0.95, y: -2 }}
+                        whileHover={{ y: -1 }}
                         transition={{ type: 'spring', stiffness: 400, damping: 30 }}
                         onClick={() => handleEdit(block)}
                         title={`${block.startTime}–${block.endTime} · ${block.title}`}
@@ -1215,12 +1244,19 @@ export function TimelineView() {
                   const hour = eventDate.getHours();
                   const minute = eventDate.getMinutes();
                   const top = (hour * 60 + minute) / 60 * timelineHourHeight;
+                  const layout = todayEventLayouts[event.id] ?? { colIndex: 0, colCount: 1 };
+                  const leftPct = (layout.colIndex / layout.colCount) * 100;
+                  const widthPct = 100 / layout.colCount;
+                  const columnOffsetPx = (layout.colIndex * TIMELINE_COLUMN_GAP) / layout.colCount;
+                  const columnWidthShrinkPx = (TIMELINE_COLUMN_GAP * (layout.colCount - 1)) / layout.colCount;
                   return (
                     <motion.div
                       key={event.id}
-                      className="absolute left-0.5 right-0.5 min-h-[28px] rounded overflow-hidden border-l-2"
+                      className="absolute min-h-[28px] rounded overflow-hidden border-l-2 z-10"
                       style={{
                         top: top + 1,
+                        left: `calc(${leftPct}% + ${columnOffsetPx}px)`,
+                        width: `calc(${widthPct}% - ${columnWidthShrinkPx}px)`,
                         borderLeftColor: `oklch(0.60 0.18 ${event.priority * 50})`,
                         backgroundColor: `oklch(0.60 0.18 ${event.priority * 50} / 0.08)`,
                       }}
