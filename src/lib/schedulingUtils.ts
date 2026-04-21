@@ -1,7 +1,9 @@
 import { format } from 'date-fns';
 import { Todo, TimeBlock } from '@/db/schema';
 import { createTimeBlock } from '@/db/repositories/timeBlocksRepo';
+import { getAllEvents } from '@/db/repositories/eventsRepo';
 import { getPeakFocusHours } from '@/lib/energyHours';
+import { getEffectiveScheduleForDate } from '@/lib/effectiveSchedule';
 import { toast } from 'sonner';
 
 export const PRIORITY_COLORS: Record<number, string> = {
@@ -30,6 +32,9 @@ export const DAY_CAPACITY_MINUTES = 480;
 
 /** Default estimated duration per todo when no explicit estimate exists (minutes). */
 export const DEFAULT_TODO_MINUTES = 60;
+const SCHEDULING_GRANULARITY_MINUTES = 15;
+const MIN_TODO_MINUTES = 30;
+const MAX_TODO_MINUTES = 180;
 
 /**
  * Compute a combined score for a todo used to rank it under capacity constraints.
@@ -43,6 +48,42 @@ export function todoScore(todo: Todo): number {
     todo.cognitiveLoad === 'high' ? 2 :
     todo.cognitiveLoad === 'low'  ? 0 : 1;
   return priorityScore + loadScore;
+}
+
+function toMinutes(time: string): number {
+  const [h, m] = time.split(':').map(Number);
+  return (h * 60) + m;
+}
+
+function fromMinutes(totalMinutes: number): string {
+  const clamped = ((totalMinutes % (24 * 60)) + (24 * 60)) % (24 * 60);
+  const h = Math.floor(clamped / 60);
+  const m = clamped % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+function normalizeTodoMinutes(todo: Todo): number {
+  const estimated = todo.estimatedMinutes ?? DEFAULT_TODO_MINUTES;
+  const bounded = Math.min(MAX_TODO_MINUTES, Math.max(MIN_TODO_MINUTES, estimated));
+  return Math.ceil(bounded / SCHEDULING_GRANULARITY_MINUTES) * SCHEDULING_GRANULARITY_MINUTES;
+}
+
+function mergeIntervals(intervals: Array<{ start: number; end: number }>): Array<{ start: number; end: number }> {
+  const sorted = intervals
+    .filter((it) => it.end > it.start)
+    .sort((a, b) => a.start - b.start || a.end - b.end);
+  if (sorted.length === 0) return [];
+  const merged: Array<{ start: number; end: number }> = [{ ...sorted[0] }];
+  for (let i = 1; i < sorted.length; i++) {
+    const current = sorted[i];
+    const last = merged[merged.length - 1];
+    if (current.start <= last.end) {
+      last.end = Math.max(last.end, current.end);
+    } else {
+      merged.push({ ...current });
+    }
+  }
+  return merged;
 }
 
 /**
@@ -82,86 +123,133 @@ export async function scheduleMyDay(
   existingBlocks: TimeBlock[]
 ): Promise<number> {
   if (unscheduledTodos.length === 0) return 0;
+  const DAY_START = 7 * 60;
+  const DAY_END = 22 * 60;
+  const now = new Date();
+  const todayStr = format(now, 'yyyy-MM-dd');
+  const minStartMinute = dateStr === todayStr
+    ? Math.max(DAY_START, now.getHours() * 60 + now.getMinutes())
+    : DAY_START;
 
-  // Build the set of hours already occupied by existing blocks.
-  // Hour H is occupied if any existing block overlaps the [H:00, H+1:00) window.
-  const occupiedHours = new Set<number>();
-  let existingMinutes = 0;
-  for (const block of existingBlocks) {
-    const [startH, startM] = block.startTime.split(':').map(Number);
-    const [endH, endM] = block.endTime.split(':').map(Number);
-    const startMinutes = startH * 60 + startM;
-    const endMinutes = endH * 60 + endM;
-    existingMinutes += Math.max(0, endMinutes - startMinutes);
-    for (let h = Math.floor(startMinutes / 60); h < Math.ceil(endMinutes / 60); h++) {
-      occupiedHours.add(h);
-    }
-  }
+  const existingIntervals = existingBlocks.map((block) => {
+    const start = toMinutes(block.startTime);
+    const end = toMinutes(block.endTime);
+    return {
+      start,
+      end: end > start ? end : start + MIN_TODO_MINUTES,
+    };
+  });
+  const existingMinutes = existingIntervals.reduce((sum, interval) => sum + (interval.end - interval.start), 0);
 
-  // Capacity cap: limit to top 5 todos if adding them all would overflow the day
-  const totalIfAll = existingMinutes + unscheduledTodos.length * DEFAULT_TODO_MINUTES;
+  const estimatedMinutesAll = unscheduledTodos.reduce((sum, todo) => sum + normalizeTodoMinutes(todo), 0);
   let todosToSchedule = unscheduledTodos;
   const MAX_TODOS_UNDER_CAP = 5;
-  if (totalIfAll > DAY_CAPACITY_MINUTES) {
-    // Pre-compute scores once to avoid redundant calls during sort
-    const scored = unscheduledTodos.map(t => ({ todo: t, score: todoScore(t) }));
+  if (existingMinutes + estimatedMinutesAll > DAY_CAPACITY_MINUTES) {
+    const scored = unscheduledTodos.map((todo) => ({ todo, score: todoScore(todo) }));
     scored.sort((a, b) => b.score - a.score);
-    todosToSchedule = scored.slice(0, MAX_TODOS_UNDER_CAP).map(s => s.todo);
+    todosToSchedule = scored.slice(0, MAX_TODOS_UNDER_CAP).map((s) => s.todo);
     toast.warning(
       `Day would exceed 8 hours — scheduling top ${MAX_TODOS_UNDER_CAP} tasks only. ` +
-      `${unscheduledTodos.length - MAX_TODOS_UNDER_CAP} task(s) skipped.`
+      `${Math.max(0, unscheduledTodos.length - MAX_TODOS_UNDER_CAP)} task(s) skipped.`
     );
   }
 
-  const peakHours = await getPeakFocusHours();
+  const [peakHours, allEvents, effectiveSchedule] = await Promise.all([
+    getPeakFocusHours(),
+    getAllEvents(),
+    getEffectiveScheduleForDate(dateStr),
+  ]);
   const fallbackPeak = [9, 10, 14, 15];
   const peakSet = new Set(peakHours.length ? peakHours : fallbackPeak);
 
-  // Working-day range 7–22
-  const DAY_START = 7;
-  const DAY_END = 22;
+  const eventIntervals = allEvents
+    .filter((event) => !event.allDay && format(new Date(event.startsAt), 'yyyy-MM-dd') === dateStr)
+    .map((event) => {
+      const startsAt = new Date(event.startsAt);
+      const start = startsAt.getHours() * 60 + startsAt.getMinutes();
+      const end = start + DEFAULT_TODO_MINUTES;
+      return { start, end };
+    });
 
-  // For today don't schedule into the past
-  const now = new Date();
-  const todayStr = format(now, 'yyyy-MM-dd');
-  const minHour = dateStr === todayStr ? Math.max(DAY_START, now.getHours()) : DAY_START;
-
-  // Candidate arrays (ascending order so we fill morning first)
-  const peakCandidates = Array.from(peakSet)
-    .filter(h => h >= minHour && h < DAY_END)
-    .sort((a, b) => a - b);
-
-  const offPeakCandidates = Array.from({ length: DAY_END - DAY_START }, (_, i) => DAY_START + i)
-    .filter(h => h >= minHour && !peakSet.has(h));
-
-  // All hours sorted: peak first, then off-peak (for medium / fallback)
-  const allCandidates = [
-    ...peakCandidates,
-    ...offPeakCandidates,
+  const protectedIntervals = [
+    { start: 0, end: DAY_START },                  // sleep (early)
+    { start: DAY_END, end: 24 * 60 },              // sleep (late)
+    { start: 12 * 60, end: 13 * 60 },              // lunch
+    { start: 18 * 60, end: 19 * 60 },              // dinner
+    ...effectiveSchedule
+      .filter((entry) => entry.kind === 'fixed')
+      .map((entry) => ({ start: toMinutes(entry.startTime), end: toMinutes(entry.endTime) })),
   ];
 
-  // Pick the earliest available slot from the given list
-  function pickSlot(candidates: number[]): number | undefined {
-    return candidates.find(h => !occupiedHours.has(h));
+  let freeIntervals = (() => {
+    const busy = mergeIntervals([
+      ...existingIntervals,
+      ...eventIntervals,
+      ...protectedIntervals,
+    ]).map((interval) => ({
+      start: Math.max(interval.start, minStartMinute),
+      end: Math.min(interval.end, DAY_END),
+    })).filter((interval) => interval.end > interval.start);
+
+    const free: Array<{ start: number; end: number }> = [];
+    let cursor = minStartMinute;
+    for (const interval of busy) {
+      if (cursor < interval.start) {
+        free.push({ start: cursor, end: interval.start });
+      }
+      cursor = Math.max(cursor, interval.end);
+    }
+    if (cursor < DAY_END) {
+      free.push({ start: cursor, end: DAY_END });
+    }
+    return free;
+  })();
+
+  function scoreSlot(todo: Todo, startMinute: number, durationMinutes: number): number {
+    const centerHour = Math.floor((startMinute + durationMinutes / 2) / 60);
+    const isPeak = peakSet.has(centerHour);
+    const loadBias =
+      todo.cognitiveLoad === 'high' ? (isPeak ? 4 : -2) :
+      todo.cognitiveLoad === 'low' ? (isPeak ? -1 : 2) :
+      (isPeak ? 2 : 0);
+    const urgencyBias = todo.priority;
+    const earlierBias = (DAY_END - startMinute) / 120;
+    return loadBias + urgencyBias + earlierBias;
   }
 
-  // Partition todos by cognitive load and sort each group for minimal context switching
-  const highLoad    = sortGroup(todosToSchedule.filter(t => t.cognitiveLoad === 'high'));
-  const mediumLoad  = sortGroup(todosToSchedule.filter(t => t.cognitiveLoad === 'medium' || t.cognitiveLoad === null));
-  const lowLoad     = sortGroup(todosToSchedule.filter(t => t.cognitiveLoad === 'low'));
+  const highLoad = sortGroup(todosToSchedule.filter((t) => t.cognitiveLoad === 'high'));
+  const mediumLoad = sortGroup(todosToSchedule.filter((t) => t.cognitiveLoad === 'medium' || t.cognitiveLoad === null));
+  const lowLoad = sortGroup(todosToSchedule.filter((t) => t.cognitiveLoad === 'low'));
+  const orderedTodos = [...highLoad, ...mediumLoad, ...lowLoad];
 
   let created = 0;
+  let skipped = 0;
 
-  async function assignTodo(todo: Todo, hour: number): Promise<void> {
-    const startTime = `${String(hour).padStart(2, '0')}:00`;
-    const endTime   = `${String(hour + 1).padStart(2, '0')}:00`;
+  for (const todo of orderedTodos) {
+    const duration = normalizeTodoMinutes(todo);
+    const candidates = freeIntervals
+      .filter((interval) => interval.end - interval.start >= duration)
+      .map((interval) => ({
+        interval,
+        score: scoreSlot(todo, interval.start, duration),
+      }))
+      .sort((a, b) => b.score - a.score || a.interval.start - b.interval.start);
+
+    if (candidates.length === 0) {
+      skipped += 1;
+      continue;
+    }
+
+    const winner = candidates[0].interval;
+    const startMinute = winner.start;
+    const endMinute = startMinute + duration;
     const color = PRIORITY_COLORS[todo.priority] ?? PRIORITY_COLORS[3];
 
     await createTimeBlock({
       title: todo.title,
       date: dateStr,
-      startTime,
-      endTime,
+      startTime: fromMinutes(startMinute),
+      endTime: fromMinutes(endMinute),
       todoId: todo.id,
       projectId: todo.projectId,
       color,
@@ -169,26 +257,25 @@ export async function scheduleMyDay(
       slotType: 'fixed',
     });
 
-    occupiedHours.add(hour);
-    created++;
+    const nextIntervals: Array<{ start: number; end: number }> = [];
+    for (const interval of freeIntervals) {
+      if (interval.start === winner.start && interval.end === winner.end) {
+        if (interval.start < startMinute) {
+          nextIntervals.push({ start: interval.start, end: startMinute });
+        }
+        if (endMinute < interval.end) {
+          nextIntervals.push({ start: endMinute, end: interval.end });
+        }
+      } else {
+        nextIntervals.push(interval);
+      }
+    }
+    freeIntervals = nextIntervals;
+    created += 1;
   }
 
-  // 1. High cognitive load → peak hours (deep work deserves peak focus time)
-  for (const todo of highLoad) {
-    const slot = pickSlot(peakCandidates) ?? pickSlot(allCandidates);
-    if (slot !== undefined) await assignTodo(todo, slot);
-  }
-
-  // 2. Low cognitive load → off-peak hours (admin/easy tasks fill the gaps)
-  for (const todo of lowLoad) {
-    const slot = pickSlot(offPeakCandidates) ?? pickSlot(allCandidates);
-    if (slot !== undefined) await assignTodo(todo, slot);
-  }
-
-  // 3. Medium / unset cognitive load → any remaining hour (peak preferred)
-  for (const todo of mediumLoad) {
-    const slot = pickSlot(allCandidates);
-    if (slot !== undefined) await assignTodo(todo, slot);
+  if (skipped > 0) {
+    toast.warning(`${skipped} task(s) could not be scheduled without conflicts`);
   }
 
   return created;

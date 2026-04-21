@@ -650,7 +650,7 @@ export function TimelineView() {
 
   const todayEvents = events.filter(e => {
     const eventDate = new Date(e.startsAt);
-    return format(eventDate, 'yyyy-MM-dd') === format(currentDate, 'yyyy-MM-dd');
+    return !e.allDay && format(eventDate, 'yyyy-MM-dd') === format(currentDate, 'yyyy-MM-dd');
   });
 
   const isToday = format(currentDate, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd');
@@ -696,7 +696,7 @@ export function TimelineView() {
       const start = new Date(event.startsAt);
       const end = new Date(start.getTime() + EVENT_PROXY_DURATION_MINUTES * 60 * 1000);
       return {
-        id: event.id,
+        id: `event-${event.id}`,
         title: event.title,
         date: format(currentDate, 'yyyy-MM-dd'),
         startTime: format(start, 'HH:mm'),
@@ -711,8 +711,8 @@ export function TimelineView() {
         updatedAt: '',
       };
     });
-    return computeBlockLayouts(proxyBlocks);
-  }, [todayEvents, currentDate]);
+    return computeBlockLayouts([...timeBlocks, ...proxyBlocks]);
+  }, [todayEvents, currentDate, timeBlocks]);
 
   // Daily workload estimate: sum block durations + DEFAULT_TODO_MINUTES per unscheduled todo
   const totalWorkloadMinutes = useMemo(() => {
@@ -1250,7 +1250,7 @@ export function TimelineView() {
                   const hour = eventDate.getHours();
                   const minute = eventDate.getMinutes();
                   const top = (hour * 60 + minute) / 60 * timelineHourHeight;
-                  const layout = todayEventLayouts[event.id] ?? { colIndex: 0, colCount: 1 };
+                  const layout = todayEventLayouts[`event-${event.id}`] ?? { colIndex: 0, colCount: 1 };
                   const leftPct = (layout.colIndex / layout.colCount) * 100;
                   const widthPct = 100 / layout.colCount;
                   const columnOffsetPx = (layout.colIndex * TIMELINE_COLUMN_GAP) / layout.colCount;
