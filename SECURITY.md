@@ -1,31 +1,27 @@
-Thanks for helping make GitHub safe for everyone.
+# Security Policy
 
-# Security
+## Reporting Vulnerabilities
 
-GitHub takes the security of our software products and services seriously, including all of the open source code repositories managed through our GitHub organizations, such as [GitHub](https://github.com/GitHub).
+If you discover a security vulnerability in GHCountdown, please **do not** open a public GitHub issue. Instead, report it privately by [opening a GitHub Security Advisory](https://github.com/N0v4ont0p/ghcountdown/security/advisories/new) in this repository.
 
-Even though [open source repositories are outside of the scope of our bug bounty program](https://bounty.github.com/index.html#scope) and therefore not eligible for bounty rewards, we will ensure that your finding gets passed along to the appropriate maintainers for remediation. 
+Please include:
+- A clear description of the vulnerability
+- Steps to reproduce the issue
+- The impact (e.g., data exposure, privilege escalation)
+- Any relevant file paths or code snippets
 
-## Reporting Security Issues
+We aim to acknowledge reports within 48 hours and resolve confirmed issues as soon as possible.
 
-If you believe you have found a security vulnerability in any GitHub-owned repository, please report it to us through coordinated disclosure.
+## Scope
 
-**Please do not report security vulnerabilities through public GitHub issues, discussions, or pull requests.**
+GHCountdown is a **local-first desktop application** (Electron + web). All user data is stored in IndexedDB on the user's own machine — no data is transmitted to any server owned by this project.
 
-Instead, please send an email to opensource-security[@]github.com.
+The primary attack surfaces are:
+- **Electron IPC bridge** (`electron/main.cjs`, `electron/preload.cjs`) — only whitelisted operations are exposed to the renderer
+- **AI API key handling** — keys are held in memory and never written to disk by the app itself; users are responsible for protecting their Hugging Face keys
+- **Import / export** — JSON backup files are loaded back into IndexedDB; malformed or crafted files could cause unexpected behaviour
 
-Please include as much of the information listed below as you can to help us better understand and resolve the issue:
+## Out of Scope
 
-  * The type of issue (e.g., buffer overflow, SQL injection, or cross-site scripting)
-  * Full paths of source file(s) related to the manifestation of the issue
-  * The location of the affected source code (tag/branch/commit or direct URL)
-  * Any special configuration required to reproduce the issue
-  * Step-by-step instructions to reproduce the issue
-  * Proof-of-concept or exploit code (if possible)
-  * Impact of the issue, including how an attacker might exploit the issue
-
-This information will help us triage your report more quickly.
-
-## Policy
-
-See [GitHub's Safe Harbor Policy](https://docs.github.com/en/site-policy/security-policies/github-bug-bounty-program-legal-safe-harbor#1-safe-harbor-terms)
+- Vulnerabilities in third-party dependencies that are already publicly known and have patches pending upstream
+- Issues that require physical access to the user's device

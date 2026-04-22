@@ -9,8 +9,7 @@ interface ErrorFallbackProps {
 }
 
 export const ErrorFallback = ({ error, resetErrorBoundary }: ErrorFallbackProps) => {
-  // When encountering an error in the development mode, rethrow it and don't display the boundary.
-  // The parent UI will take care of showing a more helpful dialog.
+  // In development mode, rethrow so Vite's overlay shows the full stack trace.
   if (import.meta.env.DEV) throw error;
 
   return (
@@ -18,9 +17,9 @@ export const ErrorFallback = ({ error, resetErrorBoundary }: ErrorFallbackProps)
       <div className="w-full max-w-md">
         <Alert variant="destructive" className="mb-6">
           <AlertTriangleIcon />
-          <AlertTitle>This spark has encountered a runtime error</AlertTitle>
+          <AlertTitle>GHCountdown encountered a runtime error</AlertTitle>
           <AlertDescription>
-            Something unexpected happened while running the application. The error details are shown below. Contact the spark author and let them know about this issue.
+            Something unexpected happened while running the application. The error details are shown below. If this keeps happening, try clearing your browser data or contact the maintainer.
           </AlertDescription>
         </Alert>
         

@@ -314,7 +314,7 @@ export function AIAssistantView({ compact = false }: AIAssistantViewProps) {
       if (suggestion.type === 'todo') {
         await createTodo({
           title: suggestion.title,
-          status: 'today',
+          status: suggestion.status ?? 'today',
           dueAt: suggestion.dueAt ?? null,
           priority: suggestion.priority,
           projectId: null,
