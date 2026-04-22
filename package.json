@@ -18,7 +18,10 @@
         "electron:build": "npm run electron:build:web && electron-builder",
         "electron:build:mac": "npm run electron:build:web && electron-builder --mac",
         "electron:build:mac:arm64": "npm run electron:build:web && electron-builder --mac --arm64",
-        "electron:build:mac:x64": "npm run electron:build:web && electron-builder --mac --x64"
+        "electron:build:mac:x64": "npm run electron:build:web && electron-builder --mac --x64",
+        "electron:build:win": "npm run electron:build:web && electron-builder --win",
+        "electron:build:win:x64": "npm run electron:build:web && electron-builder --win --x64",
+        "electron:build:all": "npm run electron:build:web && electron-builder --mac --win"
     },
     "build": {
         "appId": "com.ghcountdown.app",
@@ -51,6 +54,29 @@
                     ]
                 }
             ]
+        },
+        "win": {
+            "icon": "build/icon.png",
+            "target": [
+                {
+                    "target": "nsis",
+                    "arch": [
+                        "x64"
+                    ]
+                },
+                {
+                    "target": "portable",
+                    "arch": [
+                        "x64"
+                    ]
+                }
+            ]
+        },
+        "nsis": {
+            "oneClick": false,
+            "allowToChangeInstallationDirectory": true,
+            "createDesktopShortcut": true,
+            "createStartMenuShortcut": true
         }
     },
     "dependencies": {

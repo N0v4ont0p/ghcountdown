@@ -116,26 +116,78 @@ npm run preview
 
 ## 📦 Build the Electron app
 
-**All platforms:**
+> **Primary platform: macOS.** Windows is fully supported as a secondary target.
 
-```bash
-npm run electron:build
-```
+### Prerequisites
 
-**macOS only:**
+- **Node.js 18+**
+- **macOS** is recommended for building both platforms. To produce Windows builds on a Mac you need [Wine](https://www.winehq.org) (for NSIS code-signing only — unsigned builds work without it) and the `--win` flag.
+- On **Windows**, you can build the Windows target natively. Building the macOS target from Windows is not supported by Apple.
+
+---
+
+### macOS builds
+
+**Both architectures (Apple Silicon + Intel) — recommended:**
 
 ```bash
 npm run electron:build:mac
 ```
 
-**macOS — specific architecture:**
+**Apple Silicon (arm64) only:**
 
 ```bash
 npm run electron:build:mac:arm64
+```
+
+**Intel (x64) only:**
+
+```bash
 npm run electron:build:mac:x64
 ```
 
-Output goes to `dist-electron/`. The app produces `.dmg` and `.zip` archives for both `x64` and `arm64`.
+Output goes to `dist-electron/`. Produces `.dmg` and `.zip` archives for each architecture.
+
+---
+
+### Windows builds
+
+**Windows installer + portable (x64):**
+
+```bash
+npm run electron:build:win
+```
+
+**Windows x64 only (explicit):**
+
+```bash
+npm run electron:build:win:x64
+```
+
+Output goes to `dist-electron/`. Produces:
+- `GHCountdown Setup *.exe` — NSIS installer (lets the user choose install directory, adds Start Menu and Desktop shortcuts)
+- `GHCountdown *.exe` — portable executable (no installation required, run it directly)
+
+---
+
+### Build both macOS and Windows in one command
+
+Run this on macOS to produce all Mac and Windows artifacts at once:
+
+```bash
+npm run electron:build:all
+```
+
+---
+
+### What each script does internally
+
+| Script | What it runs |
+|---|---|
+| `electron:build:web` | TypeScript compile + Vite production build (sets `ELECTRON_BUILD=1`) |
+| `electron:build:mac` | `electron:build:web` → `electron-builder --mac` |
+| `electron:build:win` | `electron:build:web` → `electron-builder --win` |
+| `electron:build:all` | `electron:build:web` → `electron-builder --mac --win` |
 
 ---
 
