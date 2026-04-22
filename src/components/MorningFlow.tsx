@@ -1,9 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Button } from '@/components/ui/button';
 import { getAllTodos } from '@/db/repositories/todosRepo';
 import { getTimeBlocksByDate } from '@/db/repositories/timeBlocksRepo';
-import { scheduleMyDay, PRIORITY_COLORS } from '@/lib/schedulingUtils';
+import { PRIORITY_COLORS } from '@/lib/schedulingUtils';
 import { Todo, TimeBlock } from '@/db/schema';
 
 interface Props {
@@ -18,7 +17,6 @@ export function MorningFlow({ briefing, onDismiss }: Props) {
   const [secondsLeft, setSecondsLeft] = useState(MAX_SECONDS);
   const [todayBlocks, setTodayBlocks] = useState<TimeBlock[]>([]);
   const [unscheduled, setUnscheduled] = useState<Todo[]>([]);
-  const [isScheduling, setIsScheduling] = useState(false);
   const dismissed = useRef(false);
 
   function dismiss() {
@@ -51,16 +49,6 @@ export function MorningFlow({ briefing, onDismiss }: Props) {
     return () => clearTimeout(id);
   }, [secondsLeft]);
 
-  async function handleScheduleMyDay() {
-    setIsScheduling(true);
-    try {
-      await scheduleMyDay(today, unscheduled, todayBlocks);
-    } finally {
-      setIsScheduling(false);
-      dismiss();
-    }
-  }
-
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -76,12 +64,22 @@ export function MorningFlow({ briefing, onDismiss }: Props) {
         transition={{ duration: 0.3 }}
         className="bg-background rounded-2xl shadow-2xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto"
       >
+        {/* Auto-dismiss countdown progress bar */}
+        <div className="h-1 w-full rounded-t-2xl overflow-hidden bg-amber-200/40 dark:bg-amber-900/30">
+          <motion.div
+            className="h-full bg-amber-500"
+            initial={{ width: '100%' }}
+            animate={{ width: `${(secondsLeft / MAX_SECONDS) * 100}%` }}
+            transition={{ duration: 1, ease: 'linear' }}
+          />
+        </div>
+
         <div className="p-8 space-y-6">
           <div className="flex items-start justify-between">
             <h1 className="text-3xl font-semibold text-amber-600 dark:text-amber-400">
               Good morning
             </h1>
-            <span className="text-xs text-muted-foreground mt-2">{secondsLeft}s</span>
+            <span className="text-xs text-muted-foreground mt-2 tabular-nums">{secondsLeft}s</span>
           </div>
 
           <p className="text-base leading-relaxed">
@@ -123,20 +121,11 @@ export function MorningFlow({ briefing, onDismiss }: Props) {
             </div>
           )}
 
-          <Button
-            className="w-full"
-            size="lg"
-            onClick={handleScheduleMyDay}
-            disabled={isScheduling}
-          >
-            {isScheduling ? 'Scheduling…' : 'Schedule My Day'}
-          </Button>
-
           <button
-            className="w-full text-sm text-muted-foreground hover:text-foreground transition-colors"
+            className="w-full rounded-lg border border-border/60 px-4 py-2.5 text-sm text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors"
             onClick={dismiss}
           >
-            I'll plan manually →
+            Open app →
           </button>
         </div>
       </motion.div>

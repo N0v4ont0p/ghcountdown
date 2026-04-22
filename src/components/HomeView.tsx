@@ -1,10 +1,30 @@
 import { memo, useEffect, useState } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Checkbox } from '@/components/ui/checkbox';
 import { MomentumStrip } from '@/components/MomentumStrip';
 import { Sparkle, X } from '@phosphor-icons/react';
 import { format } from 'date-fns';
 import { Event, Todo, TimeBlock, Goal } from '@/db/schema';
+
+function AnimatedDigit({ value }: { value: number }) {
+  const digits = String(value).padStart(2, '0');
+  return (
+    <div className="inline-flex overflow-hidden">
+      <AnimatePresence mode="popLayout">
+        <motion.span
+          key={value}
+          initial={{ y: 18, opacity: 0, filter: 'blur(4px)' }}
+          animate={{ y: 0, opacity: 1, filter: 'blur(0px)' }}
+          exit={{ y: -18, opacity: 0, filter: 'blur(4px)' }}
+          transition={{ type: 'spring', damping: 22, stiffness: 300 }}
+          className="inline-block tabular-nums font-bold"
+        >
+          {digits}
+        </motion.span>
+      </AnimatePresence>
+    </div>
+  );
+}
 
 interface HomeViewProps {
   nextEvent: Event | null;
@@ -126,8 +146,8 @@ function HomeViewInner({
                     transition={{ delay: 0.1 + i * 0.05 }}
                     className="text-center"
                   >
-                    <div className="text-5xl md:text-7xl font-bold tabular-nums text-primary tracking-tighter">
-                      {String(value).padStart(2, '0')}
+                    <div className="text-5xl md:text-7xl text-primary tracking-tighter">
+                      <AnimatedDigit value={value} />
                     </div>
                     <div className="text-xs text-muted-foreground uppercase tracking-wide mt-1">
                       {label}
@@ -251,7 +271,7 @@ function HomeViewInner({
                 onClick={() => onNavigate('timeline')}
                 className="text-sm text-muted-foreground hover:text-foreground transition-colors"
               >
-                Nothing scheduled — Schedule My Day →
+                Nothing scheduled yet — Open Timeline →
               </button>
             )}
           </motion.div>
