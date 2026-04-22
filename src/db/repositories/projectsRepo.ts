@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { Project, STORES } from '../schema';
-import { clearStore, getAll, getByKey, put, remove } from '../core';
+import { clearStore, getAll, getByKey, put, remove, getAllByIndex } from '../core';
+import { deleteTodo } from './todosRepo';
 
 export async function getAllProjects(): Promise<Project[]> {
   return getAll<Project>(STORES.PROJECTS);
@@ -43,6 +44,12 @@ export async function updateProject(
 export async function deleteProject(id: string): Promise<boolean> {
   const existing = await getProjectById(id);
   if (!existing) return false;
+
+  // Cascade: delete all todos that belong to this project.
+  // deleteTodo() already cascades to linked time blocks.
+  const linkedTodos = await getAllByIndex<{ id: string }>(STORES.TODOS, 'projectId', id);
+  await Promise.all(linkedTodos.map((todo) => deleteTodo(todo.id)));
+
   await remove(STORES.PROJECTS, id);
   return true;
 }

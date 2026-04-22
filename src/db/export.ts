@@ -4,8 +4,12 @@ import { getAllTodos } from './repositories/todosRepo';
 import { getAllTimeEntries } from './repositories/timeRepo';
 import { getAllTimeBlocks } from './repositories/timeBlocksRepo';
 import { getSettings } from './repositories/settingsRepo';
-import { Event, Project, Todo, TimeEntry, TimeBlock, Settings } from './schema';
-import { add } from './core';
+import { getAllGoals } from './repositories/goalsRepo';
+import { getAllLocations } from './repositories/locationsRepo';
+import { getAllScheduleSkeletonEntries } from './repositories/scheduleSkeletonRepo';
+import { getAllScheduleOverrides } from './repositories/scheduleOverridesRepo';
+import { Event, Project, Todo, TimeEntry, TimeBlock, Settings, Goal, Location, ScheduleSkeletonEntry, ScheduleOverride } from './schema';
+import { put } from './core';
 import { STORES } from './schema';
 
 export interface ExportData {
@@ -18,21 +22,32 @@ export interface ExportData {
     timeEntries: TimeEntry[];
     timeBlocks: TimeBlock[];
     settings: Settings | null;
+    goals?: Goal[];
+    locations?: Location[];
+    scheduleSkeleton?: ScheduleSkeletonEntry[];
+    scheduleOverrides?: ScheduleOverride[];
   };
 }
 
 export async function exportAllData(): Promise<ExportData> {
-  const [events, projects, todos, timeEntries, timeBlocks, settings] = await Promise.all([
+  const [
+    events, projects, todos, timeEntries, timeBlocks, settings,
+    goals, locations, scheduleSkeleton, scheduleOverrides,
+  ] = await Promise.all([
     getAllEvents(),
     getAllProjects(),
     getAllTodos(),
     getAllTimeEntries(),
     getAllTimeBlocks(),
     getSettings(),
+    getAllGoals(),
+    getAllLocations(),
+    getAllScheduleSkeletonEntries(),
+    getAllScheduleOverrides(),
   ]);
 
   return {
-    version: '1.0.0',
+    version: '2.0.0',
     exportedAt: new Date().toISOString(),
     data: {
       events,
@@ -41,6 +56,10 @@ export async function exportAllData(): Promise<ExportData> {
       timeEntries,
       timeBlocks,
       settings,
+      goals,
+      locations,
+      scheduleSkeleton,
+      scheduleOverrides,
     },
   };
 }
@@ -50,30 +69,50 @@ export async function importAllData(exportData: ExportData): Promise<void> {
     throw new Error('Invalid export data format');
   }
 
-  const { events, projects, todos, timeEntries, timeBlocks, settings } = exportData.data;
+  const {
+    events, projects, todos, timeEntries, timeBlocks, settings,
+    goals, locations, scheduleSkeleton, scheduleOverrides,
+  } = exportData.data;
 
+  // Use put() (upsert) so re-importing the same backup doesn't fail on duplicate keys.
   for (const event of events) {
-    await add(STORES.EVENTS, event);
+    await put(STORES.EVENTS, event);
   }
 
   for (const project of projects) {
-    await add(STORES.PROJECTS, project);
+    await put(STORES.PROJECTS, project);
   }
 
   for (const todo of todos) {
-    await add(STORES.TODOS, todo);
+    await put(STORES.TODOS, todo);
   }
 
   for (const entry of timeEntries) {
-    await add(STORES.TIME_ENTRIES, entry);
+    await put(STORES.TIME_ENTRIES, entry);
   }
 
   for (const block of timeBlocks) {
-    await add(STORES.TIME_BLOCKS, block);
+    await put(STORES.TIME_BLOCKS, block);
   }
 
   if (settings) {
-    await add(STORES.SETTINGS, settings);
+    await put(STORES.SETTINGS, { ...settings, id: 'app-settings' });
+  }
+
+  for (const goal of goals ?? []) {
+    await put(STORES.GOALS, goal);
+  }
+
+  for (const location of locations ?? []) {
+    await put(STORES.LOCATIONS, location);
+  }
+
+  for (const entry of scheduleSkeleton ?? []) {
+    await put(STORES.SCHEDULE_SKELETON, entry);
+  }
+
+  for (const override of scheduleOverrides ?? []) {
+    await put(STORES.SCHEDULE_OVERRIDES, override);
   }
 }
 
@@ -103,7 +142,7 @@ export function downloadCSV(data: Record<string, unknown>[], filename: string) {
       headers.map(header => {
         const value = row[header];
         if (value === null || value === undefined) return '';
-        if (typeof value === 'string' && (value.includes(',') || value.includes('"'))) {
+        if (typeof value === 'string' && (value.includes(',') || value.includes('"') || value.includes('\n') || value.includes('\r'))) {
           return `"${value.replace(/"/g, '""')}"`;
         }
         return value;

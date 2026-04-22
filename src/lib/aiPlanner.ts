@@ -5,6 +5,7 @@ export interface AISuggestion {
   type: 'todo' | 'event' | 'timeBlock';
   title: string;
   priority: 1 | 2 | 3 | 4 | 5;
+  status?: 'today' | 'inbox';
   cognitiveLoad: 'high' | 'medium' | 'low' | null;
   notes?: string;
   dueAt?: string | null;
@@ -165,11 +166,14 @@ export function parseTaggedSuggestions(raw: string): AISuggestion[] {
       );
 
       if (typeTag === 'CREATE_TODO') {
+        const rawStatus = (fields['STATUS'] ?? '').toLowerCase();
+        const status: 'today' | 'inbox' = rawStatus === 'inbox' ? 'inbox' : 'today';
         suggestions.push({
           id: crypto.randomUUID(),
           type: 'todo',
           title,
           priority,
+          status,
           cognitiveLoad,
           notes: fields['NOTES'] || undefined,
           dueAt: toIsoDateTimeOrNull(fields['DUE_AT'] ?? fields['DUE'] ?? null),

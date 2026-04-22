@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import { TimeBlock, STORES } from '../schema';
-import { clearStore, getAll, add, put, remove, getAllByIndex } from '../core';
+import { clearStore, getAll, getByKey, add, put, remove, getAllByIndex } from '../core';
 
 export async function getAllTimeBlocks(): Promise<TimeBlock[]> {
   return getAll<TimeBlock>(STORES.TIME_BLOCKS);
@@ -38,9 +38,8 @@ export async function updateTimeBlock(
   id: string,
   updates: Partial<Omit<TimeBlock, 'id' | 'createdAt' | 'updatedAt'>>
 ): Promise<void> {
-  const blocks = await getAllTimeBlocks();
-  const block = blocks.find((b) => b.id === id);
-  
+  const block = await getByKey<TimeBlock>(STORES.TIME_BLOCKS, id);
+
   if (!block) {
     throw new Error(`TimeBlock with id ${id} not found`);
   }
