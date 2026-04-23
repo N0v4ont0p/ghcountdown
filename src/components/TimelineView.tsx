@@ -30,7 +30,6 @@ const TIMELINE_ZOOM_MIN = 0.75;
 const TIMELINE_ZOOM_MAX = 2;
 const TIMELINE_ZOOM_STEP = 0.25;
 const MIN_VISUAL_BLOCK_MINUTES = 15;
-const TIMELINE_COLUMN_GAP = 6;
 const EVENT_PROXY_DURATION_MINUTES = 20;
 
 const COGNITIVE_LOAD_COLORS = {
@@ -659,17 +658,6 @@ export function TimelineView() {
   const todayTodos = todos.filter(t => t.status === 'today');
   const unscheduledTodayTodos = todayTodos.filter(t => !scheduledTodoIds.has(t.id));
 
-  const conflictingBlockIds = useMemo(() => {
-    const dateStr = format(currentDate, 'yyyy-MM-dd');
-    const pairs = detectBlockConflicts(timeBlocks, dateStr);
-    const ids = new Set<string>();
-    pairs.forEach(({ blockA, blockB }) => {
-      ids.add(blockA.id);
-      ids.add(blockB.id);
-    });
-    return ids;
-  }, [timeBlocks, currentDate]);
-
   const blockLayouts = useMemo(() => computeBlockLayouts(timeBlocks), [timeBlocks]);
   const skeletonLayouts = useMemo(
     () => computeBlockLayouts(
@@ -761,6 +749,9 @@ export function TimelineView() {
     );
   }, [activeTimelineBlock, currentTime]);
 
+  // Column gap for collision layout (px between side-by-side blocks)
+  const COL_GAP = 4;
+
   return (
     <div className="max-w-7xl mx-auto flex flex-col gap-4 h-[calc(100vh-6rem)]">
 
@@ -783,40 +774,50 @@ export function TimelineView() {
 
           {/* Right: toolbar */}
           <div className="flex flex-wrap items-center gap-2">
-            {/* Date navigator — unified pill */}
-            <div className="flex items-center rounded-lg border bg-card shadow-sm overflow-hidden">
+            {/* Date navigator */}
+            <div className="flex items-center rounded-xl border border-border/60 bg-card shadow-sm overflow-hidden">
               <button
                 onClick={() => { const d = new Date(currentDate); d.setDate(d.getDate() - 1); setCurrentDate(d); }}
-                className="px-2.5 py-2 hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+                className="px-2.5 py-2 hover:bg-muted/70 transition-colors text-muted-foreground hover:text-foreground"
                 aria-label="Previous day"
               >
                 <CaretLeft size={14} />
               </button>
               <div
-                className="px-3 py-2 min-w-[120px] text-center text-sm font-semibold border-x border-border/60 select-none"
+                className="px-3 py-2 min-w-[120px] text-center text-sm font-semibold border-x border-border/50 select-none"
                 aria-label={`Currently viewing ${format(currentDate, 'EEEE, MMMM d, yyyy')}`}
               >
                 {format(currentDate, 'EEE, MMM d')}
               </div>
               <button
                 onClick={() => { const d = new Date(currentDate); d.setDate(d.getDate() + 1); setCurrentDate(d); }}
-                className="px-2.5 py-2 hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+                className="px-2.5 py-2 hover:bg-muted/70 transition-colors text-muted-foreground hover:text-foreground"
                 aria-label="Next day"
               >
                 <CaretRight size={14} />
               </button>
             </div>
 
-            {!isToday && (
-              <Button variant="ghost" size="sm" onClick={() => setCurrentDate(new Date())} className="text-muted-foreground">
-                Today
-              </Button>
-            )}
+            <AnimatePresence>
+              {!isToday && (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.92, width: 0 }}
+                  animate={{ opacity: 1, scale: 1, width: 'auto' }}
+                  exit={{ opacity: 0, scale: 0.92, width: 0 }}
+                  transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+                >
+                  <Button variant="ghost" size="sm" onClick={() => setCurrentDate(new Date())} className="text-muted-foreground whitespace-nowrap">
+                    Today
+                  </Button>
+                </motion.div>
+              )}
+            </AnimatePresence>
 
-            <div className="flex items-center rounded-lg border bg-card shadow-sm overflow-hidden">
+            {/* Zoom control */}
+            <div className="flex items-center rounded-xl border border-border/60 bg-card shadow-sm overflow-hidden">
               <button
                 onClick={() => setTimelineZoom((z) => Math.max(TIMELINE_ZOOM_MIN, Number((z - TIMELINE_ZOOM_STEP).toFixed(2))))}
-                className="px-2.5 py-2 hover:bg-muted transition-colors text-muted-foreground hover:text-foreground disabled:opacity-40"
+                className="px-2.5 py-2 hover:bg-muted/70 transition-colors text-muted-foreground hover:text-foreground disabled:opacity-40"
                 aria-label="Zoom out timeline"
                 disabled={timelineZoom <= TIMELINE_ZOOM_MIN}
               >
@@ -824,14 +825,14 @@ export function TimelineView() {
               </button>
               <button
                 onClick={() => setTimelineZoom(1)}
-                className="px-2.5 py-2 text-[11px] font-semibold tabular-nums border-x border-border/60 hover:bg-muted transition-colors"
+                className="px-2.5 py-2 text-[11px] font-semibold tabular-nums border-x border-border/50 hover:bg-muted/70 transition-colors"
                 aria-label="Reset timeline zoom"
               >
                 {Math.round(timelineZoom * 100)}%
               </button>
               <button
                 onClick={() => setTimelineZoom((z) => Math.min(TIMELINE_ZOOM_MAX, Number((z + TIMELINE_ZOOM_STEP).toFixed(2))))}
-                className="px-2.5 py-2 hover:bg-muted transition-colors text-muted-foreground hover:text-foreground disabled:opacity-40"
+                className="px-2.5 py-2 hover:bg-muted/70 transition-colors text-muted-foreground hover:text-foreground disabled:opacity-40"
                 aria-label="Zoom in timeline"
                 disabled={timelineZoom >= TIMELINE_ZOOM_MAX}
               >
@@ -839,9 +840,9 @@ export function TimelineView() {
               </button>
             </div>
 
-            <div className="h-4 w-px bg-border/60 hidden sm:block" />
+            <div className="h-4 w-px bg-border/50 hidden sm:block" />
 
-            <Button variant="outline" size="sm" onClick={() => setIsRoutinePanelOpen(true)} className="gap-1.5">
+            <Button variant="outline" size="sm" onClick={() => setIsRoutinePanelOpen(true)} className="gap-1.5 rounded-xl">
               <CalendarDots size={14} />
               Routine
             </Button>
@@ -852,63 +853,95 @@ export function TimelineView() {
                 size="sm"
                 onClick={handleScheduleMyDay}
                 disabled={isScheduling}
-                className="gap-1.5"
+                className="gap-1.5 rounded-xl"
               >
                 <Lightning size={14} weight="bold" />
                 {isScheduling ? 'Scheduling…' : 'Schedule Day'}
               </Button>
             )}
 
-            <Button size="sm" onClick={() => setIsDialogOpen(true)} className="gap-1.5">
+            <Button size="sm" onClick={() => setIsDialogOpen(true)} className="gap-1.5 rounded-xl">
               <Plus size={14} weight="bold" />
               Add Block
             </Button>
           </div>
         </div>
 
-        {/* Overload warning — inline under header */}
-        {warningMessage && (
-          <div className="flex items-center gap-2 rounded-lg px-3 py-2 bg-amber-500/10 border border-amber-500/25 text-amber-700 dark:text-amber-400">
-            <Warning size={14} weight="fill" className="shrink-0" />
-            <span className="text-xs font-medium">{warningMessage}</span>
-          </div>
-        )}
-        {(activeTimelineBlock || nextTimelineBlock) && (
-          <div className="flex items-center gap-2 rounded-lg px-3 py-2 bg-primary/5 border border-primary/20">
-            <Clock size={13} className="text-primary shrink-0" />
-            {activeTimelineBlock ? (
-              <p className="text-xs font-medium min-w-0 truncate">
-                <span className="text-primary tabular-nums">{formatRemaining(activeRemainingSeconds ?? 0)}</span>
-                {' left · '}
-                {activeTimelineBlock.title}
-                <span className="text-muted-foreground"> ({activeTimelineBlock.startTime}–{activeTimelineBlock.endTime})</span>
-              </p>
-            ) : (
-              <p className="text-xs font-medium min-w-0 truncate">
-                Up next at <span className="tabular-nums">{nextTimelineBlock?.startTime}</span> · {nextTimelineBlock?.title}
-              </p>
-            )}
-          </div>
-        )}
+        {/* Status banners */}
+        <AnimatePresence>
+          {warningMessage && (
+            <motion.div
+              key="overload"
+              initial={{ opacity: 0, y: -6, height: 0 }}
+              animate={{ opacity: 1, y: 0, height: 'auto' }}
+              exit={{ opacity: 0, y: -6, height: 0 }}
+              className="flex items-center gap-2 rounded-xl px-3 py-2 bg-amber-500/10 border border-amber-500/25 text-amber-700 dark:text-amber-400"
+            >
+              <Warning size={13} weight="fill" className="shrink-0" />
+              <span className="text-xs font-medium">{warningMessage}</span>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        <AnimatePresence>
+          {(activeTimelineBlock || nextTimelineBlock) && (
+            <motion.div
+              key="now-banner"
+              initial={{ opacity: 0, y: -6, height: 0 }}
+              animate={{ opacity: 1, y: 0, height: 'auto' }}
+              exit={{ opacity: 0, y: -6, height: 0 }}
+              className="flex items-center gap-2.5 rounded-xl px-3 py-2 bg-primary/5 border border-primary/20"
+            >
+              <Clock size={13} className="text-primary shrink-0" />
+              {activeTimelineBlock ? (
+                <p className="text-xs font-medium min-w-0 truncate">
+                  <span className="text-primary tabular-nums font-bold">{formatRemaining(activeRemainingSeconds ?? 0)}</span>
+                  <span className="text-muted-foreground"> left · </span>
+                  <span className="font-semibold">{activeTimelineBlock.title}</span>
+                  <span className="text-muted-foreground"> ({activeTimelineBlock.startTime}–{activeTimelineBlock.endTime})</span>
+                </p>
+              ) : (
+                <p className="text-xs font-medium min-w-0 truncate">
+                  Up next at <span className="tabular-nums font-bold">{nextTimelineBlock?.startTime}</span>
+                  <span className="text-muted-foreground"> · </span>
+                  {nextTimelineBlock?.title}
+                </p>
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       {/* ── Body ────────────────────────────────────────────────────────── */}
-      <div className="flex-1 min-h-0 grid grid-cols-1 xl:grid-cols-[1fr_272px] gap-4">
+      <div className="flex-1 min-h-0 grid grid-cols-1 xl:grid-cols-[1fr_280px] gap-4">
 
         {/* ── Timeline canvas ──────────────────────────────────────────── */}
-        <div className="relative bg-card border border-border rounded-xl overflow-hidden shadow-sm">
-          {/* Empty state */}
-          {!hasTimelineContent && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 z-10 pointer-events-none">
-              <div className="w-14 h-14 rounded-2xl bg-muted/80 flex items-center justify-center">
-                <CalendarBlank weight="light" size={28} className="text-muted-foreground" />
-              </div>
-              <div className="text-center">
-                <p className="text-sm font-semibold">Nothing planned</p>
-                <p className="text-xs text-muted-foreground mt-0.5">Drag a task here or click Add Block</p>
-              </div>
-            </div>
-          )}
+        <div className="relative bg-card border border-border/60 rounded-2xl overflow-hidden shadow-sm">
+
+          {/* Empty state overlay */}
+          <AnimatePresence>
+            {!hasTimelineContent && (
+              <motion.div
+                key="empty"
+                className="absolute inset-0 flex flex-col items-center justify-center gap-3 z-10 pointer-events-none"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+              >
+                <motion.div
+                  className="w-16 h-16 rounded-2xl bg-muted/80 flex items-center justify-center"
+                  animate={{ y: [0, -4, 0] }}
+                  transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+                >
+                  <CalendarBlank weight="light" size={30} className="text-muted-foreground" />
+                </motion.div>
+                <div className="text-center">
+                  <p className="text-sm font-semibold">Nothing planned</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">Drag a task here or click Add Block</p>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           {/* Scrollable timeline */}
           <div
@@ -916,15 +949,16 @@ export function TimelineView() {
             className="h-full overflow-y-auto overflow-x-hidden"
             style={{ scrollBehavior: 'smooth' }}
           >
+            {/* Inner canvas — height = 24 hours × hourHeight */}
             <div className="relative select-none" style={{ height: HOURS.length * timelineHourHeight }}>
 
-              {/* ── Hour grid ── */}
+              {/* ── Hour rows ── */}
               {HOURS.map((hour) => (
                 <div
                   key={hour}
                   className={cn(
-                    "absolute left-0 right-0 border-t border-border/40",
-                    hour % 2 !== 0 ? "bg-muted/25" : "bg-transparent",
+                    "absolute left-0 right-0 border-t border-border/30",
+                    hour % 2 !== 0 ? "bg-muted/20" : "bg-transparent",
                     dragOverHour === hour && "bg-primary/5"
                   )}
                   style={{ top: hour * timelineHourHeight, height: timelineHourHeight }}
@@ -932,53 +966,60 @@ export function TimelineView() {
                   onDragLeave={() => setDragOverHour(null)}
                   onDrop={(e) => handleTodoDrop(hour, e)}
                 >
-                  {/* Time label */}
-                  <div className="absolute left-0 top-0 w-14 flex items-start justify-end pr-2 pt-1.5 pointer-events-none">
+                  {/* Hour label */}
+                  <div className="absolute left-0 top-0 w-16 flex items-start justify-end pr-3 pt-1.5 pointer-events-none">
                     <span className={cn(
                       "text-[10px] font-mono tabular-nums leading-none",
                       hour === 0 || hour % 6 === 0
-                        ? "text-muted-foreground/90 font-semibold"
-                        : "text-muted-foreground/50"
+                        ? "text-foreground/60 font-bold"
+                        : "text-muted-foreground/40"
                     )}>
                       {format(new Date().setHours(hour, 0, 0, 0), 'h a')}
                     </span>
                   </div>
-                  {/* Vertical divider */}
+
+                  {/* Half-hour dashed line */}
+                  <div
+                    className="absolute left-16 right-0 border-t border-dashed border-border/20"
+                    style={{ top: timelineHourHeight / 2 }}
+                  />
+
+                  {/* Vertical divider (column start) */}
                   <div className={cn(
-                    "absolute left-14 top-0 bottom-0 right-0 border-l border-border/30",
-                    dragOverHour === hour && "border-primary/40 bg-primary/5 border-l-2"
+                    "absolute left-16 top-0 bottom-0 right-0 border-l border-border/25",
+                    dragOverHour === hour && "border-primary/50 bg-primary/4 border-l-2"
                   )} />
                 </div>
               ))}
 
-              {/* ── Current time indicator ── */}
+              {/* ── Current-time indicator (FIXED: always start at correct position) ── */}
               {isToday && (
                 <motion.div
                   className="absolute left-0 right-0 z-30 pointer-events-none"
-                  style={{ top: getCurrentTimePosition() }}
+                  initial={{ top: getCurrentTimePosition() }}
                   animate={{ top: getCurrentTimePosition() }}
-                  transition={{ type: 'tween', duration: 0.5 }}
+                  transition={{ type: 'tween', duration: 0.8, ease: 'linear' }}
                 >
-                  {/* Time readout */}
-                  <div className="absolute left-0 w-14 flex justify-end pr-1.5">
-                    <span className="text-[9px] font-mono tabular-nums text-red-500 bg-card px-0.5 rounded -translate-y-2/3 leading-none">
+                  {/* Time label */}
+                  <div className="absolute left-0 w-16 flex justify-end pr-2.5">
+                    <span className="text-[9px] font-mono tabular-nums text-rose-500 dark:text-rose-400 bg-card px-1 py-0.5 rounded -translate-y-1/2 leading-none font-semibold shadow-sm border border-rose-500/20">
                       {format(currentTime, 'HH:mm')}
                     </span>
                   </div>
-                  {/* Line + dot */}
-                  <div className="absolute left-14 right-0 flex items-center">
+                  {/* Dot + line */}
+                  <div className="absolute left-16 right-0 flex items-center">
                     <motion.div
-                      className="w-2.5 h-2.5 rounded-full bg-red-500 shrink-0 -ml-[5px] shadow-[0_0_0_3px_oklch(0.58_0.20_20_/_0.25)]"
-                      animate={{ scale: [1, 1.2, 1] }}
-                      transition={{ duration: 2, repeat: Infinity }}
+                      className="w-3 h-3 rounded-full bg-rose-500 dark:bg-rose-400 shrink-0 -ml-1.5 shadow-[0_0_0_3px_oklch(0.58_0.22_15_/_0.22)]"
+                      animate={{ scale: [1, 1.25, 1] }}
+                      transition={{ duration: 2.2, repeat: Infinity, ease: 'easeInOut' }}
                     />
-                    <div className="flex-1 h-px bg-red-500/75" />
+                    <div className="flex-1 h-px bg-gradient-to-r from-rose-500 dark:from-rose-400 to-rose-400/0 dark:to-rose-300/0" />
                   </div>
                 </motion.div>
               )}
 
               {/* ── Block rendering area ── */}
-              <div className="absolute left-14 right-2 top-0 bottom-0">
+              <div className="absolute left-16 right-2 top-0 bottom-0">
 
                 {/* Skeleton / routine entries */}
                 {skeletonEntries.map((entry) => {
@@ -999,30 +1040,28 @@ export function TimelineView() {
                     updatedAt: '',
                   });
                   const layout = skeletonLayouts[skeletonId] ?? { colIndex: 0, colCount: 1 };
-                  const leftPct = (layout.colIndex / layout.colCount) * 100;
-                  const widthPct = 100 / layout.colCount;
-                  const columnOffsetPx = (layout.colIndex * TIMELINE_COLUMN_GAP) / layout.colCount;
-                  const columnWidthShrinkPx = (TIMELINE_COLUMN_GAP * (layout.colCount - 1)) / layout.colCount;
+                  const colW = `calc(${100 / layout.colCount}% - ${(COL_GAP * (layout.colCount - 1)) / layout.colCount}px)`;
+                  const colL = `calc(${(layout.colIndex / layout.colCount) * 100}% + ${(layout.colIndex * COL_GAP) / layout.colCount}px)`;
                   return (
                     <div
                       key={skeletonId}
-                      className="absolute pointer-events-none overflow-hidden rounded-r-md"
+                      className="absolute pointer-events-none overflow-hidden rounded-lg"
                       style={{
                         top: style.top + 1,
                         height: Math.max(style.height - 2, 36),
-                        left: `calc(${leftPct}% + ${columnOffsetPx}px)`,
-                        width: `calc(${widthPct}% - ${columnWidthShrinkPx}px)`,
+                        left: colL,
+                        width: colW,
                         borderLeft: `3px ${entry.kind === 'flex' ? 'dashed' : 'solid'} ${entry.color}`,
-                        backgroundColor: withColorAlpha(entry.color, 0.07),
+                        backgroundColor: withColorAlpha(entry.color, 0.06),
                       }}
                     >
                       <div className="px-2 py-1.5">
-                        <p className="text-[9px] text-muted-foreground/90 tabular-nums leading-tight mb-0.5">
+                        <p className="text-[9px] text-muted-foreground/80 tabular-nums leading-tight mb-0.5">
                           {entry.startTime}–{entry.endTime}
                         </p>
-                        <p className="text-[10px] font-medium truncate leading-tight" style={{ color: entry.color }}>
+                        <p className="text-[10px] font-medium truncate leading-tight" style={{ color: withColorAlpha(entry.color, 0.75) }}>
                           {entry.location ? `${entry.location.icon} ` : ''}{entry.title}
-                          {entry.kind === 'flex' && <span className="opacity-50"> · flex</span>}
+                          {entry.kind === 'flex' && <span className="opacity-40"> · flex</span>}
                         </p>
                       </div>
                     </div>
@@ -1050,42 +1089,44 @@ export function TimelineView() {
                     return (
                       <motion.div
                         key={`ghost-${ghost.id}`}
-                        className="absolute overflow-hidden rounded-r-md z-10"
+                        className="absolute overflow-hidden rounded-xl z-10"
                         style={{
                           top: style.top + 1,
-                          height: Math.max(style.height - 2, 34),
+                          height: Math.max(style.height - 2, 40),
                           left: 2,
                           right: 2,
-                          borderLeft: `3px dashed ${withColorAlpha(ghost.color, 0.7)}`,
-                          backgroundColor: withColorAlpha(ghost.color, 0.06),
+                          borderLeft: `3px dashed ${withColorAlpha(ghost.color, 0.6)}`,
+                          backgroundColor: withColorAlpha(ghost.color, 0.05),
+                          backdropFilter: 'blur(4px)',
                         }}
-                        initial={{ opacity: 0, x: -4 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        exit={{ opacity: 0, x: -4 }}
+                        initial={{ opacity: 0, x: -8, scale: 0.97 }}
+                        animate={{ opacity: 1, x: 0, scale: 1 }}
+                        exit={{ opacity: 0, x: -8, scale: 0.97 }}
+                        transition={{ type: 'spring', stiffness: 340, damping: 28 }}
                       >
-                        <div className="flex items-center justify-between gap-1 h-full px-2 py-1">
+                        <div className="flex items-center justify-between gap-1 h-full px-2.5 py-1.5">
                           <div className="min-w-0 flex-1">
-                            <p className="text-[11px] font-medium truncate leading-tight tabular-nums text-muted-foreground">
+                            <p className="text-[10px] font-medium truncate leading-tight tabular-nums text-muted-foreground">
                               {ghost.startTime}–{ghost.endTime}
                             </p>
-                            <p className="text-[11px] font-medium truncate leading-tight" style={{ color: ghost.color }}>
+                            <p className="text-[11px] font-semibold truncate leading-tight" style={{ color: ghost.color }}>
                               ✦ {ghost.title}
                             </p>
-                            <p className="text-[10px] text-muted-foreground tabular-nums">
+                            <p className="text-[9px] text-muted-foreground tabular-nums">
                               {Math.round(ghost.confidence * 100)}% likely
                             </p>
                           </div>
-                          <div className="flex gap-0.5 shrink-0">
+                          <div className="flex gap-1 shrink-0">
                             <button
                               onClick={() => void handleAcceptGhost(ghost)}
-                              className="w-6 h-6 rounded flex items-center justify-center hover:bg-green-500/20 text-green-600 transition-colors"
+                              className="w-6 h-6 rounded-lg flex items-center justify-center hover:bg-green-500/20 text-green-600 transition-colors"
                               aria-label="Accept suggestion"
                             >
                               <CheckSquare size={12} />
                             </button>
                             <button
                               onClick={() => handleDismissGhost(ghost)}
-                              className="w-6 h-6 rounded flex items-center justify-center hover:bg-muted text-muted-foreground transition-colors text-[10px] font-medium"
+                              className="w-6 h-6 rounded-lg flex items-center justify-center hover:bg-muted text-muted-foreground transition-colors text-[10px] font-bold"
                               aria-label="Dismiss suggestion"
                             >
                               ✕
@@ -1105,119 +1146,128 @@ export function TimelineView() {
                     const todo = block.todoId ? todos.find(t => t.id === block.todoId) : null;
                     const project = block.projectId ? projects.find(p => p.id === block.projectId) : null;
                     const isFlex = (block.slotType || 'fixed') !== 'fixed';
-                    const isConflicting = conflictingBlockIds.has(block.id);
                     const layout = blockLayouts[block.id] ?? { colIndex: 0, colCount: 1 };
-                    const leftPct = (layout.colIndex / layout.colCount) * 100;
-                    const widthPct = 100 / layout.colCount;
-                    const columnOffsetPx = (layout.colIndex * TIMELINE_COLUMN_GAP) / layout.colCount;
-                    const columnWidthShrinkPx = (TIMELINE_COLUMN_GAP * (layout.colCount - 1)) / layout.colCount;
+                    const colW = `calc(${100 / layout.colCount}% - ${(COL_GAP * (layout.colCount - 1)) / layout.colCount}px)`;
+                    const colL = `calc(${(layout.colIndex / layout.colCount) * 100}% + ${(layout.colIndex * COL_GAP) / layout.colCount}px)`;
                     const rawHeight = Math.max(style.height - 2, 20);
-                    const visualHeight = Math.max(rawHeight, 34);
-                    const isCompact = visualHeight < 56;
-                    const isTiny = visualHeight < 44;
+                    const visualHeight = Math.max(rawHeight, 36);
+                    const isCompact = visualHeight < 60;
+                    const isTiny = visualHeight < 46;
 
                     return (
                       <motion.div
                         key={block.id}
                         className={cn(
-                          "absolute overflow-hidden cursor-pointer group z-20 rounded-r-lg",
-                          "transition-shadow duration-150 hover:shadow-md",
-                          isRunning && "shadow-[0_0_0_2px_var(--primary)] shadow-primary/20",
-                          isConflicting && "shadow-[0_0_0_2px_oklch(0.58_0.20_20)]",
+                          "absolute overflow-hidden cursor-pointer group z-20 rounded-xl",
+                          isRunning && "ring-2 ring-emerald-500/60 ring-offset-1 ring-offset-card",
                         )}
                         style={{
                           top: style.top + 1,
                           height: visualHeight,
-                          left: `calc(${leftPct}% + ${columnOffsetPx}px)`,
-                          width: `calc(${widthPct}% - ${columnWidthShrinkPx}px)`,
-                          backgroundColor: withColorAlpha(block.color, 0.11),
+                          left: colL,
+                          width: colW,
+                          backgroundColor: withColorAlpha(block.color, 0.10 + layout.colIndex * 0.03),
                           borderLeft: isFlex
                             ? `3px dashed ${block.color}`
                             : `3px solid ${block.color}`,
+                          boxShadow: `inset 0 0 0 1px ${withColorAlpha(block.color, 0.12)}`,
                         }}
-                        initial={{ opacity: 0, scale: 0.97, y: 3 }}
+                        initial={{ opacity: 0, scale: 0.96, y: 4 }}
                         animate={{ opacity: 1, scale: 1, y: 0 }}
-                        exit={{ opacity: 0, scale: 0.95, y: -2 }}
-                        whileHover={{ y: -1 }}
-                        transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+                        exit={{ opacity: 0, scale: 0.93, y: -3 }}
+                        whileHover={{
+                          y: -2,
+                          boxShadow: `0 4px 16px ${withColorAlpha(block.color, 0.22)}, inset 0 0 0 1px ${withColorAlpha(block.color, 0.20)}`,
+                        }}
+                        transition={{ type: 'spring', stiffness: 420, damping: 32 }}
                         onClick={() => handleEdit(block)}
                         title={`${block.startTime}–${block.endTime} · ${block.title}`}
                       >
-                        {/* Running timer glow bar */}
+                        {/* Running timer pulse bar */}
                         {isRunning && (
                           <motion.div
-                            className="absolute top-0 left-0 right-0 h-[2px] bg-green-500 origin-left"
-                            animate={{ opacity: [1, 0.35, 1] }}
-                            transition={{ duration: 1.8, repeat: Infinity }}
+                            className="absolute top-0 left-0 right-0 h-0.5 bg-emerald-500 origin-left"
+                            animate={{ opacity: [1, 0.3, 1] }}
+                            transition={{ duration: 1.6, repeat: Infinity }}
                           />
                         )}
 
-                        <div className="flex items-start justify-between gap-1 px-2 py-1.5 h-full overflow-hidden">
-                          {/* Content */}
+                        <div className="flex items-start gap-1.5 px-2.5 py-1.5 h-full overflow-hidden">
+                          {/* Left content */}
                           <div className="flex-1 min-w-0 overflow-hidden">
-                            {/* Title row */}
-                            <div className="flex items-center gap-1 mb-0.5">
+                            {/* Time + title row */}
+                            <div className="flex items-center gap-1 flex-wrap">
                               {isRunning && (
-                                <span className="w-1.5 h-1.5 rounded-full bg-green-500 shrink-0 animate-pulse" />
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0 animate-pulse" />
                               )}
-                              {isConflicting && (
-                                <Warning size={10} className="text-red-500 shrink-0" weight="fill" />
-                              )}
-                              <span className="text-[10px] tabular-nums font-medium text-muted-foreground shrink-0">
-                                {isTiny ? `${block.startTime}–${block.endTime}` : block.startTime}
+                              <span className="text-[10px] tabular-nums text-muted-foreground/70 shrink-0 leading-none">
+                                {block.startTime}–{block.endTime}
                               </span>
-                              {!isTiny && <span className="text-[10px] text-muted-foreground">–{block.endTime}</span>}
-                              <h4 className="text-xs font-semibold truncate leading-tight min-w-0" style={{ color: block.color }}>
-                                {isFlex ? '⚡ Flex' : block.title}
-                              </h4>
-                              {block.autoTrack && !isRunning && (
-                                <span
-                                  className="text-[8px] font-medium px-1 py-px rounded border shrink-0 leading-tight"
-                                  style={{ borderColor: withColorAlpha(block.color, 0.35), color: withColorAlpha(block.color, 0.8) }}
-                                >
-                                  auto
-                                </span>
-                              )}
                             </div>
+                            {/* Title */}
+                            {!isTiny && (
+                              <h4
+                                className="text-[11px] font-semibold truncate leading-tight mt-0.5"
+                                style={{ color: block.color }}
+                              >
+                                {isFlex ? '⚡ Flex slot' : block.title}
+                              </h4>
+                            )}
+                            {isTiny && (
+                              <h4
+                                className="text-[10px] font-semibold truncate leading-none mt-0.5"
+                                style={{ color: block.color }}
+                              >
+                                {isFlex ? '⚡' : block.title}
+                              </h4>
+                            )}
 
-                            {/* Todo linked */}
+                            {/* Linked todo */}
                             {!isTiny && todo && (
-                              <p className="text-[10px] truncate text-foreground/60 leading-tight">{todo.title}</p>
+                              <p className="text-[10px] truncate text-foreground/55 leading-tight mt-0.5">{todo.title}</p>
                             )}
                             {!isTiny && isFlex && !todo && (
-                              <p className="text-[10px] truncate text-foreground/50 leading-tight italic">awaiting task</p>
+                              <p className="text-[10px] truncate text-foreground/40 leading-tight mt-0.5 italic">awaiting task…</p>
                             )}
 
-                            {/* Time range */}
+                            {/* Project pill + auto badge */}
                             {!isCompact && (
-                              <p className="text-[10px] text-muted-foreground tabular-nums mt-0.5 leading-tight">
-                                {block.startTime}–{block.endTime}
-                              </p>
-                            )}
-
-                            {/* Project pill */}
-                            {!isCompact && project && (
-                              <span
-                                className="inline-block mt-1 text-[9px] font-medium px-1.5 py-px rounded-full leading-tight"
-                                style={{
-                                  backgroundColor: withColorAlpha(block.color, 0.16),
-                                  color: block.color,
-                                }}
-                              >
-                                {project.name}
-                              </span>
+                              <div className="flex items-center gap-1 mt-1 flex-wrap">
+                                {project && (
+                                  <span
+                                    className="text-[9px] font-medium px-1.5 py-0.5 rounded-full leading-none"
+                                    style={{
+                                      backgroundColor: withColorAlpha(block.color, 0.16),
+                                      color: block.color,
+                                    }}
+                                  >
+                                    {project.name}
+                                  </span>
+                                )}
+                                {block.autoTrack && !isRunning && (
+                                  <span
+                                    className="text-[8px] font-semibold px-1 py-0.5 rounded border leading-none"
+                                    style={{
+                                      borderColor: withColorAlpha(block.color, 0.30),
+                                      color: withColorAlpha(block.color, 0.75),
+                                    }}
+                                  >
+                                    auto
+                                  </span>
+                                )}
+                              </div>
                             )}
                           </div>
 
-                          {/* Hover actions */}
+                          {/* Hover action buttons */}
                           <div
-                            className="flex flex-col gap-px opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                            className="flex flex-col gap-0.5 opacity-0 group-hover:opacity-100 transition-all duration-150 shrink-0 translate-x-1 group-hover:translate-x-0"
                             onClick={(e) => e.stopPropagation()}
                           >
                             {block.todoId && (
                               <button
                                 onClick={() => handleCompleteBlock(block)}
-                                className="w-5 h-5 rounded flex items-center justify-center hover:bg-green-500/20 text-green-600 transition-colors"
+                                className="w-5 h-5 rounded-md flex items-center justify-center hover:bg-emerald-500/20 text-emerald-600 transition-colors"
                                 title="Mark as done"
                               >
                                 <CheckSquare size={10} />
@@ -1225,14 +1275,14 @@ export function TimelineView() {
                             )}
                             <button
                               onClick={() => handleManualTimer(block)}
-                              className="w-5 h-5 rounded flex items-center justify-center hover:bg-muted text-muted-foreground transition-colors"
+                              className="w-5 h-5 rounded-md flex items-center justify-center hover:bg-muted text-muted-foreground transition-colors"
                               title={isRunning ? 'Stop timer' : 'Start timer'}
                             >
                               {isRunning ? <Stop size={10} /> : <Play size={10} />}
                             </button>
                             <button
                               onClick={() => handleDelete(block.id)}
-                              className="w-5 h-5 rounded flex items-center justify-center hover:bg-destructive/15 text-destructive transition-colors"
+                              className="w-5 h-5 rounded-md flex items-center justify-center hover:bg-destructive/15 text-destructive transition-colors"
                               title="Delete block"
                             >
                               <Trash size={10} />
@@ -1251,28 +1301,29 @@ export function TimelineView() {
                   const minute = eventDate.getMinutes();
                   const top = (hour * 60 + minute) / 60 * timelineHourHeight;
                   const layout = todayEventLayouts[`event-${event.id}`] ?? { colIndex: 0, colCount: 1 };
-                  const leftPct = (layout.colIndex / layout.colCount) * 100;
-                  const widthPct = 100 / layout.colCount;
-                  const columnOffsetPx = (layout.colIndex * TIMELINE_COLUMN_GAP) / layout.colCount;
-                  const columnWidthShrinkPx = (TIMELINE_COLUMN_GAP * (layout.colCount - 1)) / layout.colCount;
+                  const colW = `calc(${100 / layout.colCount}% - ${(COL_GAP * (layout.colCount - 1)) / layout.colCount}px)`;
+                  const colL = `calc(${(layout.colIndex / layout.colCount) * 100}% + ${(layout.colIndex * COL_GAP) / layout.colCount}px)`;
+                  const eventColor = `oklch(0.60 0.18 ${event.priority * 50})`;
                   return (
                     <motion.div
                       key={event.id}
-                      className="absolute min-h-[28px] rounded overflow-hidden border-l-2 z-10"
+                      className="absolute min-h-[28px] rounded-lg overflow-hidden border-l-2 z-10"
                       style={{
                         top: top + 1,
-                        left: `calc(${leftPct}% + ${columnOffsetPx}px)`,
-                        width: `calc(${widthPct}% - ${columnWidthShrinkPx}px)`,
-                        borderLeftColor: `oklch(0.60 0.18 ${event.priority * 50})`,
-                        backgroundColor: `oklch(0.60 0.18 ${event.priority * 50} / 0.08)`,
+                        left: colL,
+                        width: colW,
+                        borderLeftColor: eventColor,
+                        backgroundColor: `oklch(0.60 0.18 ${event.priority * 50} / 0.07)`,
+                        boxShadow: `inset 0 0 0 1px oklch(0.60 0.18 ${event.priority * 50} / 0.10)`,
                       }}
-                      initial={{ opacity: 0, x: -6 }}
+                      initial={{ opacity: 0, x: -8 }}
                       animate={{ opacity: 1, x: 0 }}
+                      transition={{ type: 'spring', stiffness: 360, damping: 28 }}
                     >
-                      <div className="flex items-center gap-1.5 px-2 h-full">
-                        <CalendarBlank size={9} weight="fill" className="text-muted-foreground shrink-0" />
+                      <div className="flex items-center gap-1.5 px-2 h-full py-1">
+                        <CalendarBlank size={9} weight="fill" className="text-muted-foreground/60 shrink-0" />
                         <p className="text-[10px] font-medium truncate flex-1">{event.title}</p>
-                        <p className="text-[10px] text-muted-foreground shrink-0 tabular-nums">{format(eventDate, 'h:mm a')}</p>
+                        <p className="text-[9px] text-muted-foreground/70 shrink-0 tabular-nums">{format(eventDate, 'h:mm a')}</p>
                       </div>
                     </motion.div>
                   );
@@ -1285,23 +1336,23 @@ export function TimelineView() {
         {/* ── Sidebar ──────────────────────────────────────────────────── */}
         <div className="flex flex-col gap-3 overflow-y-auto min-h-0">
 
-          {/* Day overview */}
-          <div className="bg-card border border-border rounded-xl shadow-sm p-4">
+          {/* Day overview card */}
+          <div className="bg-card border border-border/60 rounded-2xl shadow-sm p-4">
             <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Day Overview</span>
+              <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/80">Day Overview</span>
               <span className="text-xs text-muted-foreground">{isToday ? 'Today' : format(currentDate, 'MMM d')}</span>
             </div>
 
-            {/* Progress bar */}
-            <div className="space-y-1.5 mb-3">
+            {/* Schedule progress */}
+            <div className="space-y-1.5 mb-4">
               <div className="flex items-center justify-between">
                 <span className="text-xs text-muted-foreground">Scheduled</span>
-                <span className="text-xs font-semibold tabular-nums">
+                <span className="text-xs font-bold tabular-nums">
                   {todayTodos.length - unscheduledTodayTodos.length}
                   <span className="font-normal text-muted-foreground">/{todayTodos.length}</span>
                 </span>
               </div>
-              <div className="w-full bg-muted rounded-full h-1.5 overflow-hidden">
+              <div className="w-full bg-muted/80 rounded-full h-1.5 overflow-hidden">
                 <motion.div
                   className="h-full rounded-full bg-primary"
                   initial={{ width: 0 }}
@@ -1315,86 +1366,98 @@ export function TimelineView() {
               </div>
             </div>
 
-            {/* Stats grid */}
-            <div className="grid grid-cols-3 gap-2 pt-3 border-t border-border/50">
-              <div className="text-center">
-                <p className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium">Blocks</p>
-                <p className="text-xl font-bold tabular-nums mt-0.5">{timeBlocks.length}</p>
-              </div>
-              <div className="text-center">
-                <p className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium">Auto</p>
-                <p className="text-xl font-bold tabular-nums mt-0.5">{timeBlocks.filter(b => b.autoTrack).length}</p>
-              </div>
-              <div className="text-center">
-                <p className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium">Load</p>
-                <p className={cn("text-xl font-bold tabular-nums mt-0.5", isOverloaded && "text-amber-500")}>
-                  {(totalWorkloadMinutes / 60).toFixed(1)}
-                  <span className="text-[10px] font-normal text-muted-foreground">h</span>
-                </p>
-              </div>
+            {/* Stats */}
+            <div className="grid grid-cols-3 gap-2 pt-3 border-t border-border/40">
+              {[
+                { label: 'Blocks', value: String(timeBlocks.length) },
+                { label: 'Auto', value: String(timeBlocks.filter(b => b.autoTrack).length) },
+                {
+                  label: 'Load',
+                  value: `${(totalWorkloadMinutes / 60).toFixed(1)}h`,
+                  accent: isOverloaded,
+                },
+              ].map(({ label, value, accent }) => (
+                <div key={label} className="text-center">
+                  <p className="text-[10px] text-muted-foreground/70 uppercase tracking-wider font-medium">{label}</p>
+                  <p className={cn("text-xl font-bold tabular-nums mt-0.5 leading-none", accent && "text-amber-500")}>
+                    {value}
+                  </p>
+                </div>
+              ))}
             </div>
           </div>
 
-          {/* Running timer */}
+          {/* Running timer card */}
           <AnimatePresence>
             {runningTimer && (
               <motion.div
-                initial={{ opacity: 0, y: -6, scale: 0.97 }}
+                initial={{ opacity: 0, y: -8, scale: 0.96 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: -6, scale: 0.97 }}
-                transition={{ type: 'spring', stiffness: 300, damping: 25 }}
+                exit={{ opacity: 0, y: -8, scale: 0.96 }}
+                transition={{ type: 'spring', stiffness: 360, damping: 26 }}
+                className="bg-card border border-emerald-500/30 bg-emerald-500/5 rounded-2xl shadow-sm px-3.5 py-3 flex items-center gap-3"
               >
-                <div className="bg-card border border-green-500/30 bg-green-500/5 rounded-xl shadow-sm px-3 py-2.5 flex items-center gap-2.5">
-                  <motion.div
-                    className="w-2 h-2 rounded-full bg-green-500 shrink-0"
-                    animate={{ scale: [1, 1.35, 1], opacity: [1, 0.6, 1] }}
-                    transition={{ duration: 1.6, repeat: Infinity }}
-                  />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-semibold text-green-700 dark:text-green-400 leading-tight">Timer running</p>
-                    <p className="text-[10px] text-muted-foreground truncate leading-tight mt-0.5">{runningTimer.note}</p>
-                  </div>
-                  <button
-                    onClick={async () => {
-                      await updateTimeEntry(runningTimer.id, { endAt: new Date().toISOString() });
-                      toast.success('Timer stopped');
-                      loadData();
-                    }}
-                    className="shrink-0 h-6 px-2.5 rounded text-[10px] font-semibold bg-green-500/15 hover:bg-green-500/30 text-green-700 dark:text-green-400 transition-colors"
-                  >
-                    Stop
-                  </button>
+                <motion.div
+                  className="w-2 h-2 rounded-full bg-emerald-500 shrink-0"
+                  animate={{ scale: [1, 1.4, 1], opacity: [1, 0.5, 1] }}
+                  transition={{ duration: 1.5, repeat: Infinity }}
+                />
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-semibold text-emerald-700 dark:text-emerald-400 leading-tight">Timer running</p>
+                  <p className="text-[10px] text-muted-foreground truncate leading-tight mt-0.5">{runningTimer.note}</p>
                 </div>
+                <button
+                  onClick={async () => {
+                    await updateTimeEntry(runningTimer.id, { endAt: new Date().toISOString() });
+                    toast.success('Timer stopped');
+                    loadData();
+                  }}
+                  className="shrink-0 h-6 px-2.5 rounded-lg text-[10px] font-semibold bg-emerald-500/15 hover:bg-emerald-500/30 text-emerald-700 dark:text-emerald-400 transition-colors"
+                >
+                  Stop
+                </button>
               </motion.div>
             )}
           </AnimatePresence>
 
           {/* Unscheduled todos */}
-          <div className="bg-card border border-border rounded-xl shadow-sm p-3 flex-1 min-h-0 flex flex-col">
-            <div className="flex items-center justify-between mb-2 shrink-0">
-              <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+          <div className="bg-card border border-border/60 rounded-2xl shadow-sm p-3 flex-1 min-h-0 flex flex-col">
+            <div className="flex items-center justify-between mb-2.5 shrink-0">
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/80">
                 Unscheduled
               </span>
-              {unscheduledTodayTodos.length > 0 && (
-                <span className="text-[10px] font-medium text-muted-foreground tabular-nums bg-muted px-1.5 py-0.5 rounded-full">
-                  {unscheduledTodayTodos.length}
-                </span>
-              )}
+              <AnimatePresence>
+                {unscheduledTodayTodos.length > 0 && (
+                  <motion.span
+                    key="count"
+                    initial={{ scale: 0.8, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    exit={{ scale: 0.8, opacity: 0 }}
+                    className="text-[10px] font-semibold text-muted-foreground tabular-nums bg-muted px-2 py-0.5 rounded-full"
+                  >
+                    {unscheduledTodayTodos.length}
+                  </motion.span>
+                )}
+              </AnimatePresence>
             </div>
 
             {todayTodos.length === 0 ? (
-              <div className="flex-1 flex flex-col items-center justify-center py-4 text-center">
-                <Clock size={22} weight="light" className="text-muted-foreground mb-1.5" />
-                <p className="text-xs text-muted-foreground">No todos for today</p>
+              <div className="flex-1 flex flex-col items-center justify-center py-6 text-center">
+                <Clock size={24} weight="light" className="text-muted-foreground/60 mb-2" />
+                <p className="text-xs text-muted-foreground/70">No todos for today</p>
               </div>
             ) : unscheduledTodayTodos.length === 0 ? (
-              <div className="flex-1 flex flex-col items-center justify-center py-4 text-center">
-                <CheckSquare size={22} weight="fill" className="text-green-500 mb-1.5" />
-                <p className="text-xs font-medium text-green-600 dark:text-green-400">All tasks scheduled</p>
-              </div>
+              <motion.div
+                className="flex-1 flex flex-col items-center justify-center py-6 text-center"
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+              >
+                <CheckSquare size={24} weight="fill" className="text-emerald-500 mb-2" />
+                <p className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">All tasks scheduled!</p>
+              </motion.div>
             ) : (
               <div className="flex-1 overflow-y-auto min-h-0 flex flex-col gap-1.5">
-                <p className="text-[10px] text-muted-foreground shrink-0">Drag onto the timeline →</p>
+                <p className="text-[10px] text-muted-foreground/60 shrink-0 mb-0.5">Drag onto the timeline →</p>
                 {unscheduledTodayTodos.map((todo, index) => (
                   <motion.div
                     key={todo.id}
@@ -1410,13 +1473,14 @@ export function TimelineView() {
                     }}
                     onKeyDown={(e) => handleChipKeyDown(e, todo)}
                     className={cn(
-                      "flex items-center gap-2 rounded-lg px-2.5 py-2 cursor-grab active:cursor-grabbing select-none",
-                      "border border-border/50 hover:border-border bg-background hover:bg-muted/40",
-                      "focus:outline-none focus:ring-2 focus:ring-ring focus:bg-muted/50 transition-colors",
+                      "flex items-center gap-2 rounded-xl px-2.5 py-2 cursor-grab active:cursor-grabbing select-none",
+                      "border border-border/40 hover:border-border/70 bg-background hover:bg-muted/30",
+                      "focus:outline-none focus:ring-2 focus:ring-ring focus:bg-muted/50 transition-all duration-150",
                     )}
-                    initial={{ opacity: 0, x: 10 }}
+                    initial={{ opacity: 0, x: 12 }}
                     animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: index * 0.04 }}
+                    whileHover={{ x: 2 }}
+                    transition={{ delay: index * 0.035, type: 'spring', stiffness: 380, damping: 28 }}
                   >
                     {/* Priority dot */}
                     <div
@@ -1429,7 +1493,7 @@ export function TimelineView() {
 
                     {/* Estimated minutes */}
                     {todo.estimatedMinutes && (
-                      <span className="text-[9px] text-muted-foreground shrink-0 tabular-nums">
+                      <span className="text-[9px] text-muted-foreground/60 shrink-0 tabular-nums">
                         {todo.estimatedMinutes}m
                       </span>
                     )}
