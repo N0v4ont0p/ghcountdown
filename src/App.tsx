@@ -32,7 +32,7 @@ import { format } from 'date-fns';
 import { useTheme } from '@/hooks/use-theme';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
-import { exportAllData, downloadJSON, exportTimeEntriesCSV, exportEventsCSV, exportTodosCSV, importAllData, ExportData } from '@/db/export';
+import { exportAllData, downloadJSON, exportTimeEntriesCSV, exportEventsCSV, exportTodosCSV, importAllData, validateBackupStructure } from '@/db/export';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -409,15 +409,31 @@ function App() {
       const file = (e.target as HTMLInputElement).files?.[0];
       if (!file) return;
 
+      // Step 1: parse JSON — catches malformed files before touching the DB.
+      let parsed: unknown;
       try {
         const text = await file.text();
-        const data: ExportData = JSON.parse(text);
-        await importAllData(data);
+        parsed = JSON.parse(text);
+      } catch {
+        notifications.error('Import failed — the file is not valid JSON');
+        return;
+      }
+
+      // Step 2: validate backup shape — distinguishes wrong-format JSON from DB errors.
+      if (!validateBackupStructure(parsed)) {
+        notifications.error('Import failed — unrecognized backup format (missing version or required data arrays)');
+        return;
+      }
+
+      // Step 3: write to IndexedDB — report actual DB/store errors if they occur.
+      try {
+        await importAllData(parsed);
         notifications.success('Data imported — refreshing...');
         setTimeout(() => window.location.reload(), 1500);
       } catch (error) {
         console.error('Import failed:', error);
-        notifications.error('Import failed — check the file format');
+        const detail = error instanceof Error ? error.message : String(error);
+        notifications.error(`Import failed — ${detail}`);
       }
     };
 
