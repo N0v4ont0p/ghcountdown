@@ -74,7 +74,7 @@ export function validateBackupStructure(data: unknown): data is ExportData {
   if (typeof d.version !== 'string') return false;
   if (!d.data || typeof d.data !== 'object') return false;
   const inner = d.data as Record<string, unknown>;
-  // The four required array fields that every current-format backup must contain.
+  // The five required array fields that every current-format backup must contain.
   return (
     Array.isArray(inner.events) &&
     Array.isArray(inner.projects) &&
@@ -89,10 +89,6 @@ export async function importAllData(exportData: ExportData): Promise<void> {
   // This is a no-op when the DB is already open, but prevents failures when
   // import is triggered before the app's own initialization useEffect completes.
   await getDB();
-
-  if (!exportData.version || !exportData.data) {
-    throw new Error('Invalid backup: missing version or data field');
-  }
 
   const {
     events, projects, todos, timeEntries, timeBlocks, settings,
