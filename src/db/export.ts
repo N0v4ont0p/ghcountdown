@@ -9,7 +9,7 @@ import { getAllLocations } from './repositories/locationsRepo';
 import { getAllScheduleSkeletonEntries } from './repositories/scheduleSkeletonRepo';
 import { getAllScheduleOverrides } from './repositories/scheduleOverridesRepo';
 import { Event, Project, Todo, TimeEntry, TimeBlock, Settings, Goal, Location, ScheduleSkeletonEntry, ScheduleOverride } from './schema';
-import { put } from './core';
+import { put, getDB } from './core';
 import { STORES } from './schema';
 
 export interface ExportData {
@@ -64,9 +64,34 @@ export async function exportAllData(): Promise<ExportData> {
   };
 }
 
+/**
+ * Validates that a parsed JSON value is a recognizable backup created by this app.
+ * Distinguishes malformed JSON (caller's responsibility) from a wrong-shape object.
+ */
+export function validateBackupStructure(data: unknown): data is ExportData {
+  if (!data || typeof data !== 'object') return false;
+  const d = data as Record<string, unknown>;
+  if (typeof d.version !== 'string') return false;
+  if (!d.data || typeof d.data !== 'object') return false;
+  const inner = d.data as Record<string, unknown>;
+  // The four required array fields that every current-format backup must contain.
+  return (
+    Array.isArray(inner.events) &&
+    Array.isArray(inner.projects) &&
+    Array.isArray(inner.todos) &&
+    Array.isArray(inner.timeEntries) &&
+    Array.isArray(inner.timeBlocks)
+  );
+}
+
 export async function importAllData(exportData: ExportData): Promise<void> {
+  // Ensure the IndexedDB schema is fully initialized before any write.
+  // This is a no-op when the DB is already open, but prevents failures when
+  // import is triggered before the app's own initialization useEffect completes.
+  await getDB();
+
   if (!exportData.version || !exportData.data) {
-    throw new Error('Invalid export data format');
+    throw new Error('Invalid backup: missing version or data field');
   }
 
   const {
@@ -74,28 +99,31 @@ export async function importAllData(exportData: ExportData): Promise<void> {
     goals, locations, scheduleSkeleton, scheduleOverrides,
   } = exportData.data;
 
-  // Use put() (upsert) so re-importing the same backup doesn't fail on duplicate keys.
-  for (const event of events) {
+  // Use put() (upsert) so re-importing the same backup is idempotent.
+  // Guard every array with ?? [] so older or partial backups don't crash on iteration.
+  for (const event of events ?? []) {
     await put(STORES.EVENTS, event);
   }
 
-  for (const project of projects) {
+  for (const project of projects ?? []) {
     await put(STORES.PROJECTS, project);
   }
 
-  for (const todo of todos) {
+  for (const todo of todos ?? []) {
     await put(STORES.TODOS, todo);
   }
 
-  for (const entry of timeEntries) {
+  for (const entry of timeEntries ?? []) {
     await put(STORES.TIME_ENTRIES, entry);
   }
 
-  for (const block of timeBlocks) {
+  for (const block of timeBlocks ?? []) {
     await put(STORES.TIME_BLOCKS, block);
   }
 
   if (settings) {
+    // The settings store uses keyPath 'id'; the exported object has the id stripped
+    // by getSettings(), so we always restore it to the canonical key here.
     await put(STORES.SETTINGS, { ...settings, id: 'app-settings' });
   }
 
