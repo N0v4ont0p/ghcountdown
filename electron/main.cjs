@@ -1,7 +1,25 @@
 'use strict';
 
-const { app, BrowserWindow, shell, nativeTheme, ipcMain, net } = require('electron');
+const { app, BrowserWindow, shell, nativeTheme, ipcMain, net, protocol } = require('electron');
 const path = require('path');
+const { pathToFileURL } = require('url');
+
+// Register the custom 'app' scheme before the app is ready so that IndexedDB
+// and other persistent-storage APIs work correctly in the renderer.  When the
+// dist bundle is loaded via file:// the origin is opaque and Chromium refuses
+// to open the IndexedDB backing store ("Internal error opening backing store").
+// A named scheme with standard + secure privileges gives the renderer a proper
+// origin (app://localhost) that Chromium accepts.
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: 'app',
+    privileges: {
+      secure: true,
+      standard: true,
+      supportFetchAPI: true,
+    },
+  },
+]);
 
 // ---------------------------------------------------------------------------
 // IPC: proxy AI HTTP requests through the main process so the renderer
@@ -65,7 +83,7 @@ function createWindow() {
     win.loadURL(devUrl);
     win.webContents.openDevTools();
   } else {
-    win.loadFile(path.join(__dirname, '../dist/index.html'));
+    win.loadURL('app://localhost/index.html');
   }
 
   // Open external links in the default browser instead of inside Electron
@@ -76,6 +94,32 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  // Serve the production build through the custom 'app' scheme so that the
+  // renderer has a real origin and IndexedDB works correctly.
+  const distRoot = path.resolve(path.join(__dirname, '../dist'));
+  protocol.handle('app', (request) => {
+    const { pathname } = new URL(request.url);
+    const decodedPath = decodeURIComponent(pathname);
+    const trimmedPath = decodedPath.replace(/^\/+/, '');
+    const relativePath = trimmedPath === '' ? 'index.html' : trimmedPath;
+    const hasControlChars = /[\0-\x1F\x7F-\x9F]/.test(relativePath);
+    if (hasControlChars || relativePath.includes('\\')) {
+      return new Response('Forbidden', { status: 403 });
+    }
+    const filePath = path.resolve(path.join(distRoot, relativePath));
+    // Guard against directory traversal: reject any path outside dist/
+    const relative = path.relative(distRoot, filePath);
+    if (relative.startsWith('..') || path.isAbsolute(relative)) {
+      return new Response('Forbidden', { status: 403 });
+    }
+    return net.fetch(pathToFileURL(filePath).toString()).catch((err) => {
+      const logPath = path.relative(distRoot, filePath) || '(root)';
+      const message = err instanceof Error ? err.message : String(err);
+      console.error('[app-protocol] failed to load:', logPath, message);
+      return new Response('Not Found', { status: 404 });
+    });
+  });
+
   createWindow();
 
   // macOS: re-create window when dock icon is clicked and no windows are open
