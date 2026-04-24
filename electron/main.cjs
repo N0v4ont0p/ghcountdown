@@ -100,14 +100,22 @@ app.whenReady().then(() => {
   protocol.handle('app', (request) => {
     const { pathname } = new URL(request.url);
     const decodedPath = decodeURIComponent(pathname);
-    const filePath = path.resolve(path.join(distRoot, decodedPath));
+    const trimmedPath = decodedPath.replace(/^\/+/, '');
+    const relativePath = trimmedPath === '' ? 'index.html' : trimmedPath;
+    const hasControlChars = /[\0-\x1F\x7F-\x9F]/.test(relativePath);
+    if (hasControlChars || relativePath.includes('\\')) {
+      return new Response('Forbidden', { status: 403 });
+    }
+    const filePath = path.resolve(path.join(distRoot, relativePath));
     // Guard against directory traversal: reject any path outside dist/
     const relative = path.relative(distRoot, filePath);
     if (relative.startsWith('..') || path.isAbsolute(relative)) {
       return new Response('Forbidden', { status: 403 });
     }
     return net.fetch(pathToFileURL(filePath).toString()).catch((err) => {
-      console.error('[app-protocol] failed to load:', filePath, err);
+      const logPath = path.relative(distRoot, filePath) || '(root)';
+      const message = err instanceof Error ? err.message : String(err);
+      console.error('[app-protocol] failed to load:', logPath, message);
       return new Response('Not Found', { status: 404 });
     });
   });
