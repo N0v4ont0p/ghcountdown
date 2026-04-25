@@ -40,6 +40,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   /**
+   * Subscribe to 'app:open-search' messages sent from the tray menu / mini panel.
+   * Returns an unsubscribe function.
+   */
+  onOpenSearch: (callback) => {
+    const handler = () => callback();
+    ipcRenderer.on('app:open-search', handler);
+    return () => ipcRenderer.removeListener('app:open-search', handler);
+  },
+
+  /**
    * Subscribe to tray-status-update forwarded to the mini-panel window.
    * Returns an unsubscribe function.
    */
@@ -51,4 +61,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   /** Toggle the mini-panel floating window. */
   toggleMiniPanel: () => ipcRenderer.send('mini-panel:toggle'),
+
+  /**
+   * Trigger a named action from the mini panel.
+   * Actions: 'show-main' | 'navigate-timer' | 'quick-capture' | 'search'
+   */
+  miniPanelAction: (action) => ipcRenderer.send('mini-panel:action', action),
 });

@@ -98,21 +98,42 @@ function buildTrayMenu(status) {
   // ---- Smart status section ----
   if (status) {
     if (status.activeBlockTitle) {
-      menuItems.push({ label: `▶ ${status.activeBlockTitle}`, enabled: false });
+      menuItems.push({ label: `▶  ${status.activeBlockTitle}`, enabled: false });
       if (status.activeBlockRemaining) {
-        menuItems.push({ label: `  ${status.activeBlockRemaining} remaining`, enabled: false });
+        menuItems.push({ label: `    ${status.activeBlockRemaining} remaining`, enabled: false });
       }
     } else if (status.nextBlockTitle) {
-      menuItems.push({ label: `⏭ Next: ${status.nextBlockTitle}`, enabled: false });
+      menuItems.push({ label: `⏭  Next: ${status.nextBlockTitle}`, enabled: false });
       if (status.nextBlockStartsIn) {
-        menuItems.push({ label: `  Starts in ${status.nextBlockStartsIn}`, enabled: false });
+        menuItems.push({ label: `    Starts in ${status.nextBlockStartsIn}`, enabled: false });
       }
     } else if (status.nextEventTitle) {
-      menuItems.push({ label: `📅 ${status.nextEventTitle}`, enabled: false });
+      menuItems.push({ label: `📅  ${status.nextEventTitle}`, enabled: false });
       if (status.nextEventCountdown) {
-        menuItems.push({ label: `  In ${status.nextEventCountdown}`, enabled: false });
+        menuItems.push({ label: `    In ${status.nextEventCountdown}`, enabled: false });
       }
     }
+
+    // Current task (highest-priority today todo)
+    if (status.currentTaskTitle) {
+      menuItems.push({ label: `📋  ${status.currentTaskTitle}`, enabled: false });
+    }
+
+    // Today summary line
+    const summaryParts = [];
+    if (typeof status.unfinishedTodosCount === 'number' && status.unfinishedTodosCount > 0) {
+      summaryParts.push(`${status.unfinishedTodosCount} task${status.unfinishedTodosCount !== 1 ? 's' : ''} today`);
+    }
+    if (typeof status.focusMinutesToday === 'number' && status.focusMinutesToday > 0) {
+      const fh = Math.floor(status.focusMinutesToday / 60);
+      const fm = status.focusMinutesToday % 60;
+      const focusStr = fh > 0 ? `${fh}h ${fm}m focus` : `${fm}m focus`;
+      summaryParts.push(focusStr);
+    }
+    if (summaryParts.length > 0) {
+      menuItems.push({ label: `    ${summaryParts.join(' · ')}`, enabled: false });
+    }
+
     if (menuItems.length > 0) {
       menuItems.push({ type: 'separator' });
     }
@@ -138,6 +159,15 @@ function buildTrayMenu(status) {
       showMainApp();
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('app:open-quick-capture');
+      }
+    },
+  });
+  menuItems.push({
+    label: 'Search',
+    click: () => {
+      showMainApp();
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('app:open-search');
       }
     },
   });
@@ -183,7 +213,7 @@ function createMiniPanel() {
 
   miniPanelWindow = new BrowserWindow({
     width: 380,
-    height: 210,
+    height: 280,
     x: screenW - 400,
     y: 60,
     resizable: false,
@@ -261,6 +291,35 @@ ipcMain.on('tray:update-status', (_event, status) => {
 
 // IPC: mini panel toggle from renderer settings
 ipcMain.on('mini-panel:toggle', () => toggleMiniPanel());
+
+// IPC: actions dispatched from the mini panel
+ipcMain.on('mini-panel:action', (_event, action) => {
+  switch (action) {
+    case 'show-main':
+      showMainApp();
+      break;
+    case 'navigate-timer':
+      showMainApp();
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('app:navigate', 'timer');
+      }
+      break;
+    case 'quick-capture':
+      showMainApp();
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('app:open-quick-capture');
+      }
+      break;
+    case 'search':
+      showMainApp();
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('app:open-search');
+      }
+      break;
+    default:
+      break;
+  }
+});
 
 function createWindow() {
   mainWindow = new BrowserWindow({

@@ -55,10 +55,18 @@ const MIN_BLOCK_DURATION_SECONDS = 1;
 interface ElectronTrayStatus {
   activeBlockTitle?: string;
   activeBlockRemaining?: string;
+  /** 0–100 percentage of block time remaining */
+  activeBlockPercent?: number;
   nextBlockTitle?: string;
   nextBlockStartsIn?: string;
   nextEventTitle?: string;
   nextEventCountdown?: string;
+  /** Highest-priority "today" todo title */
+  currentTaskTitle?: string;
+  /** Number of unfinished today todos */
+  unfinishedTodosCount?: number;
+  /** Tracked focus minutes for today */
+  focusMinutesToday?: number;
 }
 
 declare global {
@@ -68,8 +76,10 @@ declare global {
       updateTrayStatus?: (status: ElectronTrayStatus) => void;
       onNavigate?: (cb: (view: string) => void) => () => void;
       onOpenQuickCapture?: (cb: () => void) => () => void;
+      onOpenSearch?: (cb: () => void) => () => void;
       onTrayStatusUpdate?: (cb: (status: ElectronTrayStatus) => void) => () => void;
       toggleMiniPanel?: () => void;
+      miniPanelAction?: (action: string) => void;
     };
   }
 }
@@ -114,6 +124,7 @@ function MainApp() {
   const [weeklyIntention, setWeeklyIntention] = useState(() => localStorage.getItem('weeklyIntention') ?? '');
   const [activeGoals, setActiveGoals] = useState<Goal[]>([]);
   const [nowTick, setNowTick] = useState(new Date());
+  const [focusMinutesToday, setFocusMinutesToday] = useState(0);
   const routinePopoverCloseTimerRef = useRef<number | null>(null);
   const { theme, setTheme, resolvedTheme } = useTheme();
 
@@ -293,15 +304,17 @@ function MainApp() {
   }, []);
 
   // ---------------------------------------------------------------------------
-  // Electron: handle tray menu actions (navigate, quick-capture)
+  // Electron: handle tray menu actions (navigate, quick-capture, search)
   // ---------------------------------------------------------------------------
   useEffect(() => {
     if (!window.electronAPI) return;
     const unsubNav = window.electronAPI.onNavigate?.((view) => setCurrentView(view));
     const unsubCapture = window.electronAPI.onOpenQuickCapture?.(() => setIsQuickCaptureOpen(true));
+    const unsubSearch = window.electronAPI.onOpenSearch?.(() => setIsSearchOpen(true));
     return () => {
       unsubNav?.();
       unsubCapture?.();
+      unsubSearch?.();
     };
   }, []);
 
@@ -324,6 +337,16 @@ function MainApp() {
 
     const allGoals = await getAllGoals();
     setActiveGoals(allGoals.filter(g => g.status === 'active'));
+
+    // Compute focus minutes tracked today
+    const todayStr = format(new Date(), 'yyyy-MM-dd');
+    const allEntries = await getAllTimeEntries();
+    const trackedMinutes = Math.round(
+      allEntries
+        .filter(e => e.startAt.startsWith(todayStr) && e.endAt)
+        .reduce((acc, e) => acc + (new Date(e.endAt!).getTime() - new Date(e.startAt).getTime()) / 60000, 0)
+    );
+    setFocusMinutesToday(trackedMinutes);
 
     void generateNudges(upcoming, activeTodos);
   }
@@ -693,9 +716,12 @@ function MainApp() {
     }
 
     const status: ElectronTrayStatus = {};
+
+    // Block / timer state
     if (activeRoutineBlock && activeRemainingSeconds !== null) {
       status.activeBlockTitle = activeRoutineBlock.title;
       status.activeBlockRemaining = formatCountdown(activeRemainingSeconds);
+      status.activeBlockPercent = activeRemainingPercent ?? undefined;
     } else if (nextRoutineBlock && nextStartsInSeconds !== null) {
       status.nextBlockTitle = nextRoutineBlock.title;
       status.nextBlockStartsIn = formatCountdown(nextStartsInSeconds);
@@ -705,9 +731,22 @@ function MainApp() {
       status.nextEventCountdown = formatLargeCountdown(secsUntil);
     }
 
+    // Current task — highest-priority "today" todo
+    const todayTodos = todos.filter(t => t.status === 'today');
+    if (todayTodos.length > 0) {
+      const top = todayTodos.reduce((best, t) => t.priority > best.priority ? t : best, todayTodos[0]);
+      status.currentTaskTitle = top.title;
+      status.unfinishedTodosCount = todayTodos.length;
+    }
+
+    // Focus time
+    if (focusMinutesToday > 0) {
+      status.focusMinutesToday = focusMinutesToday;
+    }
+
     window.electronAPI.updateTrayStatus(status);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nowTick, activeRoutineBlock, activeRemainingSeconds, nextRoutineBlock, nextStartsInSeconds, nextEvent]);
+  }, [nowTick, activeRoutineBlock, activeRemainingSeconds, activeRemainingPercent, nextRoutineBlock, nextStartsInSeconds, nextEvent, todos, focusMinutesToday]);
 
   if (isLoading) {
     return (
