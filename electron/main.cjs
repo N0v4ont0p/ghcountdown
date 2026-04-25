@@ -2,6 +2,7 @@
 
 const { app, BrowserWindow, shell, nativeTheme, ipcMain, net, protocol, Tray, Menu, nativeImage, screen } = require('electron');
 const path = require('path');
+const fs = require('fs');
 const { pathToFileURL } = require('url');
 
 // Register the custom 'app' scheme before the app is ready so that IndexedDB
@@ -56,6 +57,43 @@ const isMac = process.platform === 'darwin';
 // Mini panel window dimensions
 const MINI_PANEL_WIDTH = 380;
 const MINI_PANEL_HEIGHT = 280;
+
+// ---------------------------------------------------------------------------
+// Mini panel position persistence
+// ---------------------------------------------------------------------------
+function getPanelPrefsPath() {
+  return path.join(app.getPath('userData'), 'mini-panel-prefs.json');
+}
+
+function readPanelPrefs() {
+  try {
+    const raw = fs.readFileSync(getPanelPrefsPath(), 'utf8');
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+function savePanelPrefs(prefs) {
+  try {
+    fs.writeFileSync(getPanelPrefsPath(), JSON.stringify(prefs), 'utf8');
+  } catch {
+    // Non-fatal — position just won't persist this session
+  }
+}
+
+/** Returns a position object from saved prefs if it's still within a display. */
+function getSavedPanelPosition() {
+  const prefs = readPanelPrefs();
+  if (!prefs || typeof prefs.x !== 'number' || typeof prefs.y !== 'number') return null;
+  // Verify the saved position falls within the current display layout
+  const displays = screen.getAllDisplays();
+  const onScreen = displays.some((d) => {
+    const { x, y, width, height } = d.workArea;
+    return prefs.x >= x && prefs.x < x + width - 20 && prefs.y >= y && prefs.y < y + height - 20;
+  });
+  return onScreen ? { x: prefs.x, y: prefs.y } : null;
+}
 
 /** @type {BrowserWindow | null} */
 let mainWindow = null;
@@ -215,11 +253,15 @@ function createMiniPanel() {
   const display = screen.getPrimaryDisplay();
   const { width: screenW } = display.workAreaSize;
 
+  const savedPos = getSavedPanelPosition();
+  const defaultX = screenW - MINI_PANEL_WIDTH - 20;
+  const defaultY = 60;
+
   miniPanelWindow = new BrowserWindow({
     width: MINI_PANEL_WIDTH,
     height: MINI_PANEL_HEIGHT,
-    x: screenW - MINI_PANEL_WIDTH - 20,
-    y: 60,
+    x: savedPos ? savedPos.x : defaultX,
+    y: savedPos ? savedPos.y : defaultY,
     resizable: false,
     frame: false,
     transparent: true,
@@ -233,6 +275,13 @@ function createMiniPanel() {
       nodeIntegration: false,
       sandbox: true,
     },
+  });
+
+  // Persist position whenever the user moves the panel
+  miniPanelWindow.on('moved', () => {
+    if (!miniPanelWindow || miniPanelWindow.isDestroyed()) return;
+    const [x, y] = miniPanelWindow.getPosition();
+    savePanelPrefs({ x, y });
   });
 
   const miniUrl = isDev
@@ -295,6 +344,24 @@ ipcMain.on('tray:update-status', (_event, status) => {
 
 // IPC: mini panel toggle from renderer settings
 ipcMain.on('mini-panel:toggle', () => toggleMiniPanel());
+
+// IPC: explicit show/hide from renderer (settings switch, auto-restore on launch)
+ipcMain.on('mini-panel:set-visible', (_event, visible) => {
+  if (visible) {
+    if (!miniPanelWindow || miniPanelWindow.isDestroyed()) {
+      createMiniPanel();
+    } else if (!miniPanelWindow.isVisible()) {
+      miniPanelWindow.show();
+      miniPanelWindow.focus();
+      buildTrayMenu(lastTrayStatus);
+    }
+  } else {
+    if (miniPanelWindow && !miniPanelWindow.isDestroyed() && miniPanelWindow.isVisible()) {
+      miniPanelWindow.hide();
+      buildTrayMenu(lastTrayStatus);
+    }
+  }
+});
 
 // IPC: actions dispatched from the mini panel
 ipcMain.on('mini-panel:action', (_event, action) => {

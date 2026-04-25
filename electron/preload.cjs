@@ -63,6 +63,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   toggleMiniPanel: () => ipcRenderer.send('mini-panel:toggle'),
 
   /**
+   * Explicitly show or hide the mini-panel window.
+   * Used by the settings switch and the auto-restore on launch.
+   */
+  setMiniPanelVisible: (visible) => ipcRenderer.send('mini-panel:set-visible', visible),
+
+  /**
    * Trigger a named action from the mini panel.
    * Actions: 'show-main' | 'navigate-timer' | 'quick-capture' | 'search'
    */

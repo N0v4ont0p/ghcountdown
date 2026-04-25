@@ -79,6 +79,7 @@ declare global {
       onOpenSearch?: (cb: () => void) => () => void;
       onTrayStatusUpdate?: (cb: (status: ElectronTrayStatus) => void) => () => void;
       toggleMiniPanel?: () => void;
+      setMiniPanelVisible?: (visible: boolean) => void;
       miniPanelAction?: (action: string) => void;
     };
   }
@@ -143,6 +144,11 @@ function MainApp() {
         
         const appSettings = await getSettings();
         setSettings(appSettings);
+
+        // Auto-restore mini panel if it was previously enabled
+        if (window.electronAPI?.setMiniPanelVisible) {
+          window.electronAPI.setMiniPanelVisible(appSettings.miniPanelEnabled);
+        }
 
         // Restore persisted AI config into the runtime (env-var key takes priority)
         const runtimeConfig = getAIConfiguration();
@@ -977,9 +983,7 @@ function MainApp() {
                               await updateSettings({ miniPanelEnabled: checked });
                               const updated = await getSettings();
                               setSettings(updated);
-                              if (checked) {
-                                window.electronAPI?.toggleMiniPanel?.();
-                              }
+                              window.electronAPI?.setMiniPanelVisible?.(checked);
                               notifications.success(checked ? 'Mini panel enabled' : 'Mini panel disabled');
                             }}
                           />
