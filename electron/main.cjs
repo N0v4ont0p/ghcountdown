@@ -53,6 +53,10 @@ ipcMain.handle('ai-request', async (_event, { url, method, headers, body }) => {
 const isDev = process.env.NODE_ENV === 'development';
 const isMac = process.platform === 'darwin';
 
+// Mini panel window dimensions
+const MINI_PANEL_WIDTH = 380;
+const MINI_PANEL_HEIGHT = 280;
+
 /** @type {BrowserWindow | null} */
 let mainWindow = null;
 /** @type {Tray | null} */
@@ -212,9 +216,9 @@ function createMiniPanel() {
   const { width: screenW } = display.workAreaSize;
 
   miniPanelWindow = new BrowserWindow({
-    width: 380,
-    height: 280,
-    x: screenW - 400,
+    width: MINI_PANEL_WIDTH,
+    height: MINI_PANEL_HEIGHT,
+    x: screenW - MINI_PANEL_WIDTH - 20,
     y: 60,
     resizable: false,
     frame: false,
@@ -314,6 +318,12 @@ ipcMain.on('mini-panel:action', (_event, action) => {
       showMainApp();
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('app:open-search');
+      }
+      break;
+    case 'hide-panel':
+      if (miniPanelWindow && !miniPanelWindow.isDestroyed()) {
+        miniPanelWindow.hide();
+        buildTrayMenu(lastTrayStatus);
       }
       break;
     default:

@@ -15,7 +15,7 @@ interface TrayStatus {
   focusMinutesToday?: number;
 }
 
-type MiniPanelAction = 'show-main' | 'navigate-timer' | 'quick-capture' | 'search';
+type MiniPanelAction = 'show-main' | 'navigate-timer' | 'quick-capture' | 'search' | 'hide-panel';
 
 function dispatch(action: MiniPanelAction) {
   (window as Window & { electronAPI?: { miniPanelAction?: (a: string) => void } })
@@ -98,7 +98,7 @@ export function MiniPanelView() {
             <ArrowSquareOut size={11} />
           </button>
           <button
-            onClick={() => dispatch('show-main')}
+            onClick={() => dispatch('hide-panel')}
             className="p-1 rounded hover:bg-destructive/15 transition-colors text-muted-foreground hover:text-destructive"
             title="Hide panel"
           >
