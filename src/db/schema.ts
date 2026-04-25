@@ -123,6 +123,8 @@ export interface Settings {
   reducedMotion: boolean;
   aiApiKey: string;
   aiModel: string;
+  /** macOS only: show the compact floating mini-panel widget (default: false) */
+  miniPanelEnabled: boolean;
 }
 
 export const STORES = {

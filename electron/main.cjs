@@ -1,6 +1,6 @@
 'use strict';
 
-const { app, BrowserWindow, shell, nativeTheme, ipcMain, net, protocol } = require('electron');
+const { app, BrowserWindow, shell, nativeTheme, ipcMain, net, protocol, Tray, Menu, nativeImage, screen } = require('electron');
 const path = require('path');
 const { pathToFileURL } = require('url');
 
@@ -53,8 +53,217 @@ ipcMain.handle('ai-request', async (_event, { url, method, headers, body }) => {
 const isDev = process.env.NODE_ENV === 'development';
 const isMac = process.platform === 'darwin';
 
+/** @type {BrowserWindow | null} */
+let mainWindow = null;
+/** @type {Tray | null} */
+let tray = null;
+/** @type {BrowserWindow | null} */
+let miniPanelWindow = null;
+/** @type {object | null} */
+let lastTrayStatus = null;
+let appIsQuitting = false;
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function showMainApp() {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+  } else {
+    createWindow();
+  }
+}
+
+function toggleMiniPanel() {
+  if (!miniPanelWindow || miniPanelWindow.isDestroyed()) {
+    createMiniPanel();
+  } else if (miniPanelWindow.isVisible()) {
+    miniPanelWindow.hide();
+  } else {
+    miniPanelWindow.show();
+    miniPanelWindow.focus();
+  }
+  // Rebuild menu so checkbox state reflects reality
+  buildTrayMenu(lastTrayStatus);
+}
+
+function buildTrayMenu(status) {
+  if (!tray || tray.isDestroyed()) return;
+
+  const menuItems = [];
+
+  // ---- Smart status section ----
+  if (status) {
+    if (status.activeBlockTitle) {
+      menuItems.push({ label: `▶ ${status.activeBlockTitle}`, enabled: false });
+      if (status.activeBlockRemaining) {
+        menuItems.push({ label: `  ${status.activeBlockRemaining} remaining`, enabled: false });
+      }
+    } else if (status.nextBlockTitle) {
+      menuItems.push({ label: `⏭ Next: ${status.nextBlockTitle}`, enabled: false });
+      if (status.nextBlockStartsIn) {
+        menuItems.push({ label: `  Starts in ${status.nextBlockStartsIn}`, enabled: false });
+      }
+    } else if (status.nextEventTitle) {
+      menuItems.push({ label: `📅 ${status.nextEventTitle}`, enabled: false });
+      if (status.nextEventCountdown) {
+        menuItems.push({ label: `  In ${status.nextEventCountdown}`, enabled: false });
+      }
+    }
+    if (menuItems.length > 0) {
+      menuItems.push({ type: 'separator' });
+    }
+  }
+
+  // ---- Actions ----
+  menuItems.push({
+    label: 'Open GHCountdown',
+    click: showMainApp,
+  });
+  menuItems.push({
+    label: 'Open Timer',
+    click: () => {
+      showMainApp();
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('app:navigate', 'timer');
+      }
+    },
+  });
+  menuItems.push({
+    label: 'Quick Add',
+    click: () => {
+      showMainApp();
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('app:open-quick-capture');
+      }
+    },
+  });
+
+  menuItems.push({ type: 'separator' });
+
+  // ---- Mini panel toggle ----
+  const panelVisible = miniPanelWindow && !miniPanelWindow.isDestroyed() && miniPanelWindow.isVisible();
+  menuItems.push({
+    label: panelVisible ? 'Hide Mini Panel' : 'Show Mini Panel',
+    click: toggleMiniPanel,
+  });
+
+  menuItems.push({ type: 'separator' });
+
+  menuItems.push({
+    label: 'Quit GHCountdown',
+    accelerator: isMac ? 'Cmd+Q' : 'Ctrl+Q',
+    click: () => {
+      appIsQuitting = true;
+      app.quit();
+    },
+  });
+
+  const contextMenu = Menu.buildFromTemplate(menuItems);
+  tray.setContextMenu(contextMenu);
+
+  // Smart title displayed next to the tray icon (keep it short)
+  let title = '';
+  if (status) {
+    if (status.activeBlockRemaining) {
+      title = status.activeBlockRemaining;
+    } else if (status.nextEventCountdown) {
+      title = status.nextEventCountdown;
+    }
+  }
+  tray.setTitle(title);
+}
+
+function createMiniPanel() {
+  const display = screen.getPrimaryDisplay();
+  const { width: screenW } = display.workAreaSize;
+
+  miniPanelWindow = new BrowserWindow({
+    width: 380,
+    height: 210,
+    x: screenW - 400,
+    y: 60,
+    resizable: false,
+    frame: false,
+    transparent: true,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    hasShadow: true,
+    ...(isMac ? { vibrancy: 'sidebar', visualEffectState: 'active' } : {}),
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.cjs'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+
+  const miniUrl = isDev
+    ? `${process.env.ELECTRON_DEV_URL || 'http://localhost:5173'}?miniPanel=1`
+    : 'app://localhost/index.html?miniPanel=1';
+
+  miniPanelWindow.loadURL(miniUrl);
+
+  miniPanelWindow.once('ready-to-show', () => {
+    if (!miniPanelWindow || miniPanelWindow.isDestroyed()) return;
+    miniPanelWindow.show();
+    // Forward current status so the panel doesn't wait for the next tick
+    if (lastTrayStatus) {
+      miniPanelWindow.webContents.send('tray:status-update', lastTrayStatus);
+    }
+    buildTrayMenu(lastTrayStatus);
+  });
+
+  miniPanelWindow.on('closed', () => {
+    miniPanelWindow = null;
+    buildTrayMenu(lastTrayStatus);
+  });
+
+  // Open external links in the default browser
+  miniPanelWindow.webContents.setWindowOpenHandler(({ url }) => {
+    shell.openExternal(url);
+    return { action: 'deny' };
+  });
+}
+
+function createTray() {
+  if (tray || !isMac) return;
+
+  const iconPath = path.join(__dirname, '../build/icon.png');
+  let trayIcon;
+  try {
+    trayIcon = nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 });
+    // Mark as template so macOS renders it correctly in light/dark menu bars
+    trayIcon.setTemplateImage(true);
+  } catch (_err) {
+    trayIcon = nativeImage.createEmpty();
+  }
+
+  tray = new Tray(trayIcon);
+  tray.setToolTip('GHCountdown');
+  buildTrayMenu(null);
+}
+
+// ---------------------------------------------------------------------------
+// IPC: tray status updates from renderer
+// ---------------------------------------------------------------------------
+ipcMain.on('tray:update-status', (_event, status) => {
+  lastTrayStatus = status;
+  buildTrayMenu(status);
+  // Forward to mini panel if it's open
+  if (miniPanelWindow && !miniPanelWindow.isDestroyed()) {
+    miniPanelWindow.webContents.send('tray:status-update', status);
+  }
+});
+
+// IPC: mini panel toggle from renderer settings
+ipcMain.on('mini-panel:toggle', () => toggleMiniPanel());
+
 function createWindow() {
-  const win = new BrowserWindow({
+  mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
     minWidth: 900,
@@ -78,16 +287,27 @@ function createWindow() {
     },
   });
 
+  // On macOS, closing the window keeps the app alive in the menu bar.
+  // The user can quit via the tray menu or Cmd+Q.
+  if (isMac) {
+    mainWindow.on('close', (event) => {
+      if (!appIsQuitting) {
+        event.preventDefault();
+        mainWindow.hide();
+      }
+    });
+  }
+
   if (isDev) {
     const devUrl = process.env.ELECTRON_DEV_URL || 'http://localhost:5173';
-    win.loadURL(devUrl);
-    win.webContents.openDevTools();
+    mainWindow.loadURL(devUrl);
+    mainWindow.webContents.openDevTools();
   } else {
-    win.loadURL('app://localhost/index.html');
+    mainWindow.loadURL('app://localhost/index.html');
   }
 
   // Open external links in the default browser instead of inside Electron
-  win.webContents.setWindowOpenHandler(({ url }) => {
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url);
     return { action: 'deny' };
   });
@@ -121,10 +341,14 @@ app.whenReady().then(() => {
   });
 
   createWindow();
+  createTray();
 
-  // macOS: re-create window when dock icon is clicked and no windows are open
+  // macOS: show main window when dock icon is clicked
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.show();
+      mainWindow.focus();
+    } else if (BrowserWindow.getAllWindows().length === 0) {
       createWindow();
     }
   });
@@ -134,5 +358,13 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();
+  }
+});
+
+// Ensure a clean quit (destroy tray) when the app is actually quitting
+app.on('before-quit', () => {
+  appIsQuitting = true;
+  if (tray && !tray.isDestroyed()) {
+    tray.destroy();
   }
 });

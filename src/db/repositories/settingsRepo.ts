@@ -12,6 +12,7 @@ const DEFAULT_SETTINGS: Settings = {
   reducedMotion: false,
   aiApiKey: '',
   aiModel: '',
+  miniPanelEnabled: false,
 };
 
 export async function getSettings(): Promise<Settings> {
