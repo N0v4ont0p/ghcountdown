@@ -54,5 +54,18 @@ export function useTheme() {
     }
   }, [theme]);
 
+  // Sync theme when another window (e.g. the main app) updates localStorage.
+  // This is how the mini-panel BrowserWindow picks up theme changes made in the
+  // main window without requiring an extra IPC channel.
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === STORAGE_KEY) {
+        setThemeState(readStoredTheme());
+      }
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
+
   return { theme, setTheme, resolvedTheme };
 }

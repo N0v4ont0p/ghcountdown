@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Timer, CalendarBlank, X, ClockCountdown, MagnifyingGlass, Plus, ArrowSquareOut, CheckSquare } from '@phosphor-icons/react';
+import { useTheme } from '@/hooks/use-theme';
 
 interface TrayStatus {
   activeBlockTitle?: string;
@@ -37,6 +38,12 @@ function dispatch(action: MiniPanelAction) {
  */
 export function MiniPanelView() {
   const [status, setStatus] = useState<TrayStatus | null>(null);
+
+  // Apply the correct dark/light theme class to document.documentElement so
+  // Tailwind CSS variables resolve correctly.  Also reacts to system theme
+  // changes and to explicit theme changes made in the main app window (picked
+  // up via the storage event added in use-theme.ts).
+  useTheme();
 
   useEffect(() => {
     const api = (window as Window & {
