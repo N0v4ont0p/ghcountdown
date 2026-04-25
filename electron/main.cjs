@@ -358,7 +358,7 @@ function createTray() {
   // In development __dirname points directly to the electron/ folder.
   const iconPath = app.isPackaged
     ? path.join(process.resourcesPath, 'tray-icon.png')
-    : path.join(__dirname, '../build/icon.png');
+    : path.join(__dirname, '../build/tray-icon.png');
 
   let trayIcon;
   const loaded = nativeImage.createFromPath(iconPath);
@@ -377,6 +377,15 @@ function createTray() {
 
   tray = new Tray(trayIcon);
   tray.setToolTip('GHCountdown');
+
+  // Explicit left-click handler: pop up the context menu so the icon is
+  // clearly interactive.  On macOS, setContextMenu() already configures the
+  // native status-bar menu, but calling popUpContextMenu() here makes the
+  // behavior deterministic and consistent across all macOS/Electron versions.
+  tray.on('click', () => {
+    tray.popUpContextMenu();
+  });
+
   buildTrayMenu(null);
 }
 
