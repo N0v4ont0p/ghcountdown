@@ -358,7 +358,7 @@ function createTray() {
   // In development __dirname points directly to the electron/ folder.
   const iconPath = app.isPackaged
     ? path.join(process.resourcesPath, 'tray-icon.png')
-    : path.join(__dirname, '../build/icon.png');
+    : path.join(__dirname, '../build/tray-icon.png');
 
   let trayIcon;
   const loaded = nativeImage.createFromPath(iconPath);
