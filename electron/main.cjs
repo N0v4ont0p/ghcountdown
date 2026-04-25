@@ -1,7 +1,8 @@
 'use strict';
 
-const { app, BrowserWindow, shell, nativeTheme, ipcMain, net, protocol } = require('electron');
+const { app, BrowserWindow, shell, nativeTheme, ipcMain, net, protocol, Tray, Menu, nativeImage, screen } = require('electron');
 const path = require('path');
+const fs = require('fs');
 const { pathToFileURL } = require('url');
 
 // Register the custom 'app' scheme before the app is ready so that IndexedDB
@@ -53,8 +54,358 @@ ipcMain.handle('ai-request', async (_event, { url, method, headers, body }) => {
 const isDev = process.env.NODE_ENV === 'development';
 const isMac = process.platform === 'darwin';
 
+// Mini panel window dimensions
+const MINI_PANEL_WIDTH = 380;
+const MINI_PANEL_HEIGHT = 280;
+const MINI_PANEL_SCREEN_EDGE_BUFFER = 20;
+
+// ---------------------------------------------------------------------------
+// Mini panel position persistence
+// ---------------------------------------------------------------------------
+function getPanelPrefsPath() {
+  return path.join(app.getPath('userData'), 'mini-panel-prefs.json');
+}
+
+function readPanelPrefs() {
+  try {
+    const raw = fs.readFileSync(getPanelPrefsPath(), 'utf8');
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+function savePanelPrefs(prefs) {
+  try {
+    fs.writeFileSync(getPanelPrefsPath(), JSON.stringify(prefs), 'utf8');
+  } catch {
+    // Non-fatal — position just won't persist this session
+  }
+}
+
+/** Returns a position object from saved prefs if it's still within a display. */
+function getSavedPanelPosition() {
+  const prefs = readPanelPrefs();
+  if (!prefs || typeof prefs.x !== 'number' || typeof prefs.y !== 'number') return null;
+  // Verify the saved position falls within the current display layout
+  const displays = screen.getAllDisplays();
+  const onScreen = displays.some((d) => {
+    const { x, y, width, height } = d.workArea;
+    return (
+      prefs.x >= x &&
+      prefs.x < x + width - MINI_PANEL_SCREEN_EDGE_BUFFER &&
+      prefs.y >= y &&
+      prefs.y < y + height - MINI_PANEL_SCREEN_EDGE_BUFFER
+    );
+  });
+  return onScreen ? { x: prefs.x, y: prefs.y } : null;
+}
+
+/** @type {BrowserWindow | null} */
+let mainWindow = null;
+/** @type {Tray | null} */
+let tray = null;
+/** @type {BrowserWindow | null} */
+let miniPanelWindow = null;
+/** @type {object | null} */
+let lastTrayStatus = null;
+let appIsQuitting = false;
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function showMainApp() {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+  } else {
+    createWindow();
+  }
+}
+
+function toggleMiniPanel() {
+  if (!miniPanelWindow || miniPanelWindow.isDestroyed()) {
+    createMiniPanel();
+  } else if (miniPanelWindow.isVisible()) {
+    miniPanelWindow.hide();
+  } else {
+    miniPanelWindow.show();
+    miniPanelWindow.focus();
+  }
+  // Rebuild menu so checkbox state reflects reality
+  buildTrayMenu(lastTrayStatus);
+}
+
+function buildTrayMenu(status) {
+  if (!tray || tray.isDestroyed()) return;
+
+  const menuItems = [];
+
+  // ---- Smart status section ----
+  if (status) {
+    if (status.activeBlockTitle) {
+      menuItems.push({ label: `▶  ${status.activeBlockTitle}`, enabled: false });
+      if (status.activeBlockRemaining) {
+        menuItems.push({ label: `    ${status.activeBlockRemaining} remaining`, enabled: false });
+      }
+    } else if (status.nextBlockTitle) {
+      menuItems.push({ label: `⏭  Next: ${status.nextBlockTitle}`, enabled: false });
+      if (status.nextBlockStartsIn) {
+        menuItems.push({ label: `    Starts in ${status.nextBlockStartsIn}`, enabled: false });
+      }
+    } else if (status.nextEventTitle) {
+      menuItems.push({ label: `📅  ${status.nextEventTitle}`, enabled: false });
+      if (status.nextEventCountdown) {
+        menuItems.push({ label: `    In ${status.nextEventCountdown}`, enabled: false });
+      }
+    }
+
+    // Current task (highest-priority today todo)
+    if (status.currentTaskTitle) {
+      menuItems.push({ label: `📋  ${status.currentTaskTitle}`, enabled: false });
+    }
+
+    // Today summary line
+    const summaryParts = [];
+    if (typeof status.unfinishedTodosCount === 'number' && status.unfinishedTodosCount > 0) {
+      summaryParts.push(`${status.unfinishedTodosCount} task${status.unfinishedTodosCount !== 1 ? 's' : ''} today`);
+    }
+    if (typeof status.focusMinutesToday === 'number' && status.focusMinutesToday > 0) {
+      const fh = Math.floor(status.focusMinutesToday / 60);
+      const fm = status.focusMinutesToday % 60;
+      const focusStr = fh > 0 ? `${fh}h ${fm}m focus` : `${fm}m focus`;
+      summaryParts.push(focusStr);
+    }
+    if (summaryParts.length > 0) {
+      menuItems.push({ label: `    ${summaryParts.join(' · ')}`, enabled: false });
+    }
+
+    if (menuItems.length > 0) {
+      menuItems.push({ type: 'separator' });
+    }
+  }
+
+  // ---- Actions ----
+  menuItems.push({
+    label: 'Open GHCountdown',
+    click: showMainApp,
+  });
+  menuItems.push({
+    label: 'Open Timer',
+    click: () => {
+      showMainApp();
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('app:navigate', 'timer');
+      }
+    },
+  });
+  menuItems.push({
+    label: 'Quick Add',
+    click: () => {
+      showMainApp();
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('app:open-quick-capture');
+      }
+    },
+  });
+  menuItems.push({
+    label: 'Search',
+    click: () => {
+      showMainApp();
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('app:open-search');
+      }
+    },
+  });
+
+  menuItems.push({ type: 'separator' });
+
+  // ---- Mini panel toggle ----
+  const panelVisible = miniPanelWindow && !miniPanelWindow.isDestroyed() && miniPanelWindow.isVisible();
+  menuItems.push({
+    label: panelVisible ? 'Hide Mini Panel' : 'Show Mini Panel',
+    click: toggleMiniPanel,
+  });
+
+  menuItems.push({ type: 'separator' });
+
+  menuItems.push({
+    label: 'Quit GHCountdown',
+    accelerator: isMac ? 'Cmd+Q' : 'Ctrl+Q',
+    click: () => {
+      appIsQuitting = true;
+      app.quit();
+    },
+  });
+
+  const contextMenu = Menu.buildFromTemplate(menuItems);
+  tray.setContextMenu(contextMenu);
+
+  // Smart title displayed next to the tray icon (keep it short)
+  let title = '';
+  if (status) {
+    if (status.activeBlockRemaining) {
+      title = status.activeBlockRemaining;
+    } else if (status.nextEventCountdown) {
+      title = status.nextEventCountdown;
+    }
+  }
+  tray.setTitle(title);
+}
+
+function createMiniPanel() {
+  const display = screen.getPrimaryDisplay();
+  const { width: screenW } = display.workAreaSize;
+
+  const savedPos = getSavedPanelPosition();
+  const defaultX = screenW - MINI_PANEL_WIDTH - MINI_PANEL_SCREEN_EDGE_BUFFER;
+  const defaultY = 60;
+
+  miniPanelWindow = new BrowserWindow({
+    width: MINI_PANEL_WIDTH,
+    height: MINI_PANEL_HEIGHT,
+    x: savedPos ? savedPos.x : defaultX,
+    y: savedPos ? savedPos.y : defaultY,
+    resizable: false,
+    frame: false,
+    transparent: true,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    hasShadow: true,
+    ...(isMac ? { vibrancy: 'sidebar', visualEffectState: 'active' } : {}),
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.cjs'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+
+  // Persist position whenever the user moves the panel
+  miniPanelWindow.on('moved', () => {
+    if (!miniPanelWindow || miniPanelWindow.isDestroyed()) return;
+    const [x, y] = miniPanelWindow.getPosition();
+    savePanelPrefs({ x, y });
+  });
+
+  const miniUrl = isDev
+    ? `${process.env.ELECTRON_DEV_URL || 'http://localhost:5173'}?miniPanel=1`
+    : 'app://localhost/index.html?miniPanel=1';
+
+  miniPanelWindow.loadURL(miniUrl);
+
+  miniPanelWindow.once('ready-to-show', () => {
+    if (!miniPanelWindow || miniPanelWindow.isDestroyed()) return;
+    miniPanelWindow.show();
+    // Forward current status so the panel doesn't wait for the next tick
+    if (lastTrayStatus) {
+      miniPanelWindow.webContents.send('tray:status-update', lastTrayStatus);
+    }
+    buildTrayMenu(lastTrayStatus);
+  });
+
+  miniPanelWindow.on('closed', () => {
+    miniPanelWindow = null;
+    buildTrayMenu(lastTrayStatus);
+  });
+
+  // Open external links in the default browser
+  miniPanelWindow.webContents.setWindowOpenHandler(({ url }) => {
+    shell.openExternal(url);
+    return { action: 'deny' };
+  });
+}
+
+function createTray() {
+  if (tray || !isMac) return;
+
+  const iconPath = path.join(__dirname, '../build/icon.png');
+  let trayIcon;
+  try {
+    trayIcon = nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 });
+    // Mark as template so macOS renders it correctly in light/dark menu bars
+    trayIcon.setTemplateImage(true);
+  } catch (_err) {
+    trayIcon = nativeImage.createEmpty();
+  }
+
+  tray = new Tray(trayIcon);
+  tray.setToolTip('GHCountdown');
+  buildTrayMenu(null);
+}
+
+// ---------------------------------------------------------------------------
+// IPC: tray status updates from renderer
+// ---------------------------------------------------------------------------
+ipcMain.on('tray:update-status', (_event, status) => {
+  lastTrayStatus = status;
+  buildTrayMenu(status);
+  // Forward to mini panel if it's open
+  if (miniPanelWindow && !miniPanelWindow.isDestroyed()) {
+    miniPanelWindow.webContents.send('tray:status-update', status);
+  }
+});
+
+// IPC: mini panel toggle from renderer settings
+ipcMain.on('mini-panel:toggle', () => toggleMiniPanel());
+
+// IPC: explicit show/hide from renderer (settings switch, auto-restore on launch)
+ipcMain.on('mini-panel:set-visible', (_event, visible) => {
+  if (visible) {
+    if (!miniPanelWindow || miniPanelWindow.isDestroyed()) {
+      createMiniPanel();
+    } else if (!miniPanelWindow.isVisible()) {
+      miniPanelWindow.show();
+      miniPanelWindow.focus();
+      buildTrayMenu(lastTrayStatus);
+    }
+  } else {
+    if (miniPanelWindow && !miniPanelWindow.isDestroyed() && miniPanelWindow.isVisible()) {
+      miniPanelWindow.hide();
+      buildTrayMenu(lastTrayStatus);
+    }
+  }
+});
+
+// IPC: actions dispatched from the mini panel
+ipcMain.on('mini-panel:action', (_event, action) => {
+  switch (action) {
+    case 'show-main':
+      showMainApp();
+      break;
+    case 'navigate-timer':
+      showMainApp();
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('app:navigate', 'timer');
+      }
+      break;
+    case 'quick-capture':
+      showMainApp();
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('app:open-quick-capture');
+      }
+      break;
+    case 'search':
+      showMainApp();
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('app:open-search');
+      }
+      break;
+    case 'hide-panel':
+      if (miniPanelWindow && !miniPanelWindow.isDestroyed()) {
+        miniPanelWindow.hide();
+        buildTrayMenu(lastTrayStatus);
+      }
+      break;
+    default:
+      break;
+  }
+});
+
 function createWindow() {
-  const win = new BrowserWindow({
+  mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
     minWidth: 900,
@@ -78,16 +429,27 @@ function createWindow() {
     },
   });
 
+  // On macOS, closing the window keeps the app alive in the menu bar.
+  // The user can quit via the tray menu or Cmd+Q.
+  if (isMac) {
+    mainWindow.on('close', (event) => {
+      if (!appIsQuitting) {
+        event.preventDefault();
+        mainWindow.hide();
+      }
+    });
+  }
+
   if (isDev) {
     const devUrl = process.env.ELECTRON_DEV_URL || 'http://localhost:5173';
-    win.loadURL(devUrl);
-    win.webContents.openDevTools();
+    mainWindow.loadURL(devUrl);
+    mainWindow.webContents.openDevTools();
   } else {
-    win.loadURL('app://localhost/index.html');
+    mainWindow.loadURL('app://localhost/index.html');
   }
 
   // Open external links in the default browser instead of inside Electron
-  win.webContents.setWindowOpenHandler(({ url }) => {
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url);
     return { action: 'deny' };
   });
@@ -121,10 +483,14 @@ app.whenReady().then(() => {
   });
 
   createWindow();
+  createTray();
 
-  // macOS: re-create window when dock icon is clicked and no windows are open
+  // macOS: show main window when dock icon is clicked
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.show();
+      mainWindow.focus();
+    } else if (BrowserWindow.getAllWindows().length === 0) {
       createWindow();
     }
   });
@@ -134,5 +500,13 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();
+  }
+});
+
+// Ensure a clean quit (destroy tray) when the app is actually quitting
+app.on('before-quit', () => {
+  appIsQuitting = true;
+  if (tray && !tray.isDestroyed()) {
+    tray.destroy();
   }
 });

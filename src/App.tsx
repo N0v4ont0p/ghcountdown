@@ -15,6 +15,7 @@ import { UniversalSearch } from '@/components/UniversalSearch';
 import { EveningFlow } from '@/components/EveningFlow';
 import { MorningFlow } from '@/components/MorningFlow';
 import { WeeklyReview } from '@/components/WeeklyReview';
+import { MiniPanelView } from '@/components/MiniPanelView';
 import { initDB } from '@/db/core';
 import { seedDatabase } from '@/db/seed';
 import { deleteAllEvents, getNextImportantEvent, getAllEvents } from '@/db/repositories/eventsRepo';
@@ -32,6 +33,7 @@ import { format } from 'date-fns';
 import { useTheme } from '@/hooks/use-theme';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 import { exportAllData, downloadJSON, exportTimeEntriesCSV, exportEventsCSV, exportTodosCSV, importAllData, validateBackupStructure } from '@/db/export';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -47,11 +49,61 @@ import { getEffectiveScheduleForDate } from '@/lib/effectiveSchedule';
 const ROUTINE_POPOVER_CLOSE_DELAY_MS = 180;
 const MIN_BLOCK_DURATION_SECONDS = 1;
 
+// ---------------------------------------------------------------------------
+// Electron API type (exposed by preload.cjs via contextBridge)
+// ---------------------------------------------------------------------------
+interface ElectronTrayStatus {
+  activeBlockTitle?: string;
+  activeBlockRemaining?: string;
+  /** 0–100 percentage of block time remaining */
+  activeBlockPercent?: number;
+  nextBlockTitle?: string;
+  nextBlockStartsIn?: string;
+  nextEventTitle?: string;
+  nextEventCountdown?: string;
+  /** Highest-priority "today" todo title */
+  currentTaskTitle?: string;
+  /** Number of unfinished today todos */
+  unfinishedTodosCount?: number;
+  /** Tracked focus minutes for today */
+  focusMinutesToday?: number;
+}
+
+declare global {
+  interface Window {
+    electronAPI?: {
+      aiRequest?: (config: object) => Promise<{ ok: boolean; status: number; body: string }>;
+      updateTrayStatus?: (status: ElectronTrayStatus) => void;
+      onNavigate?: (cb: (view: string) => void) => () => void;
+      onOpenQuickCapture?: (cb: () => void) => () => void;
+      onOpenSearch?: (cb: () => void) => () => void;
+      onTrayStatusUpdate?: (cb: (status: ElectronTrayStatus) => void) => () => void;
+      toggleMiniPanel?: () => void;
+      setMiniPanelVisible?: (visible: boolean) => void;
+      miniPanelAction?: (action: string) => void;
+    };
+  }
+}
+
+// Detect whether we are running as the compact mini-panel widget window
+const isMiniPanel = typeof window !== 'undefined' &&
+  new URLSearchParams(window.location.search).get('miniPanel') === '1';
+
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
-function App() {
+function formatLargeCountdown(totalSeconds: number): string {
+  const s = Math.max(0, Math.floor(totalSeconds));
+  const d = Math.floor(s / 86400);
+  const h = Math.floor((s % 86400) / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  if (d > 0) return `${d}d ${h}h`;
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m`;
+}
+
+function MainApp() {
   function formatCountdown(seconds: number): string {
     const safe = Math.max(0, seconds);
     const h = Math.floor(safe / 3600);
@@ -83,6 +135,7 @@ function App() {
   const [weeklyIntention, setWeeklyIntention] = useState(() => localStorage.getItem('weeklyIntention') ?? '');
   const [activeGoals, setActiveGoals] = useState<Goal[]>([]);
   const [nowTick, setNowTick] = useState(new Date());
+  const [focusMinutesToday, setFocusMinutesToday] = useState(0);
   const routinePopoverCloseTimerRef = useRef<number | null>(null);
   const { theme, setTheme, resolvedTheme } = useTheme();
 
@@ -101,6 +154,11 @@ function App() {
         
         const appSettings = await getSettings();
         setSettings(appSettings);
+
+        // Auto-restore mini panel if it was previously enabled
+        if (window.electronAPI?.setMiniPanelVisible) {
+          window.electronAPI.setMiniPanelVisible(appSettings.miniPanelEnabled);
+        }
 
         // Restore persisted AI config into the runtime (env-var key takes priority)
         const runtimeConfig = getAIConfiguration();
@@ -261,6 +319,21 @@ function App() {
     };
   }, []);
 
+  // ---------------------------------------------------------------------------
+  // Electron: handle tray menu actions (navigate, quick-capture, search)
+  // ---------------------------------------------------------------------------
+  useEffect(() => {
+    if (!window.electronAPI) return;
+    const unsubNav = window.electronAPI.onNavigate?.((view) => setCurrentView(view));
+    const unsubCapture = window.electronAPI.onOpenQuickCapture?.(() => setIsQuickCaptureOpen(true));
+    const unsubSearch = window.electronAPI.onOpenSearch?.(() => setIsSearchOpen(true));
+    return () => {
+      unsubNav?.();
+      unsubCapture?.();
+      unsubSearch?.();
+    };
+  }, []);
+
   async function loadHomeData() {
     const appSettings = await getSettings();
     const important = await getNextImportantEvent(appSettings.importantPriorityThreshold);
@@ -280,6 +353,16 @@ function App() {
 
     const allGoals = await getAllGoals();
     setActiveGoals(allGoals.filter(g => g.status === 'active'));
+
+    // Compute focus minutes tracked today
+    const todayStr = format(new Date(), 'yyyy-MM-dd');
+    const allEntries = await getAllTimeEntries();
+    const trackedMinutes = Math.round(
+      allEntries
+        .filter(e => e.startAt.startsWith(todayStr) && e.endAt)
+        .reduce((acc, e) => acc + (new Date(e.endAt!).getTime() - new Date(e.startAt).getTime()) / 60000, 0)
+    );
+    setFocusMinutesToday(trackedMinutes);
 
     void generateNudges(upcoming, activeTodos);
   }
@@ -632,6 +715,45 @@ function App() {
 
   const showFloatingRoutineCard = currentView !== 'home' && Boolean(activeRoutineBlock || nextRoutineBlock);
 
+  // ---------------------------------------------------------------------------
+  // Electron: push smart tray status on every second tick
+  // ---------------------------------------------------------------------------
+  useEffect(() => {
+    if (!window.electronAPI?.updateTrayStatus) return;
+
+    const status: ElectronTrayStatus = {};
+
+    // Block / timer state
+    if (activeRoutineBlock && activeRemainingSeconds !== null) {
+      status.activeBlockTitle = activeRoutineBlock.title;
+      status.activeBlockRemaining = formatCountdown(activeRemainingSeconds);
+      status.activeBlockPercent = activeRemainingPercent ?? undefined;
+    } else if (nextRoutineBlock && nextStartsInSeconds !== null) {
+      status.nextBlockTitle = nextRoutineBlock.title;
+      status.nextBlockStartsIn = formatCountdown(nextStartsInSeconds);
+    } else if (nextEvent) {
+      const secsUntil = Math.max(0, (new Date(nextEvent.startsAt).getTime() - Date.now()) / 1000);
+      status.nextEventTitle = nextEvent.title;
+      status.nextEventCountdown = formatLargeCountdown(secsUntil);
+    }
+
+    // Current task — highest-priority "today" todo
+    const todayTodos = todos.filter(t => t.status === 'today');
+    if (todayTodos.length > 0) {
+      const top = todayTodos.reduce((best, t) => t.priority > best.priority ? t : best, todayTodos[0]);
+      status.currentTaskTitle = top.title;
+      status.unfinishedTodosCount = todayTodos.length;
+    }
+
+    // Focus time
+    if (focusMinutesToday > 0) {
+      status.focusMinutesToday = focusMinutesToday;
+    }
+
+    window.electronAPI.updateTrayStatus(status);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nowTick, activeRoutineBlock, activeRemainingSeconds, activeRemainingPercent, nextRoutineBlock, nextStartsInSeconds, nextEvent, todos, focusMinutesToday]);
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-screen">
@@ -841,6 +963,37 @@ function App() {
                       </Select>
                     </div>
                   </Card>
+
+                  {/* Menu Bar settings — only visible when running inside Electron on macOS */}
+                  {window.electronAPI && (
+                    <Card className="p-6">
+                      <div>
+                        <h3 className="font-semibold mb-1">Menu Bar &amp; Mini Panel</h3>
+                        <p className="text-sm text-muted-foreground mb-4">
+                          macOS menu bar integration — the tray icon shows a live countdown and quick-action menu.
+                        </p>
+                        <div className="flex items-center justify-between py-2 border-b border-border/50">
+                          <div>
+                            <p className="text-sm font-medium">Mini Panel</p>
+                            <p className="text-xs text-muted-foreground">Show a compact floating widget with your current timer</p>
+                          </div>
+                          <Switch
+                            checked={settings?.miniPanelEnabled ?? false}
+                            onCheckedChange={async (checked) => {
+                              await updateSettings({ miniPanelEnabled: checked });
+                              const updated = await getSettings();
+                              setSettings(updated);
+                              window.electronAPI?.setMiniPanelVisible?.(checked);
+                              notifications.success(checked ? 'Mini panel enabled' : 'Mini panel disabled');
+                            }}
+                          />
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-3">
+                          The menu bar icon always appears on macOS. Use the tray menu to open the app, jump to the timer, add tasks quickly, or quit.
+                        </p>
+                      </div>
+                    </Card>
+                  )}
 
                   <Card className="p-6">
                     <div>
@@ -1173,6 +1326,11 @@ function App() {
       <Toaster />
     </div>
   );
+}
+
+function App() {
+  if (isMiniPanel) return <MiniPanelView />;
+  return <MainApp />;
 }
 
 export default App;
