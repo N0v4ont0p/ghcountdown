@@ -331,6 +331,11 @@ function createMiniPanel() {
     notifyMainWindowMiniPanelState(false);
   });
 
+  // Window was shown again after being hidden (e.g. via the tray toggle)
+  miniPanelWindow.on('show', () => {
+    notifyMainWindowMiniPanelState(true);
+  });
+
   // Open external links in the default browser
   miniPanelWindow.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url);
@@ -338,17 +343,36 @@ function createMiniPanel() {
   });
 }
 
+// Minimal 16×16 black circle with transparency — used as an inline fallback
+// when the icon file cannot be read.  macOS template images render the black
+// portions in the appropriate menu-bar colour (light/dark adaptive).
+const TRAY_ICON_FALLBACK_B64 =
+  'iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAQAAAC1+jfqAAAAI0lEQVR4nGNgoCb4jwTxSmJV' +
+  'REABNmkUJUNCAeXhQERQkw8AK997hajtbdUAAAAASUVORK5CYII=';
+
 function createTray() {
   if (tray || !isMac) return;
 
-  const iconPath = path.join(__dirname, '../build/icon.png');
+  // In a packaged build the icon is placed outside the ASAR via extraResources
+  // so that nativeImage.createFromPath() can always read it as a real file.
+  // In development __dirname points directly to the electron/ folder.
+  const iconPath = app.isPackaged
+    ? path.join(process.resourcesPath, 'tray-icon.png')
+    : path.join(__dirname, '../build/icon.png');
+
   let trayIcon;
-  try {
-    trayIcon = nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 });
+  const loaded = nativeImage.createFromPath(iconPath);
+  if (!loaded.isEmpty()) {
+    trayIcon = loaded.resize({ width: 16, height: 16 });
     // Mark as template so macOS renders it correctly in light/dark menu bars
     trayIcon.setTemplateImage(true);
-  } catch (_err) {
-    trayIcon = nativeImage.createEmpty();
+  } else {
+    // Log so it's visible in the Electron console rather than failing silently
+    console.error('[tray] Failed to load icon from path, using built-in fallback:', iconPath);
+    trayIcon = nativeImage.createFromDataURL(
+      `data:image/png;base64,${TRAY_ICON_FALLBACK_B64}`
+    );
+    trayIcon.setTemplateImage(true);
   }
 
   tray = new Tray(trayIcon);
