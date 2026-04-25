@@ -81,6 +81,7 @@ declare global {
       toggleMiniPanel?: () => void;
       setMiniPanelVisible?: (visible: boolean) => void;
       miniPanelAction?: (action: string) => void;
+      onMiniPanelStateChanged?: (cb: (state: { visible: boolean }) => void) => () => void;
     };
   }
 }
@@ -332,6 +333,25 @@ function MainApp() {
       unsubCapture?.();
       unsubSearch?.();
     };
+  }, []);
+
+  // ---------------------------------------------------------------------------
+  // Electron: keep Settings switch in sync when mini panel is closed/hidden
+  // from the OS (window close button or hide-panel action).
+  // ---------------------------------------------------------------------------
+  useEffect(() => {
+    if (!window.electronAPI?.onMiniPanelStateChanged) return;
+    const unsub = window.electronAPI.onMiniPanelStateChanged(async ({ visible }) => {
+      try {
+        await updateSettings({ miniPanelEnabled: visible });
+        setSettings((prev) => prev ? { ...prev, miniPanelEnabled: visible } : prev);
+      } catch (err) {
+        // If the DB write fails, leave the React state unchanged to stay
+        // consistent with the persisted value.
+        console.error('[mini-panel] Failed to persist state change:', err);
+      }
+    });
+    return unsub;
   }, []);
 
   async function loadHomeData() {
@@ -989,7 +1009,7 @@ function MainApp() {
                           />
                         </div>
                         <p className="text-xs text-muted-foreground mt-3">
-                          The menu bar icon always appears on macOS. Use the tray menu to open the app, jump to the timer, add tasks quickly, or quit.
+                          The menu bar icon appears on macOS when the app is running. Use the tray menu to open the app, jump to the timer, add tasks quickly, or quit.
                         </p>
                       </div>
                     </Card>

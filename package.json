@@ -34,6 +34,12 @@
             "dist/**/*",
             "electron/**/*"
         ],
+        "extraResources": [
+            {
+                "from": "build/icon.png",
+                "to": "tray-icon.png"
+            }
+        ],
         "mac": {
             "category": "public.app-category.productivity",
             "icon": "build/icon.png",

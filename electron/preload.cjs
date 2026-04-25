@@ -59,6 +59,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('tray:status-update', handler);
   },
 
+  /**
+   * Subscribe to mini-panel state changes triggered from the main process
+   * (e.g. the user manually closes or hides the floating window).
+   * Callback receives `{ visible: boolean }`.
+   * Returns an unsubscribe function.
+   */
+  onMiniPanelStateChanged: (callback) => {
+    const handler = (_event, state) => callback(state);
+    ipcRenderer.on('mini-panel:state-changed', handler);
+    return () => ipcRenderer.removeListener('mini-panel:state-changed', handler);
+  },
+
   /** Toggle the mini-panel floating window. */
   toggleMiniPanel: () => ipcRenderer.send('mini-panel:toggle'),
 
