@@ -115,6 +115,17 @@ let appIsQuitting = false;
 // Helpers
 // ---------------------------------------------------------------------------
 
+/**
+ * Notify the main window renderer that the mini panel's visible state has
+ * changed.  This keeps the Settings switch in sync when the user manually
+ * closes or hides the floating window.
+ */
+function notifyMainWindowMiniPanelState(visible) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('mini-panel:state-changed', { visible });
+  }
+}
+
 function showMainApp() {
   if (mainWindow && !mainWindow.isDestroyed()) {
     if (mainWindow.isMinimized()) mainWindow.restore();
@@ -304,11 +315,20 @@ function createMiniPanel() {
       miniPanelWindow.webContents.send('tray:status-update', lastTrayStatus);
     }
     buildTrayMenu(lastTrayStatus);
+    notifyMainWindowMiniPanelState(true);
   });
 
+  // User manually closed the window via the OS close button — treat as disabled.
+  // Notify in 'closed' (after destruction) so we emit exactly once per close.
   miniPanelWindow.on('closed', () => {
+    notifyMainWindowMiniPanelState(false);
     miniPanelWindow = null;
     buildTrayMenu(lastTrayStatus);
+  });
+
+  // Window was hidden (e.g. via the hide-panel action)
+  miniPanelWindow.on('hide', () => {
+    notifyMainWindowMiniPanelState(false);
   });
 
   // Open external links in the default browser
@@ -360,11 +380,13 @@ ipcMain.on('mini-panel:set-visible', (_event, visible) => {
       miniPanelWindow.show();
       miniPanelWindow.focus();
       buildTrayMenu(lastTrayStatus);
+      notifyMainWindowMiniPanelState(true);
     }
   } else {
     if (miniPanelWindow && !miniPanelWindow.isDestroyed() && miniPanelWindow.isVisible()) {
       miniPanelWindow.hide();
       buildTrayMenu(lastTrayStatus);
+      // hide event listener will call notifyMainWindowMiniPanelState(false)
     }
   }
 });

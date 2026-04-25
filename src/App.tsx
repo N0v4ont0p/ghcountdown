@@ -81,6 +81,7 @@ declare global {
       toggleMiniPanel?: () => void;
       setMiniPanelVisible?: (visible: boolean) => void;
       miniPanelAction?: (action: string) => void;
+      onMiniPanelStateChanged?: (cb: (state: { visible: boolean }) => void) => () => void;
     };
   }
 }
@@ -332,6 +333,24 @@ function MainApp() {
       unsubCapture?.();
       unsubSearch?.();
     };
+  }, []);
+
+  // ---------------------------------------------------------------------------
+  // Electron: keep Settings switch in sync when mini panel is closed/hidden
+  // from the OS (window close button or hide-panel action).
+  // ---------------------------------------------------------------------------
+  useEffect(() => {
+    if (!window.electronAPI?.onMiniPanelStateChanged) return;
+    const unsub = window.electronAPI.onMiniPanelStateChanged(async ({ visible }) => {
+      try {
+        await updateSettings({ miniPanelEnabled: visible });
+        setSettings((prev) => prev ? { ...prev, miniPanelEnabled: visible } : prev);
+      } catch {
+        // If the DB write fails, leave the React state unchanged to stay
+        // consistent with the persisted value.
+      }
+    });
+    return unsub;
   }, []);
 
   async function loadHomeData() {
