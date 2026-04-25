@@ -17,6 +17,13 @@ interface TrayStatus {
 
 type MiniPanelAction = 'show-main' | 'navigate-timer' | 'quick-capture' | 'search' | 'hide-panel';
 
+function formatFocusTime(minutes: number): string {
+  if (minutes >= 60) {
+    return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+  }
+  return `${minutes}m`;
+}
+
 function dispatch(action: MiniPanelAction) {
   (window as Window & { electronAPI?: { miniPanelAction?: (a: string) => void } })
     .electronAPI?.miniPanelAction?.(action);
@@ -69,9 +76,7 @@ export function MiniPanelView() {
   // Today summary
   const todosCount = status?.unfinishedTodosCount ?? 0;
   const focusMins = status?.focusMinutesToday ?? 0;
-  const focusStr = focusMins > 0
-    ? (focusMins >= 60 ? `${Math.floor(focusMins / 60)}h ${focusMins % 60}m` : `${focusMins}m`)
-    : null;
+  const focusStr = focusMins > 0 ? formatFocusTime(focusMins) : null;
 
   return (
     <div

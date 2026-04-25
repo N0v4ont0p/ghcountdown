@@ -57,6 +57,7 @@ const isMac = process.platform === 'darwin';
 // Mini panel window dimensions
 const MINI_PANEL_WIDTH = 380;
 const MINI_PANEL_HEIGHT = 280;
+const MINI_PANEL_SCREEN_EDGE_BUFFER = 20;
 
 // ---------------------------------------------------------------------------
 // Mini panel position persistence
@@ -90,7 +91,12 @@ function getSavedPanelPosition() {
   const displays = screen.getAllDisplays();
   const onScreen = displays.some((d) => {
     const { x, y, width, height } = d.workArea;
-    return prefs.x >= x && prefs.x < x + width - 20 && prefs.y >= y && prefs.y < y + height - 20;
+    return (
+      prefs.x >= x &&
+      prefs.x < x + width - MINI_PANEL_SCREEN_EDGE_BUFFER &&
+      prefs.y >= y &&
+      prefs.y < y + height - MINI_PANEL_SCREEN_EDGE_BUFFER
+    );
   });
   return onScreen ? { x: prefs.x, y: prefs.y } : null;
 }
@@ -254,7 +260,7 @@ function createMiniPanel() {
   const { width: screenW } = display.workAreaSize;
 
   const savedPos = getSavedPanelPosition();
-  const defaultX = screenW - MINI_PANEL_WIDTH - 20;
+  const defaultX = screenW - MINI_PANEL_WIDTH - MINI_PANEL_SCREEN_EDGE_BUFFER;
   const defaultY = 60;
 
   miniPanelWindow = new BrowserWindow({
