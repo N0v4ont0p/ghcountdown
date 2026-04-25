@@ -377,6 +377,15 @@ function createTray() {
 
   tray = new Tray(trayIcon);
   tray.setToolTip('GHCountdown');
+
+  // Explicit left-click handler: pop up the context menu so the icon is
+  // clearly interactive.  On macOS, setContextMenu() already configures the
+  // native status-bar menu, but calling popUpContextMenu() here makes the
+  // behaviour deterministic and consistent across all macOS/Electron versions.
+  tray.on('click', () => {
+    tray.popUpContextMenu();
+  });
+
   buildTrayMenu(null);
 }
 
