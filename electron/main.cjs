@@ -254,13 +254,17 @@ function buildTrayMenu(status) {
   const contextMenu = Menu.buildFromTemplate(menuItems);
   tray.setContextMenu(contextMenu);
 
-  // Smart title displayed next to the tray icon (keep it short)
+  // Smart title displayed next to the tray icon (keep it short).
+  // Priority: active block > next block start > next event.
+  // A brief symbol prefix makes each state visually distinct at a glance.
   let title = '';
   if (status) {
     if (status.activeBlockRemaining) {
-      title = status.activeBlockRemaining;
+      title = `▶ ${status.activeBlockRemaining}`;
+    } else if (status.nextBlockStartsIn) {
+      title = `⏭ ${status.nextBlockStartsIn}`;
     } else if (status.nextEventCountdown) {
-      title = status.nextEventCountdown;
+      title = `📅 ${status.nextEventCountdown}`;
     }
   }
   tray.setTitle(title);
