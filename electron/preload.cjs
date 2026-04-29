@@ -85,4 +85,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
    * Actions: 'show-main' | 'navigate-timer' | 'quick-capture' | 'search'
    */
   miniPanelAction: (action) => ipcRenderer.send('mini-panel:action', action),
+
+  // ---------------------------------------------------------------------------
+  // Global launcher window
+  // ---------------------------------------------------------------------------
+
+  /** Hide the launcher popup (called on Escape, submit, or backdrop click). */
+  hide: () => ipcRenderer.send('launcher:hide'),
+
+  /**
+   * Subscribe to 'launcher:shown' notifications fired by the main process
+   * each time the launcher window becomes visible.  The renderer uses this to
+   * re-focus the input and clear stale UI state.  Returns an unsubscribe fn.
+   */
+  onShow: (callback) => {
+    const handler = () => callback();
+    ipcRenderer.on('launcher:shown', handler);
+    return () => ipcRenderer.removeListener('launcher:shown', handler);
+  },
 });

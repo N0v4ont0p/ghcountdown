@@ -1,6 +1,6 @@
 'use strict';
 
-const { app, BrowserWindow, shell, nativeTheme, ipcMain, net, protocol, Tray, Menu, nativeImage, screen } = require('electron');
+const { app, BrowserWindow, shell, nativeTheme, ipcMain, net, protocol, Tray, Menu, nativeImage, screen, globalShortcut } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { pathToFileURL } = require('url');
@@ -59,6 +59,18 @@ const MINI_PANEL_WIDTH = 380;
 const MINI_PANEL_HEIGHT = 280;
 const MINI_PANEL_SCREEN_EDGE_BUFFER = 20;
 
+// Launcher window dimensions
+const LAUNCHER_WIDTH = 620;
+const LAUNCHER_HEIGHT = 132;
+// How far above the bottom of the active display the launcher floats.
+// Far enough above the dock/taskbar that it never overlaps.
+const LAUNCHER_BOTTOM_OFFSET = 140;
+
+// Cross-platform global shortcut for the launcher.
+// macOS uses Option+Cmd+Space ("Alt+Cmd+Space" in Electron's accelerator syntax).
+// Windows/Linux use Control+Alt+Space.
+const LAUNCHER_SHORTCUT = isMac ? 'Alt+Cmd+Space' : 'Control+Alt+Space';
+
 // ---------------------------------------------------------------------------
 // Mini panel position persistence
 // ---------------------------------------------------------------------------
@@ -107,6 +119,8 @@ let mainWindow = null;
 let tray = null;
 /** @type {BrowserWindow | null} */
 let miniPanelWindow = null;
+/** @type {BrowserWindow | null} */
+let launcherWindow = null;
 /** @type {object | null} */
 let lastTrayStatus = null;
 let appIsQuitting = false;
@@ -202,6 +216,10 @@ function buildTrayMenu(status) {
   menuItems.push({
     label: 'Open GHCountdown',
     click: showMainApp,
+  });
+  menuItems.push({
+    label: `Open Launcher\t${isMac ? '⌥⌘Space' : 'Ctrl+Alt+Space'}`,
+    click: () => showLauncher(),
   });
   menuItems.push({
     label: 'Open Timer',
@@ -347,6 +365,135 @@ function createMiniPanel() {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Global launcher window
+// ---------------------------------------------------------------------------
+
+/**
+ * Compute the on-screen position for the launcher: horizontally centered on
+ * the display containing the cursor, anchored above the bottom edge.
+ */
+function getLauncherPosition() {
+  const cursor = screen.getCursorScreenPoint();
+  const display = screen.getDisplayNearestPoint(cursor);
+  const { x, y, width, height } = display.workArea;
+  const px = Math.round(x + (width - LAUNCHER_WIDTH) / 2);
+  const py = Math.round(y + height - LAUNCHER_HEIGHT - LAUNCHER_BOTTOM_OFFSET);
+  return { x: px, y: py };
+}
+
+function createLauncherWindow() {
+  if (launcherWindow && !launcherWindow.isDestroyed()) return launcherWindow;
+
+  const { x, y } = getLauncherPosition();
+
+  launcherWindow = new BrowserWindow({
+    width: LAUNCHER_WIDTH,
+    height: LAUNCHER_HEIGHT,
+    x,
+    y,
+    show: false,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    movable: true,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    hasShadow: true,
+    // Don't show in the macOS App Switcher (Cmd+Tab) — this is a utility popup,
+    // not a regular window.
+    ...(isMac ? { type: 'panel' } : {}),
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.cjs'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+
+  // Float above full-screen apps too — important for a global launcher.
+  launcherWindow.setAlwaysOnTop(true, 'screen-saver');
+  if (isMac) {
+    launcherWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  }
+
+  const launcherUrl = isDev
+    ? `${process.env.ELECTRON_DEV_URL || 'http://localhost:5173'}?launcher=1`
+    : 'app://localhost/index.html?launcher=1';
+  launcherWindow.loadURL(launcherUrl);
+
+  // Hide instead of close when focus is lost so the popup feels lightweight.
+  launcherWindow.on('blur', () => {
+    if (!launcherWindow || launcherWindow.isDestroyed()) return;
+    if (launcherWindow.isVisible()) launcherWindow.hide();
+  });
+
+  launcherWindow.on('closed', () => {
+    launcherWindow = null;
+  });
+
+  // Open external links in the default browser
+  launcherWindow.webContents.setWindowOpenHandler(({ url }) => {
+    shell.openExternal(url);
+    return { action: 'deny' };
+  });
+
+  return launcherWindow;
+}
+
+/**
+ * Show the launcher: create on first use, otherwise re-position to the active
+ * display, show, and focus.  Sends 'launcher:shown' so the renderer can clear
+ * any stale flash messages and re-focus the input.
+ */
+function showLauncher() {
+  if (!launcherWindow || launcherWindow.isDestroyed()) {
+    createLauncherWindow();
+    // Wait for the page to be ready before showing — avoids a flash of blank.
+    launcherWindow.once('ready-to-show', () => {
+      if (!launcherWindow || launcherWindow.isDestroyed()) return;
+      const pos = getLauncherPosition();
+      launcherWindow.setPosition(pos.x, pos.y);
+      launcherWindow.show();
+      launcherWindow.focus();
+      launcherWindow.webContents.send('launcher:shown');
+    });
+    return;
+  }
+
+  // Re-position to whichever display the user's cursor is on right now
+  const pos = getLauncherPosition();
+  launcherWindow.setPosition(pos.x, pos.y);
+  launcherWindow.show();
+  launcherWindow.focus();
+  launcherWindow.webContents.send('launcher:shown');
+}
+
+function hideLauncher() {
+  if (launcherWindow && !launcherWindow.isDestroyed() && launcherWindow.isVisible()) {
+    launcherWindow.hide();
+  }
+}
+
+function toggleLauncher() {
+  if (launcherWindow && !launcherWindow.isDestroyed() && launcherWindow.isVisible()) {
+    // Already visible: just refocus the input (gives the user a clean slate).
+    launcherWindow.focus();
+    launcherWindow.webContents.send('launcher:shown');
+    return;
+  }
+  showLauncher();
+}
+
+ipcMain.on('launcher:hide', () => hideLauncher());
+
+// ---------------------------------------------------------------------------
+// Tray
+// ---------------------------------------------------------------------------
+
 // Minimal 16×16 black circle with transparency — used as an inline fallback
 // when the icon file cannot be read.  macOS template images render the black
 // portions in the appropriate menu-bar colour (light/dark adaptive).
@@ -355,11 +502,10 @@ const TRAY_ICON_FALLBACK_B64 =
   'REABNmkUJUNCAeXhQERQkw8AK997hajtbdUAAAAASUVORK5CYII=';
 
 function createTray() {
-  if (tray || !isMac) return;
+  if (tray) return;
 
-  // In a packaged build the icon is placed outside the ASAR via extraResources
-  // so that nativeImage.createFromPath() can always read it as a real file.
-  // In development __dirname points directly to the electron/ folder.
+  // The tray icon is platform-agnostic: macOS uses it as a menu-bar template,
+  // Windows uses it for the system tray.  Either way, the same PNG works.
   const iconPath = app.isPackaged
     ? path.join(process.resourcesPath, 'tray-icon.png')
     : path.join(__dirname, '../build/tray-icon.png');
@@ -368,15 +514,15 @@ function createTray() {
   const loaded = nativeImage.createFromPath(iconPath);
   if (!loaded.isEmpty()) {
     trayIcon = loaded.resize({ width: 16, height: 16 });
-    // Mark as template so macOS renders it correctly in light/dark menu bars
-    trayIcon.setTemplateImage(true);
+    // macOS only: render as a template so the menu-bar tints it light/dark.
+    if (isMac) trayIcon.setTemplateImage(true);
   } else {
     // Log so it's visible in the Electron console rather than failing silently
     console.error('[tray] Failed to load icon from path, using built-in fallback:', iconPath);
     trayIcon = nativeImage.createFromDataURL(
       `data:image/png;base64,${TRAY_ICON_FALLBACK_B64}`
     );
-    trayIcon.setTemplateImage(true);
+    if (isMac) trayIcon.setTemplateImage(true);
   }
 
   tray = new Tray(trayIcon);
@@ -386,9 +532,17 @@ function createTray() {
   // clearly interactive.  On macOS, setContextMenu() already configures the
   // native status-bar menu, but calling popUpContextMenu() here makes the
   // behavior deterministic and consistent across all macOS/Electron versions.
-  tray.on('click', () => {
-    tray.popUpContextMenu();
-  });
+  // On Windows, left-click typically activates the app, so we open the main
+  // window instead and reserve the right-click for the menu.
+  if (isMac) {
+    tray.on('click', () => {
+      tray.popUpContextMenu();
+    });
+  } else {
+    tray.on('click', () => {
+      showMainApp();
+    });
+  }
 
   buildTrayMenu(null);
 }
@@ -488,16 +642,15 @@ function createWindow() {
     },
   });
 
-  // On macOS, closing the window keeps the app alive in the menu bar.
-  // The user can quit via the tray menu or Cmd+Q.
-  if (isMac) {
-    mainWindow.on('close', (event) => {
-      if (!appIsQuitting) {
-        event.preventDefault();
-        mainWindow.hide();
-      }
-    });
-  }
+  // Closing the main window keeps the app alive in the menu bar (macOS) /
+  // system tray (Windows) so the global shortcut continues to work.  The user
+  // can fully quit via the tray menu or Cmd+Q / Ctrl+Q.
+  mainWindow.on('close', (event) => {
+    if (!appIsQuitting) {
+      event.preventDefault();
+      mainWindow.hide();
+    }
+  });
 
   if (isDev) {
     const devUrl = process.env.ELECTRON_DEV_URL || 'http://localhost:5173';
@@ -544,6 +697,16 @@ app.whenReady().then(() => {
   createWindow();
   createTray();
 
+  // Register the global launcher shortcut.  We try the platform-default first
+  // and, if the OS rejects it (e.g. another app already grabbed the
+  // combination), log a warning rather than crash.
+  const registered = globalShortcut.register(LAUNCHER_SHORTCUT, () => {
+    toggleLauncher();
+  });
+  if (!registered) {
+    console.warn(`[launcher] Failed to register global shortcut '${LAUNCHER_SHORTCUT}' — it may be in use by another app.`);
+  }
+
   // macOS: show main window when dock icon is clicked
   app.on('activate', () => {
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -555,17 +718,23 @@ app.whenReady().then(() => {
   });
 });
 
-// Quit when all windows are closed, except on macOS
+// The app must keep running even when every window is closed so the global
+// shortcut and tray menu stay live (matches Claude / ChatGPT desktop behaviour).
+// The user explicitly quits via the tray menu or Cmd+Q / Ctrl+Q.
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
+  // Intentionally a no-op on every platform.
 });
 
-// Ensure a clean quit (destroy tray) when the app is actually quitting
+// Ensure a clean quit (destroy tray, release global shortcuts) when the app
+// is actually quitting.
 app.on('before-quit', () => {
   appIsQuitting = true;
+  try { globalShortcut.unregisterAll(); } catch { /* best-effort */ }
   if (tray && !tray.isDestroyed()) {
     tray.destroy();
   }
+});
+
+app.on('will-quit', () => {
+  try { globalShortcut.unregisterAll(); } catch { /* best-effort */ }
 });

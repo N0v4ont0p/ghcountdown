@@ -78,6 +78,13 @@ export async function initDB(): Promise<IDBDatabase> {
           goalsStore.createIndex('status', 'status', { unique: false });
         }
       }
+
+      if (oldVersion < 4) {
+        if (!db.objectStoreNames.contains(STORES.QUICK_NOTES)) {
+          const notesStore = db.createObjectStore(STORES.QUICK_NOTES, { keyPath: 'id' });
+          notesStore.createIndex('createdAt', 'createdAt', { unique: false });
+        }
+      }
     };
   });
 }

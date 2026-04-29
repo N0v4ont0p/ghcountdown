@@ -1,5 +1,11 @@
 export const DB_NAME = 'ghcountdown';
-export const DB_VERSION = 3;
+export const DB_VERSION = 4;
+
+export interface QuickNote {
+  id: string;
+  text: string;
+  createdAt: string;
+}
 
 export interface Goal {
   id: string;
@@ -139,4 +145,5 @@ export const STORES = {
   SCHEDULE_OVERRIDES: 'scheduleOverrides',
   HABIT_MODEL: 'habitModel',
   GOALS: 'goals',
+  QUICK_NOTES: 'quickNotes',
 } as const;
