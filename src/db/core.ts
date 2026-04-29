@@ -78,6 +78,61 @@ export async function initDB(): Promise<IDBDatabase> {
           goalsStore.createIndex('status', 'status', { unique: false });
         }
       }
+
+      if (oldVersion < 4) {
+        if (!db.objectStoreNames.contains(STORES.QUICK_NOTES)) {
+          const notesStore = db.createObjectStore(STORES.QUICK_NOTES, { keyPath: 'id' });
+          notesStore.createIndex('createdAt', 'createdAt', { unique: false });
+        }
+      }
+
+      if (oldVersion < 5) {
+        // Add updatedAt + tags indexes to the quickNotes store, and migrate any
+        // existing rows so they have the new fields.  Schema changes can only
+        // happen inside an upgrade transaction, so we use the one provided.
+        const tx = (event.target as IDBOpenDBRequest).transaction!;
+        let notesStore;
+        if (db.objectStoreNames.contains(STORES.QUICK_NOTES)) {
+          notesStore = tx.objectStore(STORES.QUICK_NOTES);
+        } else {
+          notesStore = db.createObjectStore(STORES.QUICK_NOTES, { keyPath: 'id' });
+          notesStore.createIndex('createdAt', 'createdAt', { unique: false });
+        }
+        if (!notesStore.indexNames.contains('updatedAt')) {
+          notesStore.createIndex('updatedAt', 'updatedAt', { unique: false });
+        }
+        if (!notesStore.indexNames.contains('tags')) {
+          notesStore.createIndex('tags', 'tags', { unique: false, multiEntry: true });
+        }
+        // Backfill any rows missing the new fields
+        const cursorReq = notesStore.openCursor();
+        cursorReq.onerror = () => {
+          console.error('[db migration v5] failed to open cursor on quickNotes:', cursorReq.error);
+        };
+        cursorReq.onsuccess = () => {
+          const cursor = cursorReq.result;
+          if (!cursor) return;
+          const value = cursor.value as Partial<{
+            id: string; title: string; text: string; tags: string[];
+            createdAt: string; updatedAt: string;
+          }>;
+          let dirty = false;
+          if (typeof value.title !== 'string') { value.title = ''; dirty = true; }
+          if (!Array.isArray(value.tags)) { value.tags = []; dirty = true; }
+          if (typeof value.updatedAt !== 'string') {
+            value.updatedAt = value.createdAt ?? new Date().toISOString();
+            dirty = true;
+          }
+          if (dirty) {
+            const updateReq = cursor.update(value);
+            updateReq.onerror = () => {
+              // Log but keep iterating — one bad row shouldn't abort the migration.
+              console.error('[db migration v5] failed to backfill quickNote row:', updateReq.error);
+            };
+          }
+          cursor.continue();
+        };
+      }
     };
   });
 }

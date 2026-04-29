@@ -6,13 +6,14 @@ import { getAllTodos } from '@/db/repositories/todosRepo';
 import { getAllEvents } from '@/db/repositories/eventsRepo';
 import { getAllTimeBlocks } from '@/db/repositories/timeBlocksRepo';
 import { getAllProjects } from '@/db/repositories/projectsRepo';
-import { CheckSquare, CalendarBlank, Clock, Folder } from '@phosphor-icons/react';
+import { searchQuickNotes, deriveNoteTitle } from '@/db/repositories/notesRepo';
+import { CheckSquare, CalendarBlank, Clock, Folder, NotePencil } from '@phosphor-icons/react';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
 
 interface SearchResult {
   id: string;
-  type: 'todo' | 'event' | 'timeBlock' | 'project';
+  type: 'todo' | 'event' | 'timeBlock' | 'project' | 'note';
   title: string;
   subtitle: string;
   navigateTo: string;
@@ -22,9 +23,11 @@ interface UniversalSearchProps {
   open: boolean;
   onClose: () => void;
   onNavigate: (view: string) => void;
+  /** Called when the user picks a note result; receives id + active query. */
+  onSelectNote?: (id: string, query: string) => void;
 }
 
-export function UniversalSearch({ open, onClose, onNavigate }: UniversalSearchProps) {
+export function UniversalSearch({ open, onClose, onNavigate, onSelectNote }: UniversalSearchProps) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -48,17 +51,26 @@ export function UniversalSearch({ open, onClose, onNavigate }: UniversalSearchPr
     const DEBOUNCE_MS = 150;
     const timer = setTimeout(async () => {
       const q = query.toLowerCase();
-      const [todos, events, blocks, projects] = await Promise.all([
+      const [todos, events, blocks, projects, notes] = await Promise.all([
         getAllTodos(),
         getAllEvents(),
         getAllTimeBlocks(),
         getAllProjects(),
+        searchQuickNotes({ query, limit: 4 }),
       ]);
       const out: SearchResult[] = [
         ...todos
           .filter(t => t.title.toLowerCase().includes(q))
           .slice(0, 4)
           .map(t => ({ id: t.id, type: 'todo' as const, title: t.title, subtitle: t.status, navigateTo: 'todos' })),
+        ...notes
+          .map(n => ({
+            id: n.id,
+            type: 'note' as const,
+            title: deriveNoteTitle(n),
+            subtitle: n.tags.length > 0 ? n.tags.map(t => '#' + t).join(' ') : 'Note',
+            navigateTo: 'notes',
+          })),
         ...events
           .filter(e => e.title.toLowerCase().includes(q) || e.tags.some(tag => tag.toLowerCase().includes(q)))
           .slice(0, 4)
@@ -105,6 +117,9 @@ export function UniversalSearch({ open, onClose, onNavigate }: UniversalSearchPr
   }
 
   function navigate(result: SearchResult) {
+    if (result.type === 'note' && onSelectNote) {
+      onSelectNote(result.id, query);
+    }
     onNavigate(result.navigateTo);
     onClose();
   }
@@ -114,6 +129,7 @@ export function UniversalSearch({ open, onClose, onNavigate }: UniversalSearchPr
     event: CalendarBlank,
     timeBlock: Clock,
     project: Folder,
+    note: NotePencil,
   };
 
   return (
@@ -128,7 +144,7 @@ export function UniversalSearch({ open, onClose, onNavigate }: UniversalSearchPr
             ref={inputRef}
             value={query}
             onChange={e => setQuery(e.target.value)}
-            placeholder="Search todos, events, blocks, projects..."
+            placeholder="Search todos, notes, events, blocks, projects..."
             className="border-0 shadow-none focus-visible:ring-0 text-base px-0 h-9"
           />
         </div>
@@ -163,7 +179,7 @@ export function UniversalSearch({ open, onClose, onNavigate }: UniversalSearchPr
         )}
         {!query.trim() && (
           <div className="p-4 text-xs text-muted-foreground text-center">
-            Type to search todos, events, time blocks, and projects
+            Type to search todos, notes, events, time blocks, and projects
           </div>
         )}
       </DialogContent>

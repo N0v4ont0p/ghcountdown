@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { House, CalendarBlank, ListChecks, Clock, Gear, ChartBar, ClockCountdown } from '@phosphor-icons/react';
+import { House, CalendarBlank, ListChecks, Clock, Gear, ChartBar, ClockCountdown, NotePencil } from '@phosphor-icons/react';
 import { cn } from '@/lib/utils';
 import logoUrl from '@/assets/logo.svg';
 
@@ -13,6 +13,7 @@ const navItems = [
   { id: 'timer', label: 'Timer', icon: ClockCountdown, group: 'Core' },
   { id: 'timeline', label: 'Timeline', icon: Clock, group: 'Core' },
   { id: 'todos', label: 'Todos', icon: ListChecks, group: 'Manage' },
+  { id: 'notes', label: 'Notes', icon: NotePencil, group: 'Manage' },
   { id: 'events', label: 'Events', icon: CalendarBlank, group: 'Manage' },
   { id: 'statistics', label: 'Stats', icon: ChartBar, group: 'Insights' },
   { id: 'settings', label: 'Settings', icon: Gear, group: 'System' },

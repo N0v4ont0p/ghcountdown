@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { createTodo } from '@/db/repositories/todosRepo';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
+import { parseTodoInput } from '@/lib/todoParse';
 
 interface QuickCaptureProps {
   open: boolean;
@@ -33,28 +34,17 @@ export function QuickCapture({ open, onClose }: QuickCaptureProps) {
     const text = value.trim();
     if (!text) return;
 
-    let priority: 1 | 2 | 3 | 4 | 5 = 3;
-    let status: 'today' | 'someday' = 'today';
-    if (/urgent|!!|asap/i.test(text)) priority = 5;
-    else if (/important|!/i.test(text)) priority = 4;
-    else if (/someday|maybe|eventually/i.test(text)) { priority = 1; status = 'someday'; }
-
-    const durationMatch = text.match(/~?(\d+(?:\.\d+)?)\s*(h|hr|hour|min|m)\b/i);
-    const estimatedDurationMin = durationMatch
-      ? (durationMatch[2].toLowerCase().startsWith('h') ? Math.round(parseFloat(durationMatch[1]) * 60) : Math.round(parseFloat(durationMatch[1])))
-      : null;
-
-    const cleanTitle = text.replace(/~?\d+(?:\.\d+)?\s*(h|hr|hour|min|m)\b/gi, '').trim();
+    const parsed = parseTodoInput(text);
 
     try {
       await createTodo({
-        title: cleanTitle || text,
-        status,
+        title: parsed.title,
+        status: parsed.status,
         dueAt: null,
-        priority,
+        priority: parsed.priority,
         projectId: null,
         eventId: null,
-        estimatedMinutes: estimatedDurationMin,
+        estimatedMinutes: parsed.estimatedMinutes,
       });
       toast.success('Captured');
       onClose();

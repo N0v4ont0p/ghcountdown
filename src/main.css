@@ -183,4 +183,11 @@
   body {
     @apply bg-background text-foreground;
   }
+
+  /* Launcher window must let the OS-level transparency show through so the
+     popup card has rounded corners with no opaque rectangle behind it. */
+  body.launcher-window,
+  html:has(body.launcher-window) {
+    background: transparent !important;
+  }
 }

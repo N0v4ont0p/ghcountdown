@@ -6,6 +6,7 @@ import { HomeView } from '@/components/HomeView';
 import { GoalsSettingsCard } from '@/components/GoalsSettingsCard';
 import { EventsView } from '@/components/EventsView';
 import { TodosView } from '@/components/TodosView';
+import { NotesView } from '@/components/NotesView';
 import { TimelineView } from '@/components/TimelineView';
 import { TimerView } from '@/components/TimerView';
 import { StatisticsView } from '@/components/StatisticsView';
@@ -16,6 +17,7 @@ import { EveningFlow } from '@/components/EveningFlow';
 import { MorningFlow } from '@/components/MorningFlow';
 import { WeeklyReview } from '@/components/WeeklyReview';
 import { MiniPanelView } from '@/components/MiniPanelView';
+import { LauncherView } from '@/components/LauncherView';
 import { initDB } from '@/db/core';
 import { seedDatabase } from '@/db/seed';
 import { deleteAllEvents, getNextImportantEvent, getAllEvents } from '@/db/repositories/eventsRepo';
@@ -82,6 +84,8 @@ declare global {
       setMiniPanelVisible?: (visible: boolean) => void;
       miniPanelAction?: (action: string) => void;
       onMiniPanelStateChanged?: (cb: (state: { visible: boolean }) => void) => () => void;
+      hide?: () => void;
+      onShow?: (cb: () => void) => () => void;
     };
   }
 }
@@ -89,6 +93,10 @@ declare global {
 // Detect whether we are running as the compact mini-panel widget window
 const isMiniPanel = typeof window !== 'undefined' &&
   new URLSearchParams(window.location.search).get('miniPanel') === '1';
+
+// Detect whether we are running as the global launcher popup window
+const isLauncher = typeof window !== 'undefined' &&
+  new URLSearchParams(window.location.search).get('launcher') === '1';
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
@@ -124,6 +132,11 @@ function MainApp() {
   const [isAIPopupOpen, setIsAIPopupOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isQuickCaptureOpen, setIsQuickCaptureOpen] = useState(false);
+  // When UniversalSearch opens a note result, we stash the id/query so the
+  // NotesView can pre-select it on first render.  Cleared after consumption
+  // by the NotesView itself (it only reads these on mount).
+  const [pendingNoteSelection, setPendingNoteSelection] = useState<string | null>(null);
+  const [pendingNoteQuery, setPendingNoteQuery] = useState<string>('');
   const [isRoutinePopoverOpen, setIsRoutinePopoverOpen] = useState(false);
   const [morningBriefing, setMorningBriefing] = useState<string | null>(null);
   const [aiNudges, setAiNudges] = useState<string[]>([]);
@@ -852,6 +865,21 @@ function MainApp() {
               </motion.div>
             )}
 
+            {currentView === 'notes' && (
+              <motion.div
+                key="notes"
+                initial={{ opacity: 0, y: 16 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -16 }}
+                transition={{ duration: 0.25 }}
+              >
+                <NotesView
+                  initialSelectedId={pendingNoteSelection}
+                  initialQuery={pendingNoteQuery}
+                />
+              </motion.div>
+            )}
+
             {currentView === 'timeline' && (
               <motion.div
                 key="timeline"
@@ -1324,6 +1352,10 @@ function MainApp() {
         open={isSearchOpen}
         onClose={() => setIsSearchOpen(false)}
         onNavigate={setCurrentView}
+        onSelectNote={(id, q) => {
+          setPendingNoteSelection(id);
+          setPendingNoteQuery(q);
+        }}
       />
 
       <AnimatePresence>
@@ -1349,6 +1381,7 @@ function MainApp() {
 }
 
 function App() {
+  if (isLauncher) return <LauncherView />;
   if (isMiniPanel) return <MiniPanelView />;
   return <MainApp />;
 }
