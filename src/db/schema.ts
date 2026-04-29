@@ -1,10 +1,16 @@
 export const DB_NAME = 'ghcountdown';
-export const DB_VERSION = 4;
+export const DB_VERSION = 5;
 
 export interface QuickNote {
   id: string;
+  /** Optional human-readable title; if empty, UI derives one from `text`. */
+  title: string;
+  /** Body of the note (plain text / markdown-ish). */
   text: string;
+  /** Lower-cased, deduplicated tags for filtering & search. */
+  tags: string[];
   createdAt: string;
+  updatedAt: string;
 }
 
 export interface Goal {

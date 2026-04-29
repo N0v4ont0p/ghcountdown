@@ -6,6 +6,7 @@ import { HomeView } from '@/components/HomeView';
 import { GoalsSettingsCard } from '@/components/GoalsSettingsCard';
 import { EventsView } from '@/components/EventsView';
 import { TodosView } from '@/components/TodosView';
+import { NotesView } from '@/components/NotesView';
 import { TimelineView } from '@/components/TimelineView';
 import { TimerView } from '@/components/TimerView';
 import { StatisticsView } from '@/components/StatisticsView';
@@ -131,6 +132,11 @@ function MainApp() {
   const [isAIPopupOpen, setIsAIPopupOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isQuickCaptureOpen, setIsQuickCaptureOpen] = useState(false);
+  // When UniversalSearch opens a note result, we stash the id/query so the
+  // NotesView can pre-select it on first render.  Cleared after consumption
+  // by the NotesView itself (it only reads these on mount).
+  const [pendingNoteSelection, setPendingNoteSelection] = useState<string | null>(null);
+  const [pendingNoteQuery, setPendingNoteQuery] = useState<string>('');
   const [isRoutinePopoverOpen, setIsRoutinePopoverOpen] = useState(false);
   const [morningBriefing, setMorningBriefing] = useState<string | null>(null);
   const [aiNudges, setAiNudges] = useState<string[]>([]);
@@ -859,6 +865,21 @@ function MainApp() {
               </motion.div>
             )}
 
+            {currentView === 'notes' && (
+              <motion.div
+                key="notes"
+                initial={{ opacity: 0, y: 16 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -16 }}
+                transition={{ duration: 0.25 }}
+              >
+                <NotesView
+                  initialSelectedId={pendingNoteSelection}
+                  initialQuery={pendingNoteQuery}
+                />
+              </motion.div>
+            )}
+
             {currentView === 'timeline' && (
               <motion.div
                 key="timeline"
@@ -1331,6 +1352,10 @@ function MainApp() {
         open={isSearchOpen}
         onClose={() => setIsSearchOpen(false)}
         onNavigate={setCurrentView}
+        onSelectNote={(id, q) => {
+          setPendingNoteSelection(id);
+          setPendingNoteQuery(q);
+        }}
       />
 
       <AnimatePresence>

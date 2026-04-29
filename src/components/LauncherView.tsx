@@ -3,7 +3,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { CheckSquare, NotePencil, ArrowRight, Command } from '@phosphor-icons/react';
 import { useTheme } from '@/hooks/use-theme';
 import { createTodo } from '@/db/repositories/todosRepo';
-import { createQuickNote } from '@/db/repositories/notesRepo';
+import { createQuickNote, extractInlineTags } from '@/db/repositories/notesRepo';
+import { parseTodoInput } from '@/lib/todoParse';
 
 type Mode = 'todo' | 'note';
 
@@ -23,16 +24,16 @@ const MODES: Array<{ id: Mode; label: string; placeholder: string; icon: typeof 
   {
     id: 'todo',
     label: 'New Todo',
-    placeholder: 'What do you need to do?',
+    placeholder: 'What do you need to do?  (try "!" or "~30m")',
     icon: CheckSquare,
-    hint: 'Adds to today',
+    hint: 'Adds to today · ! = important, urgent = critical, ~30m = duration',
   },
   {
     id: 'note',
     label: 'Quick Note',
-    placeholder: 'Capture a thought…',
+    placeholder: 'Capture a thought…  (use #tag to file it)',
     icon: NotePencil,
-    hint: 'Saved locally',
+    hint: 'Saved locally · #tag to organize',
   },
 ];
 
@@ -107,21 +108,24 @@ export function LauncherView() {
     setSubmitting(true);
     try {
       if (mode === 'todo') {
+        const parsed = parseTodoInput(text);
         await createTodo({
-          title: text,
-          status: 'today',
+          title: parsed.title,
+          status: parsed.status,
           dueAt: null,
-          priority: 3,
+          priority: parsed.priority,
           projectId: null,
           eventId: null,
+          estimatedMinutes: parsed.estimatedMinutes,
         });
-        // Tell any open main-app windows to refresh
         try { window.dispatchEvent(new Event('ghc-data-changed')); } catch { /* ignore */ }
-        showFlash('Added to today');
+        showFlash(parsed.status === 'someday' ? 'Saved to someday' : 'Added to today');
       } else {
-        await createQuickNote(text);
+        // Notes: extract `#tags` from the input so users can categorize on the fly
+        const { text: body, tags } = extractInlineTags(text);
+        await createQuickNote({ text: body || text, tags });
         try { window.dispatchEvent(new Event('ghc-data-changed')); } catch { /* ignore */ }
-        showFlash('Note saved');
+        showFlash(tags.length > 0 ? `Note saved · ${tags.map(t => '#' + t).join(' ')}` : 'Note saved');
       }
       setValue('');
       // Keep the window open briefly so the user sees the confirmation,
