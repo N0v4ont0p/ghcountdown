@@ -7,6 +7,13 @@ import { createQuickNote } from '@/db/repositories/notesRepo';
 
 type Mode = 'todo' | 'note';
 
+// How long the success "✓ Added to today" / "✓ Note saved" message stays visible
+// in the footer before the keyboard hint reappears.
+const FLASH_DURATION_MS = 1100;
+// How long the launcher waits after a successful submit before hiding itself,
+// giving the user a brief "yes, that worked" confirmation.
+const AUTO_HIDE_DELAY_MS = 450;
+
 interface ElectronLauncherAPI {
   hide?: () => void;
   onShow?: (cb: () => void) => () => void;
@@ -91,7 +98,7 @@ export function LauncherView() {
   function showFlash(message: string) {
     setFlash(message);
     if (flashTimer.current !== null) window.clearTimeout(flashTimer.current);
-    flashTimer.current = window.setTimeout(() => setFlash(null), 1100);
+    flashTimer.current = window.setTimeout(() => setFlash(null), FLASH_DURATION_MS);
   }
 
   async function submit() {
@@ -119,7 +126,7 @@ export function LauncherView() {
       setValue('');
       // Keep the window open briefly so the user sees the confirmation,
       // then auto-hide so the launcher feels like a fast capture tool.
-      window.setTimeout(() => hide(), 450);
+      window.setTimeout(() => hide(), AUTO_HIDE_DELAY_MS);
     } catch (err) {
       console.error('[launcher] submit failed:', err);
       showFlash('Save failed');

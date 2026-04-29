@@ -71,6 +71,23 @@ const LAUNCHER_BOTTOM_OFFSET = 140;
 // Windows/Linux use Control+Alt+Space.
 const LAUNCHER_SHORTCUT = isMac ? 'Alt+Cmd+Space' : 'Control+Alt+Space';
 
+/**
+ * Render the global shortcut as a human-readable label for menus.
+ * Single source of truth: keeps the tray menu, future tooltips, and the
+ * registration call from drifting apart.
+ */
+function formatShortcutLabel(accelerator) {
+  if (isMac) {
+    return accelerator
+      .replace(/CommandOrControl|Cmd|Command/g, '⌘')
+      .replace(/Alt|Option/g, '⌥')
+      .replace(/Shift/g, '⇧')
+      .replace(/Ctrl|Control/g, '⌃')
+      .replace(/\+/g, '');
+  }
+  return accelerator;
+}
+
 // ---------------------------------------------------------------------------
 // Mini panel position persistence
 // ---------------------------------------------------------------------------
@@ -218,7 +235,7 @@ function buildTrayMenu(status) {
     click: showMainApp,
   });
   menuItems.push({
-    label: `Open Launcher\t${isMac ? '⌥⌘Space' : 'Ctrl+Alt+Space'}`,
+    label: `Open Launcher\t${formatShortcutLabel(LAUNCHER_SHORTCUT)}`,
     click: () => showLauncher(),
   });
   menuItems.push({
