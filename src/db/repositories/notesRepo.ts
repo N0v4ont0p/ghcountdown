@@ -2,6 +2,10 @@ import { v4 as uuidv4 } from 'uuid';
 import { QuickNote, STORES } from '../schema';
 import { getAll, getByKey, put, remove, clearStore } from '../core';
 
+/** Hard cap on a single tag length (in chars).  Same value used in both the
+ *  inline `#tag` regex and the explicit normalizer so they can't drift. */
+const MAX_TAG_LENGTH = 32;
+
 /**
  * Strip leading "#tag" tokens from raw input and return them separately.
  * Inline `#hashtags` anywhere in the body are also captured.  This lets users
@@ -11,7 +15,7 @@ import { getAll, getByKey, put, remove, clearStore } from '../core';
 export function extractInlineTags(raw: string): { text: string; tags: string[] } {
   const tags: string[] = [];
   // Match #word characters (letters/digits/_/-), not preceded by alphanumerics
-  const re = /(^|\s)#([\p{L}\p{N}_-]{1,32})\b/gu;
+  const re = new RegExp(`(^|\\s)#([\\p{L}\\p{N}_-]{1,${MAX_TAG_LENGTH}})\\b`, 'gu');
   const text = raw.replace(re, (_m, lead: string, tag: string) => {
     tags.push(tag.toLowerCase());
     return lead; // keep the preceding whitespace, drop the hashtag
@@ -33,7 +37,7 @@ export function dedupeTags(tags: string[]): string[] {
 }
 
 export function normalizeTag(tag: string): string {
-  return tag.trim().replace(/^#+/, '').toLowerCase().slice(0, 32);
+  return tag.trim().replace(/^#+/, '').toLowerCase().slice(0, MAX_TAG_LENGTH);
 }
 
 /** Best-effort title for a note: explicit `title` if set, otherwise first line of body. */

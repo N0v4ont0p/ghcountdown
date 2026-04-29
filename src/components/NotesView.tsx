@@ -180,24 +180,45 @@ export function NotesView({ initialSelectedId, initialQuery }: NotesViewProps) {
     };
   }, [editTitle, editText, editTags, isDirty, selectedNote, refresh]);
 
+  // Mirror the latest editor state into refs so the unmount-time flush below
+  // sees current values (the empty-deps cleanup would otherwise capture stale
+  // initial state).
+  const flushRef = useRef({
+    selectedId: null as string | null,
+    isDirty: false,
+    title: '',
+    text: '',
+    tags: [] as string[],
+  });
+  useEffect(() => {
+    flushRef.current = {
+      selectedId: selectedNote?.id ?? null,
+      isDirty,
+      title: editTitle,
+      text: editText,
+      tags: editTags,
+    };
+  }, [selectedNote, isDirty, editTitle, editText, editTags]);
+
   // Cleanup on unmount: flush any pending save synchronously-ish so the user
-  // doesn't lose typing when navigating away
+  // doesn't lose typing when navigating away.  Reads the latest snapshot via
+  // flushRef rather than capturing stale state from the effect closure.
   useEffect(() => {
     return () => {
       if (saveTimer.current !== null) {
         window.clearTimeout(saveTimer.current);
         saveTimer.current = null;
       }
-      if (selectedNote && isDirty) {
+      const snap = flushRef.current;
+      if (snap.selectedId && snap.isDirty) {
         // Best-effort flush — fire and forget
-        void updateQuickNote(selectedNote.id, {
-          title: editTitle,
-          text: editText,
-          tags: editTags,
+        void updateQuickNote(snap.selectedId, {
+          title: snap.title,
+          text: snap.text,
+          tags: snap.tags,
         });
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function markDirty() {

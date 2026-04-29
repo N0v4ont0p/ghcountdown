@@ -121,9 +121,17 @@ export function LauncherView() {
         try { window.dispatchEvent(new Event('ghc-data-changed')); } catch { /* ignore */ }
         showFlash(parsed.status === 'someday' ? 'Saved to someday' : 'Added to today');
       } else {
-        // Notes: extract `#tags` from the input so users can categorize on the fly
+        // Notes: extract `#tags` from the input so users can categorize on the fly.
+        // If the body becomes empty (e.g. user typed only "#idea"), save the
+        // empty body — it's a tags-only marker, not the original raw text.
         const { text: body, tags } = extractInlineTags(text);
-        await createQuickNote({ text: body || text, tags });
+        if (!body && tags.length === 0) {
+          // Defensive: shouldn't happen because submit() short-circuits on
+          // empty `text`, but guards against weird whitespace-only inputs.
+          showFlash('Nothing to save');
+          return;
+        }
+        await createQuickNote({ text: body, tags });
         try { window.dispatchEvent(new Event('ghc-data-changed')); } catch { /* ignore */ }
         showFlash(tags.length > 0 ? `Note saved · ${tags.map(t => '#' + t).join(' ')}` : 'Note saved');
       }
