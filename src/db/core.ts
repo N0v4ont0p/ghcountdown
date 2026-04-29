@@ -106,6 +106,9 @@ export async function initDB(): Promise<IDBDatabase> {
         }
         // Backfill any rows missing the new fields
         const cursorReq = notesStore.openCursor();
+        cursorReq.onerror = () => {
+          console.error('[db migration v5] failed to open cursor on quickNotes:', cursorReq.error);
+        };
         cursorReq.onsuccess = () => {
           const cursor = cursorReq.result;
           if (!cursor) return;
@@ -120,7 +123,13 @@ export async function initDB(): Promise<IDBDatabase> {
             value.updatedAt = value.createdAt ?? new Date().toISOString();
             dirty = true;
           }
-          if (dirty) cursor.update(value);
+          if (dirty) {
+            const updateReq = cursor.update(value);
+            updateReq.onerror = () => {
+              // Log but keep iterating — one bad row shouldn't abort the migration.
+              console.error('[db migration v5] failed to backfill quickNote row:', updateReq.error);
+            };
+          }
           cursor.continue();
         };
       }
