@@ -160,6 +160,15 @@ function notifyMainWindowMiniPanelState(visible) {
 function showMainApp() {
   if (mainWindow && !mainWindow.isDestroyed()) {
     if (mainWindow.isMinimized()) mainWindow.restore();
+    // On macOS, app.show() is required to un-hide the application (reverses any
+    // "hidden" state at the OS level) and app.focus({ steal: true }) brings it
+    // to the foreground even when another app is currently active.  Without
+    // these calls the window can appear but remain behind other apps or fail to
+    // show at all after being hidden via mainWindow.hide().
+    if (isMac) {
+      app.show();
+      app.focus({ steal: true });
+    }
     mainWindow.show();
     mainWindow.focus();
   } else {
@@ -727,6 +736,10 @@ app.whenReady().then(() => {
   // macOS: show main window when dock icon is clicked
   app.on('activate', () => {
     if (mainWindow && !mainWindow.isDestroyed()) {
+      if (isMac) {
+        app.show();
+        app.focus({ steal: true });
+      }
       mainWindow.show();
       mainWindow.focus();
     } else if (BrowserWindow.getAllWindows().length === 0) {
