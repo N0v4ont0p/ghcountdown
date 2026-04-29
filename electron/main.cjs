@@ -157,18 +157,24 @@ function notifyMainWindowMiniPanelState(visible) {
   }
 }
 
+/**
+ * On macOS, un-hide the application at the OS level and steal focus so that
+ * the app surfaces properly after being hidden via mainWindow.hide().
+ * app.show() reverses the "hidden" state; app.focus({ steal: true }) makes the
+ * app the active/frontmost application even when another app holds focus.
+ * This is a no-op on other platforms.
+ */
+function activateMacOSApp() {
+  if (isMac) {
+    app.show();
+    app.focus({ steal: true });
+  }
+}
+
 function showMainApp() {
   if (mainWindow && !mainWindow.isDestroyed()) {
     if (mainWindow.isMinimized()) mainWindow.restore();
-    // On macOS, app.show() is required to un-hide the application (reverses any
-    // "hidden" state at the OS level) and app.focus({ steal: true }) brings it
-    // to the foreground even when another app is currently active.  Without
-    // these calls the window can appear but remain behind other apps or fail to
-    // show at all after being hidden via mainWindow.hide().
-    if (isMac) {
-      app.show();
-      app.focus({ steal: true });
-    }
+    activateMacOSApp();
     mainWindow.show();
     mainWindow.focus();
   } else {
@@ -736,10 +742,7 @@ app.whenReady().then(() => {
   // macOS: show main window when dock icon is clicked
   app.on('activate', () => {
     if (mainWindow && !mainWindow.isDestroyed()) {
-      if (isMac) {
-        app.show();
-        app.focus({ steal: true });
-      }
+      activateMacOSApp();
       mainWindow.show();
       mainWindow.focus();
     } else if (BrowserWindow.getAllWindows().length === 0) {
