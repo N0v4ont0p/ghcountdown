@@ -138,6 +138,13 @@ let tray = null;
 let miniPanelWindow = null;
 /** @type {BrowserWindow | null} */
 let launcherWindow = null;
+/**
+ * True once the launcher window has fired `ready-to-show` AND its webContents
+ * have finished loading.  Used to gate show/focus/IPC calls so rapid-fire
+ * shortcut presses (or a tray click during initial load) don't operate on a
+ * half-initialized window.
+ */
+let launcherReady = false;
 /** @type {object | null} */
 let lastTrayStatus = null;
 let appIsQuitting = false;
@@ -417,6 +424,9 @@ function getLauncherPosition() {
 function createLauncherWindow() {
   if (launcherWindow && !launcherWindow.isDestroyed()) return launcherWindow;
 
+  // Reset readiness — we'll flip this to true once the page is fully loaded.
+  launcherReady = false;
+
   const { x, y } = getLauncherPosition();
 
   launcherWindow = new BrowserWindow({
@@ -455,16 +465,47 @@ function createLauncherWindow() {
   const launcherUrl = isDev
     ? `${process.env.ELECTRON_DEV_URL || 'http://localhost:5173'}?launcher=1`
     : 'app://localhost/index.html?launcher=1';
-  launcherWindow.loadURL(launcherUrl);
+  // Surface load failures specifically rather than letting them silently
+  // strand the launcher in an invisible-but-existing state.  The fail handler
+  // below will tear down the broken window so the next press recreates it.
+  launcherWindow.loadURL(launcherUrl).catch((err) => {
+    console.error(`[launcher] loadURL('${launcherUrl}') rejected:`, err);
+  });
+
+  // Mark the window ready only after the renderer has actually finished
+  // loading.  ready-to-show alone is not enough: webContents.send() before
+  // the renderer has subscribed to 'launcher:shown' silently drops the event.
+  launcherWindow.webContents.once('did-finish-load', () => {
+    launcherReady = true;
+  });
+
+  // If the page fails to load (broken bundle, dev server down, app:// error),
+  // log the *specific* failure and destroy the window so the next show recreates
+  // it from scratch instead of silently doing nothing.
+  launcherWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+    if (!isMainFrame) return;
+    console.error(
+      `[launcher] did-fail-load (${errorCode} ${errorDescription}) for ${validatedURL}`
+    );
+    launcherReady = false;
+    if (launcherWindow && !launcherWindow.isDestroyed()) {
+      launcherWindow.destroy();
+    }
+  });
 
   // Hide instead of close when focus is lost so the popup feels lightweight.
   launcherWindow.on('blur', () => {
     if (!launcherWindow || launcherWindow.isDestroyed()) return;
+    // Don't auto-hide before the page has even finished loading: a transient
+    // blur during startup would otherwise leave the launcher invisible and
+    // make the very first shortcut press feel like it "failed".
+    if (!launcherReady) return;
     if (launcherWindow.isVisible()) launcherWindow.hide();
   });
 
   launcherWindow.on('closed', () => {
     launcherWindow = null;
+    launcherReady = false;
   });
 
   // Open external links in the default browser
@@ -477,6 +518,68 @@ function createLauncherWindow() {
 }
 
 /**
+ * Internal: actually present the launcher window.  Assumes `launcherWindow`
+ * exists and is not destroyed.  Safe to call repeatedly; gates the
+ * 'launcher:shown' IPC on the renderer being loaded so the message is never
+ * dropped on the floor.
+ */
+function presentLauncher() {
+  if (!launcherWindow || launcherWindow.isDestroyed()) return;
+
+  try {
+    const pos = getLauncherPosition();
+    launcherWindow.setPosition(pos.x, pos.y);
+  } catch (err) {
+    console.error('[launcher] setPosition failed:', err);
+  }
+
+  // On macOS, the launcher is a `type: 'panel'` window which doesn't activate
+  // the app on its own.  If another app currently holds focus, calling
+  // `.focus()` on the BrowserWindow alone may not steal it — the launcher
+  // would then receive an immediate blur and hide itself, looking "broken".
+  // Promoting the app to frontmost first makes focus reliable.
+  if (isMac) {
+    try { app.focus({ steal: true }); } catch (err) {
+      console.error('[launcher] app.focus failed:', err);
+    }
+  }
+
+  try {
+    launcherWindow.show();
+    launcherWindow.focus();
+    if (typeof launcherWindow.moveTop === 'function') launcherWindow.moveTop();
+  } catch (err) {
+    console.error('[launcher] show/focus failed:', err);
+  }
+
+  // Notify the renderer to refocus the input + clear stale flash, but only
+  // once it has actually subscribed.  Otherwise the message is silently lost
+  // and the input doesn't get focus on the very first show.
+  notifyLauncherShown();
+}
+
+/**
+ * Send 'launcher:shown' to the renderer, deferring until the page is loaded.
+ */
+function notifyLauncherShown() {
+  if (!launcherWindow || launcherWindow.isDestroyed()) return;
+  const wc = launcherWindow.webContents;
+  if (launcherReady && !wc.isLoading()) {
+    try { wc.send('launcher:shown'); } catch (err) {
+      console.error('[launcher] send(launcher:shown) failed:', err);
+    }
+    return;
+  }
+  // Page not ready yet — wait for it, then fire exactly once.
+  wc.once('did-finish-load', () => {
+    if (!launcherWindow || launcherWindow.isDestroyed()) return;
+    try { launcherWindow.webContents.send('launcher:shown'); } catch (err) {
+      console.error('[launcher] deferred send(launcher:shown) failed:', err);
+    }
+  });
+}
+
+/**
  * Show the launcher: create on first use, otherwise re-position to the active
  * display, show, and focus.  Sends 'launcher:shown' so the renderer can clear
  * any stale flash messages and re-focus the input.
@@ -485,36 +588,37 @@ function showLauncher() {
   if (!launcherWindow || launcherWindow.isDestroyed()) {
     createLauncherWindow();
     // Wait for the page to be ready before showing — avoids a flash of blank.
+    // Using `once` on the BrowserWindow event is fine because createLauncherWindow
+    // creates a fresh window (and a fresh listener) every time.
     launcherWindow.once('ready-to-show', () => {
-      if (!launcherWindow || launcherWindow.isDestroyed()) return;
-      const pos = getLauncherPosition();
-      launcherWindow.setPosition(pos.x, pos.y);
-      launcherWindow.show();
-      launcherWindow.focus();
-      launcherWindow.webContents.send('launcher:shown');
+      presentLauncher();
     });
     return;
   }
 
-  // Re-position to whichever display the user's cursor is on right now
-  const pos = getLauncherPosition();
-  launcherWindow.setPosition(pos.x, pos.y);
-  launcherWindow.show();
-  launcherWindow.focus();
-  launcherWindow.webContents.send('launcher:shown');
+  // Existing window: just present it.  presentLauncher() is safe whether or
+  // not the page has finished loading (it queues the 'launcher:shown' IPC).
+  presentLauncher();
 }
 
 function hideLauncher() {
   if (launcherWindow && !launcherWindow.isDestroyed() && launcherWindow.isVisible()) {
-    launcherWindow.hide();
+    try { launcherWindow.hide(); } catch (err) {
+      console.error('[launcher] hide failed:', err);
+    }
   }
 }
 
 function toggleLauncher() {
   if (launcherWindow && !launcherWindow.isDestroyed() && launcherWindow.isVisible()) {
     // Already visible: just refocus the input (gives the user a clean slate).
-    launcherWindow.focus();
-    launcherWindow.webContents.send('launcher:shown');
+    try {
+      if (isMac) app.focus({ steal: true });
+      launcherWindow.focus();
+    } catch (err) {
+      console.error('[launcher] toggle focus failed:', err);
+    }
+    notifyLauncherShown();
     return;
   }
   showLauncher();

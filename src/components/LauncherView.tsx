@@ -141,7 +141,12 @@ export function LauncherView() {
       window.setTimeout(() => hide(), AUTO_HIDE_DELAY_MS);
     } catch (err) {
       console.error('[launcher] submit failed:', err);
-      showFlash('Save failed');
+      const detail = err instanceof Error && err.message ? err.message : String(err);
+      // Surface the actual failure reason instead of a vague "Save failed" so
+      // the user (and bug reports) can tell what went wrong.  Truncate to keep
+      // the footer compact.
+      const truncated = detail.length > 80 ? `${detail.slice(0, 77)}…` : detail;
+      showFlash(`Save failed: ${truncated}`);
     } finally {
       setSubmitting(false);
     }
