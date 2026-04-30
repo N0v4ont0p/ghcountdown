@@ -6,6 +6,7 @@ import { createTodo } from '@/db/repositories/todosRepo';
 import { createQuickNote, extractInlineTags } from '@/db/repositories/notesRepo';
 import { parseTodoInput } from '@/lib/todoParse';
 import { initDB } from '@/db/core';
+import { broadcastDataChanged } from '@/lib/dataSync';
 
 type Mode = 'todo' | 'note';
 
@@ -19,7 +20,6 @@ const AUTO_HIDE_DELAY_MS = 450;
 interface ElectronLauncherAPI {
   hide?: () => void;
   onShow?: (cb: () => void) => () => void;
-  notifyDataChanged?: (payload?: unknown) => void;
 }
 
 const MODES: Array<{ id: Mode; label: string; placeholder: string; icon: typeof CheckSquare; hint: string }> = [
@@ -131,27 +131,9 @@ export function LauncherView() {
    * Notify other Electron windows that we just wrote to IndexedDB.  Without
    * this, the main app (which is a separate renderer) wouldn't see the new
    * todo/note until manual reload, making the launcher feel like it didn't
-   * actually save end-to-end.
+   * actually save end-to-end.  Delegated to the shared helper so every
+   * mutation site uses the same wiring.
    */
-  function broadcastDataChanged(detail: { kind: 'todo' | 'note' }) {
-    // Local in-window event (no-op here since the launcher has no listeners,
-    // but kept for parity / future-proofing).
-    try {
-      window.dispatchEvent(new CustomEvent('ghc-data-changed', { detail }));
-    } catch { /* ignore */ }
-    // Cross-window IPC — the real fix for end-to-end save in the main app.
-    try {
-      const api = (window as Window & {
-        electronAPI?: ElectronLauncherAPI;
-      }).electronAPI;
-      api?.notifyDataChanged?.(detail);
-    } catch (err) {
-      // Swallow — IPC failure shouldn't surface as a save error since the
-      // write itself succeeded; just log so we can diagnose later.
-      console.error('[launcher] notifyDataChanged failed:', err);
-    }
-  }
-
   async function submit() {
     const text = value.trim();
     if (!text || submitting) return;
