@@ -626,6 +626,33 @@ function toggleLauncher() {
 
 ipcMain.on('launcher:hide', () => hideLauncher());
 
+/**
+ * Cross-window data change broadcast.
+ *
+ * The launcher is a separate BrowserWindow with its own renderer, so a
+ * `window.dispatchEvent('ghc-data-changed')` fired inside the launcher is
+ * never seen by the main app.  Without this hop, todos/notes created from
+ * the launcher land in IndexedDB but the main app's lists don't refresh
+ * until the user manually reloads, making the launcher feel like it
+ * "didn't actually save".
+ *
+ * Any renderer can fire `'data:changed'`; the main process re-broadcasts
+ * it to every window so they can re-fetch from IndexedDB.
+ */
+ipcMain.on('data:changed', (event, payload) => {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (win.isDestroyed()) continue;
+    // Skip the sender — it already updated its own UI via the local
+    // 'ghc-data-changed' event before sending the IPC.
+    if (event.sender && win.webContents.id === event.sender.id) continue;
+    try {
+      win.webContents.send('data:changed', payload);
+    } catch (err) {
+      console.error('[data:changed] forward to window failed:', err);
+    }
+  }
+});
+
 // ---------------------------------------------------------------------------
 // Tray
 // ---------------------------------------------------------------------------

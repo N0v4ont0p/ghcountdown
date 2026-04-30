@@ -86,6 +86,8 @@ declare global {
       onMiniPanelStateChanged?: (cb: (state: { visible: boolean }) => void) => () => void;
       hide?: () => void;
       onShow?: (cb: () => void) => () => void;
+      notifyDataChanged?: (payload?: unknown) => void;
+      onDataChanged?: (cb: (payload?: unknown) => void) => () => void;
     };
   }
 }
@@ -327,9 +329,19 @@ function MainApp() {
     const onDataChange = () => setDataVersion((v) => v + 1);
     window.addEventListener('ghc-data-changed', onDataChange);
     window.addEventListener('app:datachange', onDataChange);
+    // Cross-window IPC: when another renderer (e.g. the launcher) writes to
+    // IndexedDB, the main process forwards a 'data:changed' event to us so
+    // the main app's lists refresh.  Without this, items created from the
+    // launcher only appear after a manual reload.
+    const unsubIpc = window.electronAPI?.onDataChanged?.(() => {
+      // Re-dispatch as the in-window event so every existing listener
+      // (TodosView, NotesView, EventsView, TimelineView, …) refreshes.
+      try { window.dispatchEvent(new CustomEvent('ghc-data-changed')); } catch { /* ignore */ }
+    });
     return () => {
       window.removeEventListener('ghc-data-changed', onDataChange);
       window.removeEventListener('app:datachange', onDataChange);
+      unsubIpc?.();
     };
   }, []);
 
