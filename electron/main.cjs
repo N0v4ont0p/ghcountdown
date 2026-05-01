@@ -66,113 +66,30 @@ const LAUNCHER_HEIGHT = 132;
 // Far enough above the dock/taskbar that it never overlaps.
 const LAUNCHER_BOTTOM_OFFSET = 140;
 
-// Cross-platform global shortcut for the launcher.
+// Cross-platform *global* shortcut for the launcher — works whether or not
+// the app is focused.
 //
-// macOS: `Alt+Shift+Space` (⌥⇧Space) is the *globally registered* fallback —
-//   it works even when another app is focused.  We deliberately avoid
-//   `⌥⌘Space` because it sits one modifier away from Spotlight (`⌘Space`)
-//   and the Spotlight character-viewer (`⌃⌘Space`), which made the old
-//   binding easy to trigger by accident and confused users who expected
-//   Apple's Spotlight behaviour.  `⌥⇧Space` has no default macOS binding,
-//   so it's conflict-free.
+// macOS: `Alt+Shift+Space` (⌥⇧Space).  We deliberately avoid `⌥⌘Space`
+//   because it sits one modifier away from Spotlight (`⌘Space`) and the
+//   Spotlight character-viewer (`⌃⌘Space`), which made the old binding
+//   easy to trigger by accident.  `⌥⇧Space` has no default macOS binding,
+//   so it's conflict-free with Finder/Spotlight.
 //
-//   The *primary* macOS trigger is double-tap ⌘ (see
-//   `wireDoubleTapCommand` below), which feels native and matches the
-//   muscle memory of apps like Raycast.  See the long comment on that
-//   helper for the feasibility analysis and limitations.
+//   Note on double-tap ⌘: a *truly global* double-tap-⌘ trigger (one that
+//   fires while another app is focused) requires a native macOS
+//   `CGEventTap` (Swift helper or `uiohook-napi`-style native module) plus
+//   Accessibility permission, per-Electron-version native rebuilds, and
+//   extra signing/notarization work.  Electron's `globalShortcut` API
+//   cannot help — it only accepts modifier+key Accelerator strings and
+//   never fires for a modifier-only press.  We previously implemented
+//   double-tap ⌘ via `webContents.on('before-input-event')`, but that
+//   only fires while one of our windows already has focus, which is the
+//   opposite of what users expect from a "global" shortcut.  Advertising
+//   it as global was misleading, so it has been removed entirely.  The
+//   single, honestly-global trigger is `⌥⇧Space`.
 //
-// Windows / Linux: unchanged at `Control+Alt+Space`.
+// Windows / Linux: `Control+Alt+Space`.
 const LAUNCHER_SHORTCUT = isMac ? 'Alt+Shift+Space' : 'Control+Alt+Space';
-
-// Maximum gap between the two ⌘ taps that still counts as a double-tap.
-// 400 ms matches Raycast's default and feels comfortable without being so
-// long that ordinary "press ⌘, then ⌘+something" flows are misread.
-const DOUBLE_TAP_COMMAND_WINDOW_MS = 400;
-
-/**
- * Attach a double-tap-⌘ detector to a `webContents` that toggles the
- * launcher when the user taps the Command key twice in quick succession
- * with no other key pressed in between.
- *
- * Feasibility note (macOS double-tap ⌘):
- *   A *truly global* double-tap-⌘ trigger (one that fires while another
- *   app like Finder or Safari is focused) requires a native macOS
- *   `CGEventTap` — i.e. a Swift helper or a native node module such as
- *   `uiohook-napi`.  Both paths require Accessibility permission, a
- *   per-Electron-version native rebuild, and additional signing /
- *   notarization work.  None of that is reliable enough to ship as part
- *   of this change.
- *
- *   Electron's built-in `globalShortcut` API also can't help: it only
- *   accepts modifier+key Accelerator strings and never fires for a
- *   modifier-only press.
- *
- *   What *is* reliable today, with no permissions and no native code,
- *   is detecting double-tap ⌘ from `webContents.on('before-input-event')`
- *   while one of our app's windows is focused.  Combined with the
- *   `⌥⇧Space` global accelerator (which handles the unfocused case),
- *   this delivers the requested double-tap-⌘ UX whenever the user is
- *   actually interacting with our app, and never collides with Finder
- *   or Spotlight.
- */
-function wireDoubleTapCommand(webContents) {
-  if (!isMac || !webContents || webContents.isDestroyed()) return;
-
-  // Per-webContents state: the timestamp of the most recent qualifying
-  // ⌘ keyUp, whether ⌘ is currently held down, and whether the current
-  // ⌘ press has already been "consumed" by being chorded with another
-  // key (e.g. ⌘C, ⌘V) — chorded presses must NOT count as a tap.
-  let lastTapAt = 0;
-  let metaDown = false;
-  let metaChorded = false;
-
-  webContents.on('before-input-event', (_event, input) => {
-    // We only care about real key events.
-    if (input.type !== 'keyDown' && input.type !== 'keyUp') return;
-
-    const isMetaKey = input.key === 'Meta' || input.code === 'MetaLeft' || input.code === 'MetaRight';
-
-    if (isMetaKey) {
-      if (input.type === 'keyDown') {
-        // Ignore auto-repeat keyDowns from holding ⌘.
-        if (!metaDown) {
-          metaDown = true;
-          metaChorded = false;
-        }
-        return;
-      }
-
-      // keyUp on ⌘.  Only counts as a tap if ⌘ wasn't chorded with
-      // another key while held.
-      metaDown = false;
-      if (metaChorded) {
-        metaChorded = false;
-        lastTapAt = 0;
-        return;
-      }
-
-      const now = Date.now();
-      if (lastTapAt && now - lastTapAt <= DOUBLE_TAP_COMMAND_WINDOW_MS) {
-        lastTapAt = 0;
-        // Defer to the next tick so this handler returns before the
-        // launcher window steals focus from the source webContents.
-        setImmediate(() => toggleLauncher());
-      } else {
-        lastTapAt = now;
-      }
-      return;
-    }
-
-    // Any non-meta key: if ⌘ is currently held, this press is a chord
-    // (⌘+letter, ⌘+arrow, etc.) and the ⌘ release must not count as a
-    // tap.  Also reset the double-tap timer on any other keystroke so
-    // sequences like "⌘, x, ⌘" don't accidentally fire the launcher.
-    if (input.type === 'keyDown') {
-      if (metaDown) metaChorded = true;
-      lastTapAt = 0;
-    }
-  });
-}
 
 /**
  * Render the global shortcut as a human-readable label for menus.
@@ -395,9 +312,7 @@ function buildTrayMenu(status) {
     click: showMainApp,
   });
   menuItems.push({
-    label: isMac
-      ? `Open Launcher\t⌘⌘ or ${formatShortcutLabel(LAUNCHER_SHORTCUT)}`
-      : `Open Launcher\t${formatShortcutLabel(LAUNCHER_SHORTCUT)}`,
+    label: `Open Launcher\t${formatShortcutLabel(LAUNCHER_SHORTCUT)}`,
     click: () => showLauncher(),
   });
   menuItems.push({
@@ -993,14 +908,13 @@ app.whenReady().then(() => {
     }
   }
 
-  // macOS: install the double-tap-⌘ launcher trigger on every webContents
-  // we create.  Registered before the first window so the main window picks
-  // it up via `web-contents-created`.
-  if (isMac) {
-    app.on('web-contents-created', (_event, contents) => {
-      wireDoubleTapCommand(contents);
-    });
-  }
+  // macOS: register the global launcher shortcut after windows/tray are up
+  // (see the `globalShortcut.register` call further below).  We previously
+  // also wired a focused-only double-tap-⌘ detector via
+  // `webContents.on('before-input-event')`, but that only fired while one
+  // of our windows already had focus, which made it misleading to advertise
+  // as a "global" shortcut.  It has been removed; `⌥⇧Space` is the only
+  // honestly-global trigger.
 
   // Serve the production build through the custom 'app' scheme so that the
   // renderer has a real origin and IndexedDB works correctly.
@@ -1031,11 +945,12 @@ app.whenReady().then(() => {
   createWindow();
   createTray();
 
-  // Register the global launcher shortcut.  On macOS the *primary* trigger
-  // is double-tap-⌘ (wired above via `web-contents-created`); this
-  // accelerator is the unfocused-app fallback.  We try the platform-default
-  // first and, if the OS rejects it (e.g. another app already grabbed the
-  // combination), log a warning rather than crash.
+  // Register the *only* global launcher shortcut.  `⌥⇧Space` on macOS /
+  // `Ctrl+Alt+Space` on Windows/Linux works regardless of which app is
+  // focused.  We try the platform-default first and, if the OS rejects it
+  // (e.g. another app already grabbed the combination), log a warning
+  // rather than crash.  No double-tap-⌘ detector is registered: see the
+  // long comment on `LAUNCHER_SHORTCUT` for why.
   const registered = globalShortcut.register(LAUNCHER_SHORTCUT, () => {
     toggleLauncher();
   });
