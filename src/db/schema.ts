@@ -1,5 +1,5 @@
 export const DB_NAME = 'ghcountdown';
-export const DB_VERSION = 5;
+export const DB_VERSION = 6;
 
 export interface QuickNote {
   id: string;
@@ -9,6 +9,8 @@ export interface QuickNote {
   text: string;
   /** Lower-cased, deduplicated tags for filtering & search. */
   tags: string[];
+  /** Optional project this note belongs to.  `null` for standalone notes. */
+  projectId: string | null;
   createdAt: string;
   updatedAt: string;
 }

@@ -133,6 +133,34 @@ export async function initDB(): Promise<IDBDatabase> {
           cursor.continue();
         };
       }
+      if (oldVersion < 6) {
+        // Add `projectId` to quickNotes and backfill existing rows with null
+        // so they remain valid standalone notes after the schema bump.
+        const tx = (event.target as IDBOpenDBRequest).transaction!;
+        if (db.objectStoreNames.contains(STORES.QUICK_NOTES)) {
+          const notesStore = tx.objectStore(STORES.QUICK_NOTES);
+          if (!notesStore.indexNames.contains('projectId')) {
+            notesStore.createIndex('projectId', 'projectId', { unique: false });
+          }
+          const cursorReq = notesStore.openCursor();
+          cursorReq.onerror = () => {
+            console.error('[db migration v6] failed to open cursor on quickNotes:', cursorReq.error);
+          };
+          cursorReq.onsuccess = () => {
+            const cursor = cursorReq.result;
+            if (!cursor) return;
+            const value = cursor.value as Partial<{ projectId: string | null }>;
+            if (value.projectId === undefined) {
+              value.projectId = null;
+              const updateReq = cursor.update(value);
+              updateReq.onerror = () => {
+                console.error('[db migration v6] failed to backfill quickNote projectId:', updateReq.error);
+              };
+            }
+            cursor.continue();
+          };
+        }
+      }
     };
   });
 }

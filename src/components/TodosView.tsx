@@ -19,6 +19,7 @@ import { Plus, Trash, Folder, CheckCircle, CalendarCheck, Cloud } from '@phospho
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { broadcastDataChanged } from '@/lib/dataSync';
 
 export function TodosView() {
   const [todos, setTodos] = useState<Todo[]>([]);
@@ -180,6 +181,7 @@ export function TodosView() {
     try {
       await deleteProject(projectToDelete);
       toast.success('Project deleted');
+      broadcastDataChanged({ kind: 'project' });
       await loadData();
     } catch (error) {
       toast.error('Failed to delete project');
@@ -201,6 +203,7 @@ export function TodosView() {
       toast.success('Project created');
       setIsProjectDialogOpen(false);
       setProjectFormData({ name: '', color: 'oklch(0.60 0.19 250)' });
+      broadcastDataChanged({ kind: 'project' });
       loadData();
     } catch (error) {
       toast.error('Failed to create project');

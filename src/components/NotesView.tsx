@@ -9,15 +9,17 @@ import {
   Hash,
   X,
   Check,
+  Folder,
 } from '@phosphor-icons/react';
 import { toast } from 'sonner';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { cn } from '@/lib/utils';
-import { QuickNote } from '@/db/schema';
+import { QuickNote, Project } from '@/db/schema';
 import {
   getAllQuickNotes,
   createQuickNote,
@@ -28,6 +30,7 @@ import {
   normalizeTag,
   dedupeTags,
 } from '@/db/repositories/notesRepo';
+import { getAllProjects } from '@/db/repositories/projectsRepo';
 import { broadcastDataChanged } from '@/lib/dataSync';
 
 const AUTOSAVE_DELAY_MS = 450;
@@ -52,9 +55,17 @@ interface NotesViewProps {
 export function NotesView({ initialSelectedId, initialQuery }: NotesViewProps) {
   const [notes, setNotes] = useState<QuickNote[]>([]);
   const [tagCounts, setTagCounts] = useState<Array<{ tag: string; count: number }>>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(initialSelectedId ?? null);
   const [query, setQuery] = useState<string>(initialQuery ?? '');
   const [activeTagFilters, setActiveTagFilters] = useState<string[]>([]);
+  /**
+   * Project filter:
+   *   - 'all'    → no project filter
+   *   - 'none'   → only standalone notes (`projectId === null`)
+   *   - any id   → only notes assigned to that project
+   */
+  const [projectFilter, setProjectFilter] = useState<'all' | 'none' | string>('all');
 
   // Keep the editor in sync if the parent passes a new note id (e.g. user
   // picked a search result while NotesView is already mounted).
@@ -69,6 +80,7 @@ export function NotesView({ initialSelectedId, initialQuery }: NotesViewProps) {
   const [editTitle, setEditTitle] = useState('');
   const [editText, setEditText] = useState('');
   const [editTags, setEditTags] = useState<string[]>([]);
+  const [editProjectId, setEditProjectId] = useState<string | null>(null);
   const [tagDraft, setTagDraft] = useState('');
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [isDirty, setIsDirty] = useState(false);
@@ -79,9 +91,14 @@ export function NotesView({ initialSelectedId, initialQuery }: NotesViewProps) {
 
   // ── Load + refresh ────────────────────────────────────────────────────
   const refresh = useCallback(async () => {
-    const [all, tags] = await Promise.all([getAllQuickNotes(), getAllNoteTags()]);
+    const [all, tags, allProjects] = await Promise.all([
+      getAllQuickNotes(),
+      getAllNoteTags(),
+      getAllProjects(),
+    ]);
     setNotes(all);
     setTagCounts(tags);
+    setProjects(allProjects);
   }, []);
 
   useEffect(() => {
@@ -102,6 +119,11 @@ export function NotesView({ initialSelectedId, initialQuery }: NotesViewProps) {
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     let list = notes;
+    if (projectFilter === 'none') {
+      list = list.filter((n) => (n.projectId ?? null) === null);
+    } else if (projectFilter !== 'all') {
+      list = list.filter((n) => n.projectId === projectFilter);
+    }
     if (activeTagFilters.length > 0) {
       list = list.filter((n) => activeTagFilters.every((t) => n.tags.includes(t)));
     }
@@ -113,7 +135,14 @@ export function NotesView({ initialSelectedId, initialQuery }: NotesViewProps) {
       );
     }
     return list;
-  }, [notes, query, activeTagFilters]);
+  }, [notes, query, activeTagFilters, projectFilter]);
+
+  /** O(1) project lookup for rendering badges on the list and editor. */
+  const projectsById = useMemo(() => {
+    const map = new Map<string, Project>();
+    for (const p of projects) map.set(p.id, p);
+    return map;
+  }, [projects]);
 
   // Auto-select the first visible note when the selection becomes invalid
   useEffect(() => {
@@ -142,6 +171,7 @@ export function NotesView({ initialSelectedId, initialQuery }: NotesViewProps) {
       setEditTitle('');
       setEditText('');
       setEditTags([]);
+      setEditProjectId(null);
       setIsDirty(false);
       return;
     }
@@ -169,6 +199,7 @@ export function NotesView({ initialSelectedId, initialQuery }: NotesViewProps) {
           title: prev.title,
           text: prev.text,
           tags: prev.tags,
+          projectId: prev.projectId,
         })
           .then(() => broadcastDataChanged({ kind: 'note' }))
           .catch((err) => console.error('[notes] flush-on-switch save failed:', err));
@@ -177,6 +208,7 @@ export function NotesView({ initialSelectedId, initialQuery }: NotesViewProps) {
       setEditTitle(selectedNote.title ?? '');
       setEditText(selectedNote.text ?? '');
       setEditTags([...(selectedNote.tags ?? [])]);
+      setEditProjectId(selectedNote.projectId ?? null);
       setTagDraft('');
       setIsDirty(false);
       setSavedAt(null);
@@ -194,6 +226,7 @@ export function NotesView({ initialSelectedId, initialQuery }: NotesViewProps) {
           title: editTitle,
           text: editText,
           tags: editTags,
+          projectId: editProjectId,
         });
         setSavedAt(Date.now());
         setIsDirty(false);
@@ -215,7 +248,7 @@ export function NotesView({ initialSelectedId, initialQuery }: NotesViewProps) {
     return () => {
       if (saveTimer.current !== null) window.clearTimeout(saveTimer.current);
     };
-  }, [editTitle, editText, editTags, isDirty, selectedNote, refresh]);
+  }, [editTitle, editText, editTags, editProjectId, isDirty, selectedNote, refresh]);
 
   // Mirror the latest editor state into refs so the unmount-time flush below
   // sees current values (the empty-deps cleanup would otherwise capture stale
@@ -226,6 +259,7 @@ export function NotesView({ initialSelectedId, initialQuery }: NotesViewProps) {
     title: '',
     text: '',
     tags: [] as string[],
+    projectId: null as string | null,
   });
   useEffect(() => {
     flushRef.current = {
@@ -234,8 +268,9 @@ export function NotesView({ initialSelectedId, initialQuery }: NotesViewProps) {
       title: editTitle,
       text: editText,
       tags: editTags,
+      projectId: editProjectId,
     };
-  }, [selectedNote, isDirty, editTitle, editText, editTags]);
+  }, [selectedNote, isDirty, editTitle, editText, editTags, editProjectId]);
 
   // Cleanup on unmount: flush any pending save synchronously-ish so the user
   // doesn't lose typing when navigating away.  Reads the latest snapshot via
@@ -254,6 +289,7 @@ export function NotesView({ initialSelectedId, initialQuery }: NotesViewProps) {
           title: snap.title,
           text: snap.text,
           tags: snap.tags,
+          projectId: snap.projectId,
         })
           .then(() => broadcastDataChanged({ kind: 'note' }))
           .catch((err) => console.error('[notes] unmount flush save failed:', err));
@@ -268,7 +304,17 @@ export function NotesView({ initialSelectedId, initialQuery }: NotesViewProps) {
   // ── Actions ───────────────────────────────────────────────────────────
   async function handleNew() {
     try {
-      const note = await createQuickNote({ text: '', title: '', tags: activeTagFilters });
+      // If the user is filtering by a specific project, default the new note
+      // to that project so it stays visible after creation.  'all' / 'none'
+      // both create a standalone note.
+      const defaultProjectId =
+        projectFilter !== 'all' && projectFilter !== 'none' ? projectFilter : null;
+      const note = await createQuickNote({
+        text: '',
+        title: '',
+        tags: activeTagFilters,
+        projectId: defaultProjectId,
+      });
       // Tell other windows (and our own listeners) immediately so the new
       // note appears everywhere — without this the mini-panel would still
       // see the previous note count until the next mutation.

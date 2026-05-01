@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { Project, STORES } from '../schema';
 import { clearStore, getAll, getByKey, put, remove, getAllByIndex } from '../core';
 import { deleteTodo } from './todosRepo';
+import { unlinkNotesFromProject } from './notesRepo';
 
 export async function getAllProjects(): Promise<Project[]> {
   return getAll<Project>(STORES.PROJECTS);
@@ -49,6 +50,10 @@ export async function deleteProject(id: string): Promise<boolean> {
   // deleteTodo() already cascades to linked time blocks.
   const linkedTodos = await getAllByIndex<{ id: string }>(STORES.TODOS, 'projectId', id);
   await Promise.all(linkedTodos.map((todo) => deleteTodo(todo.id)));
+
+  // Notes are *not* cascade-deleted — they're unlinked so the user keeps
+  // their writing.  A removed project should never silently destroy notes.
+  await unlinkNotesFromProject(id);
 
   await remove(STORES.PROJECTS, id);
   return true;

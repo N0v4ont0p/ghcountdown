@@ -151,6 +151,7 @@ export async function importAllData(exportData: ExportData): Promise<void> {
       title: typeof note.title === 'string' ? note.title : '',
       text: note.text ?? '',
       tags: Array.isArray(note.tags) ? note.tags : [],
+      projectId: typeof note.projectId === 'string' ? note.projectId : null,
       createdAt: note.createdAt,
       updatedAt: note.updatedAt ?? note.createdAt,
     };
