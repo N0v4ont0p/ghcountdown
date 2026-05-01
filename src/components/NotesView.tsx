@@ -444,28 +444,60 @@ export function NotesView({ initialSelectedId, initialQuery }: NotesViewProps) {
 
       {/* ── Search + tag filters ── */}
       <div className="flex flex-col gap-2">
-        <div className="relative">
-          <MagnifyingGlass
-            size={16}
-            className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none"
-          />
-          <Input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search notes by title, body, or tag…"
-            className="pl-9"
-            aria-label="Search notes"
-          />
-          {query && (
-            <button
-              type="button"
-              onClick={() => setQuery('')}
-              className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
-              title="Clear search"
-              aria-label="Clear search"
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1">
+            <MagnifyingGlass
+              size={16}
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none"
+            />
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search notes by title, body, or tag…"
+              className="pl-9"
+              aria-label="Search notes"
+            />
+            {query && (
+              <button
+                type="button"
+                onClick={() => setQuery('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
+                title="Clear search"
+                aria-label="Clear search"
+              >
+                <X size={12} />
+              </button>
+            )}
+          </div>
+          {projects.length > 0 && (
+            <Select
+              value={projectFilter}
+              onValueChange={(v) => setProjectFilter(v as 'all' | 'none' | string)}
             >
-              <X size={12} />
-            </button>
+              <SelectTrigger
+                className="w-[200px] flex-shrink-0"
+                aria-label="Filter notes by project"
+              >
+                <Folder size={14} weight="duotone" className="text-muted-foreground mr-1" />
+                <SelectValue placeholder="All projects" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All projects</SelectItem>
+                <SelectItem value="none">No project</SelectItem>
+                {projects.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    <span className="flex items-center gap-2">
+                      <span
+                        className="w-2.5 h-2.5 rounded-full inline-block"
+                        style={{ backgroundColor: p.color }}
+                        aria-hidden
+                      />
+                      {p.name}
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           )}
         </div>
 
@@ -552,6 +584,7 @@ export function NotesView({ initialSelectedId, initialQuery }: NotesViewProps) {
                   const selected = n.id === selectedId;
                   const title = deriveNoteTitle(n);
                   const preview = n.text.replace(/\s+/g, ' ').trim().slice(0, 90);
+                  const noteProject = n.projectId ? projectsById.get(n.projectId) ?? null : null;
                   return (
                     <motion.button
                       key={n.id}
@@ -581,8 +614,22 @@ export function NotesView({ initialSelectedId, initialQuery }: NotesViewProps) {
                       {preview && preview !== title && (
                         <p className="text-xs text-muted-foreground mt-0.5 truncate">{preview}</p>
                       )}
-                      {n.tags.length > 0 && (
-                        <div className="flex flex-wrap gap-1 mt-1.5">
+                      {(n.tags.length > 0 || noteProject) && (
+                        <div className="flex flex-wrap items-center gap-1 mt-1.5">
+                          {noteProject && (
+                            <span
+                              className="inline-flex items-center gap-1 text-[9.5px] px-1.5 py-0.5 rounded-full border bg-card text-foreground/80 font-medium"
+                              style={{ borderColor: noteProject.color }}
+                              title={`Project: ${noteProject.name}`}
+                            >
+                              <Folder
+                                size={9}
+                                weight="fill"
+                                style={{ color: noteProject.color }}
+                              />
+                              {noteProject.name}
+                            </span>
+                          )}
                           {n.tags.slice(0, 4).map((t) => (
                             <span
                               key={t}
@@ -641,6 +688,55 @@ export function NotesView({ initialSelectedId, initialQuery }: NotesViewProps) {
                   >
                     <Trash size={14} />
                   </Button>
+                </div>
+
+                {/* Project selector */}
+                <div className="px-4 py-2 border-b flex items-center gap-2">
+                  <Folder size={13} weight="duotone" className="text-muted-foreground flex-shrink-0" />
+                  <Select
+                    value={editProjectId ?? '__none__'}
+                    onValueChange={(v) => {
+                      setEditProjectId(v === '__none__' ? null : v);
+                      markDirty();
+                    }}
+                  >
+                    <SelectTrigger
+                      className="h-7 border-0 shadow-none focus:ring-0 focus:ring-offset-0 px-1 text-xs bg-transparent hover:bg-muted/50 w-auto gap-1"
+                      aria-label="Assign note to a project"
+                    >
+                      <SelectValue placeholder="No project" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">
+                        <span className="text-muted-foreground">No project (standalone)</span>
+                      </SelectItem>
+                      {projects.map((p) => (
+                        <SelectItem key={p.id} value={p.id}>
+                          <span className="flex items-center gap-2">
+                            <span
+                              className="w-2.5 h-2.5 rounded-full inline-block"
+                              style={{ backgroundColor: p.color }}
+                              aria-hidden
+                            />
+                            {p.name}
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {editProjectId && projectsById.get(editProjectId) && (
+                    <span
+                      className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full border bg-card text-foreground/80 font-medium"
+                      style={{ borderColor: projectsById.get(editProjectId)!.color }}
+                    >
+                      <span
+                        className="w-1.5 h-1.5 rounded-full inline-block"
+                        style={{ backgroundColor: projectsById.get(editProjectId)!.color }}
+                        aria-hidden
+                      />
+                      {projectsById.get(editProjectId)!.name}
+                    </span>
+                  )}
                 </div>
 
                 {/* Tag editor */}
