@@ -10,13 +10,6 @@ import "./main.css"
 import "./styles/theme.css"
 import "./index.css"
 
-// Mark the document so window-specific styles (transparent backgrounds,
-// no-scroll, etc.) can target the dedicated launcher BrowserWindow.
-if (typeof window !== 'undefined' &&
-    new URLSearchParams(window.location.search).get('launcher') === '1') {
-  document.body.classList.add('launcher-window');
-}
-
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ErrorBoundary FallbackComponent={ErrorFallback}>

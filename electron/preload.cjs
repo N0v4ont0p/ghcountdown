@@ -87,32 +87,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   miniPanelAction: (action) => ipcRenderer.send('mini-panel:action', action),
 
   // ---------------------------------------------------------------------------
-  // Global launcher window
-  // ---------------------------------------------------------------------------
-
-  /** Hide the launcher popup (called on Escape, submit, or backdrop click). */
-  hide: () => ipcRenderer.send('launcher:hide'),
-
-  /**
-   * Subscribe to 'launcher:shown' notifications fired by the main process
-   * each time the launcher window becomes visible.  The renderer uses this to
-   * re-focus the input and clear stale UI state.  Returns an unsubscribe fn.
-   */
-  onShow: (callback) => {
-    const handler = () => callback();
-    ipcRenderer.on('launcher:shown', handler);
-    return () => ipcRenderer.removeListener('launcher:shown', handler);
-  },
-
-  // ---------------------------------------------------------------------------
   // Cross-window data sync
   // ---------------------------------------------------------------------------
 
   /**
-   * Tell the main process that this renderer just wrote to IndexedDB so it can
-   * notify every other window to refresh.  Used by the launcher (which is its
-   * own BrowserWindow) so newly-created todos/notes appear in the main app
-   * without a manual reload.  `payload` is forwarded verbatim and is optional.
+   * Tell the main process that this renderer just wrote to IndexedDB so it
+   * can notify every other window to refresh.  `payload` is forwarded
+   * verbatim and is optional.
    */
   notifyDataChanged: (payload) => ipcRenderer.send('data:changed', payload),
 

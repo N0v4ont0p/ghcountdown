@@ -17,7 +17,6 @@ import { EveningFlow } from '@/components/EveningFlow';
 import { MorningFlow } from '@/components/MorningFlow';
 import { WeeklyReview } from '@/components/WeeklyReview';
 import { MiniPanelView } from '@/components/MiniPanelView';
-import { LauncherView } from '@/components/LauncherView';
 import { initDB } from '@/db/core';
 import { seedDatabase } from '@/db/seed';
 import { deleteAllEvents, getNextImportantEvent, getAllEvents } from '@/db/repositories/eventsRepo';
@@ -84,8 +83,6 @@ declare global {
       setMiniPanelVisible?: (visible: boolean) => void;
       miniPanelAction?: (action: string) => void;
       onMiniPanelStateChanged?: (cb: (state: { visible: boolean }) => void) => () => void;
-      hide?: () => void;
-      onShow?: (cb: () => void) => () => void;
       notifyDataChanged?: (payload?: unknown) => void;
       onDataChanged?: (cb: (payload?: unknown) => void) => () => void;
     };
@@ -95,10 +92,6 @@ declare global {
 // Detect whether we are running as the compact mini-panel widget window
 const isMiniPanel = typeof window !== 'undefined' &&
   new URLSearchParams(window.location.search).get('miniPanel') === '1';
-
-// Detect whether we are running as the global launcher popup window
-const isLauncher = typeof window !== 'undefined' &&
-  new URLSearchParams(window.location.search).get('launcher') === '1';
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
@@ -329,10 +322,9 @@ function MainApp() {
     const onDataChange = () => setDataVersion((v) => v + 1);
     window.addEventListener('ghc-data-changed', onDataChange);
     window.addEventListener('app:datachange', onDataChange);
-    // Cross-window IPC: when another renderer (e.g. the launcher) writes to
-    // IndexedDB, the main process forwards a 'data:changed' event to us so
-    // the main app's lists refresh.  Without this, items created from the
-    // launcher only appear after a manual reload.
+    // Cross-window IPC: when another renderer writes to IndexedDB, the main
+    // process forwards a 'data:changed' event to us so the main app's lists
+    // refresh without a manual reload.
     const unsubIpc = window.electronAPI?.onDataChanged?.(() => {
       // Re-dispatch as the in-window event so every existing listener
       // (TodosView, NotesView, EventsView, TimelineView, …) refreshes.
@@ -1393,7 +1385,6 @@ function MainApp() {
 }
 
 function App() {
-  if (isLauncher) return <LauncherView />;
   if (isMiniPanel) return <MiniPanelView />;
   return <MainApp />;
 }

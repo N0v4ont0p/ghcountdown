@@ -249,7 +249,7 @@ export function NotesView({ initialSelectedId, initialQuery }: NotesViewProps) {
       const snap = flushRef.current;
       if (snap.selectedId && snap.isDirty) {
         // Best-effort flush — fire and forget.  Notify other windows once
-        // the write resolves so the mini-panel / launcher refresh too.
+        // the write resolves so the mini-panel refreshes too.
         void updateQuickNote(snap.selectedId, {
           title: snap.title,
           text: snap.text,
@@ -270,8 +270,8 @@ export function NotesView({ initialSelectedId, initialQuery }: NotesViewProps) {
     try {
       const note = await createQuickNote({ text: '', title: '', tags: activeTagFilters });
       // Tell other windows (and our own listeners) immediately so the new
-      // note appears everywhere — without this the mini-panel / launcher
-      // would still see the previous note count until the next mutation.
+      // note appears everywhere — without this the mini-panel would still
+      // see the previous note count until the next mutation.
       broadcastDataChanged({ kind: 'note' });
       await refresh();
       setSelectedId(note.id);
@@ -382,11 +382,9 @@ export function NotesView({ initialSelectedId, initialQuery }: NotesViewProps) {
             Notes
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Local-only notebook. Capture from anywhere with{' '}
-            <kbd className="px-1.5 py-0.5 rounded bg-muted text-foreground/80 font-mono text-[11px]">
-              {navigator.platform.includes('Mac') ? '⌥⇧Space' : 'Ctrl+Alt+Space'}
-            </kbd>
-            .
+            Local-only notebook. Add{' '}
+            <code className="px-1 py-0.5 rounded bg-muted text-foreground/80 font-mono text-[11px]">#tags</code>{' '}
+            inline to organize your notes.
           </p>
         </div>
         <Button onClick={handleNew} className="gap-1.5">
@@ -476,11 +474,7 @@ export function NotesView({ initialSelectedId, initialQuery }: NotesViewProps) {
           </div>
           <h2 className="text-lg font-semibold">No notes yet</h2>
           <p className="text-sm text-muted-foreground mt-1.5 max-w-md mx-auto">
-            Open the global launcher with{' '}
-            <kbd className="px-1.5 py-0.5 rounded bg-muted text-foreground/80 font-mono text-[11px]">
-              {navigator.platform.includes('Mac') ? '⌥⇧Space' : 'Ctrl+Alt+Space'}
-            </kbd>{' '}
-            to capture a thought from anywhere, or create one right here. Add{' '}
+            Create one to capture a thought. Add{' '}
             <code className="px-1 py-0.5 rounded bg-muted text-foreground/80 font-mono text-[11px]">#tags</code>{' '}
             to organize them.
           </p>
@@ -650,7 +644,7 @@ export function NotesView({ initialSelectedId, initialQuery }: NotesViewProps) {
                   ref={editTextRef}
                   value={editText}
                   onChange={(e) => { setEditText(e.target.value); markDirty(); }}
-                  placeholder="Start writing… Markdown is fine. Use #tag in the launcher to auto-tag."
+                  placeholder="Start writing… Markdown is fine. Use #tag inline to auto-tag."
                   className="flex-1 resize-none border-0 shadow-none focus-visible:ring-0 rounded-none p-4 text-sm leading-relaxed font-sans"
                 />
 

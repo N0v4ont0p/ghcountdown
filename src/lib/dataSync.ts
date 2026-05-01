@@ -2,8 +2,8 @@
  * Cross-window data-change notification helper.
  *
  * Use this after any successful write to IndexedDB so every renderer (the
- * main app, the launcher window, the mini-panel) re-fetches and stays
- * consistent.  Two hops are required:
+ * main app, the mini-panel) re-fetches and stays consistent.  Two hops are
+ * required:
  *
  *   1. A local DOM event (`ghc-data-changed`) so listeners inside *this*
  *      window refresh — every view in `App.tsx` already subscribes.

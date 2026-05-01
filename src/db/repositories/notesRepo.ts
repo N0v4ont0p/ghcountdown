@@ -9,8 +9,8 @@ const MAX_TAG_LENGTH = 32;
 /**
  * Strip leading "#tag" tokens from raw input and return them separately.
  * Inline `#hashtags` anywhere in the body are also captured.  This lets users
- * type things like "buy milk #errands #urgent" or "#idea start a podcast" in
- * the launcher and have them tagged automatically.
+ * type things like "buy milk #errands #urgent" or "#idea start a podcast"
+ * and have them tagged automatically.
  */
 export function extractInlineTags(raw: string): { text: string; tags: string[] } {
   const tags: string[] = [];
