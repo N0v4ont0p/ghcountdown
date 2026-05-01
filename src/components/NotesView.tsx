@@ -492,6 +492,7 @@ export function NotesView({ initialSelectedId, initialQuery }: NotesViewProps) {
                         style={{ backgroundColor: p.color }}
                         aria-hidden
                       />
+                      {p.icon && <span>{p.icon}</span>}
                       {p.name}
                     </span>
                   </SelectItem>
@@ -627,6 +628,7 @@ export function NotesView({ initialSelectedId, initialQuery }: NotesViewProps) {
                                 weight="fill"
                                 style={{ color: noteProject.color }}
                               />
+                              {noteProject.icon && <span className="leading-none">{noteProject.icon}</span>}
                               {noteProject.name}
                             </span>
                           )}
@@ -718,25 +720,31 @@ export function NotesView({ initialSelectedId, initialQuery }: NotesViewProps) {
                               style={{ backgroundColor: p.color }}
                               aria-hidden
                             />
+                            {p.icon && <span>{p.icon}</span>}
                             {p.name}
                           </span>
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
-                  {editProjectId && projectsById.get(editProjectId) && (
-                    <span
-                      className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full border bg-card text-foreground/80 font-medium"
-                      style={{ borderColor: projectsById.get(editProjectId)!.color }}
-                    >
+                  {(() => {
+                    const activeProject = editProjectId ? projectsById.get(editProjectId) : null;
+                    if (!activeProject) return null;
+                    return (
                       <span
-                        className="w-1.5 h-1.5 rounded-full inline-block"
-                        style={{ backgroundColor: projectsById.get(editProjectId)!.color }}
-                        aria-hidden
-                      />
-                      {projectsById.get(editProjectId)!.name}
-                    </span>
-                  )}
+                        className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full border bg-card text-foreground/80 font-medium"
+                        style={{ borderColor: activeProject.color }}
+                      >
+                        <span
+                          className="w-1.5 h-1.5 rounded-full inline-block"
+                          style={{ backgroundColor: activeProject.color }}
+                          aria-hidden
+                        />
+                        {activeProject.icon && <span>{activeProject.icon}</span>}
+                        {activeProject.name}
+                      </span>
+                    );
+                  })()}
                 </div>
 
                 {/* Tag editor */}

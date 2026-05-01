@@ -1,5 +1,5 @@
 export const DB_NAME = 'ghcountdown';
-export const DB_VERSION = 6;
+export const DB_VERSION = 7;
 
 export interface QuickNote {
   id: string;
@@ -43,6 +43,12 @@ export interface Project {
   id: string;
   name: string;
   color: string;
+  /** Optional emoji / single-glyph icon shown next to the name. */
+  icon: string | null;
+  /** Free-form description for the project (markdown-ish, plain text fine). */
+  description: string;
+  /** Lifecycle state.  'active' is the default for new and migrated projects. */
+  status: 'active' | 'paused' | 'archived';
   createdAt: string;
   updatedAt: string;
 }

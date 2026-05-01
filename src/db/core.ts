@@ -161,6 +161,48 @@ export async function initDB(): Promise<IDBDatabase> {
           };
         }
       }
+
+      if (oldVersion < 7) {
+        // Backfill `icon`, `description`, `status` on every project row so the
+        // new optional-but-typed fields are present.  Old rows without these
+        // fields would otherwise serialise as `undefined`, breaking strict
+        // equality checks and falling through to "no icon" rendering anyway —
+        // but we want the data to match the schema for export/import too.
+        const tx = (event.target as IDBOpenDBRequest).transaction!;
+        if (db.objectStoreNames.contains(STORES.PROJECTS)) {
+          const projectsStore = tx.objectStore(STORES.PROJECTS);
+          if (!projectsStore.indexNames.contains('status')) {
+            projectsStore.createIndex('status', 'status', { unique: false });
+          }
+          const cursorReq = projectsStore.openCursor();
+          cursorReq.onerror = () => {
+            console.error('[db migration v7] failed to open cursor on projects:', cursorReq.error);
+          };
+          cursorReq.onsuccess = () => {
+            const cursor = cursorReq.result;
+            if (!cursor) return;
+            const value = cursor.value as Partial<{
+              icon: string | null;
+              description: string;
+              status: 'active' | 'paused' | 'archived';
+            }>;
+            let dirty = false;
+            if (value.icon === undefined) { value.icon = null; dirty = true; }
+            if (typeof value.description !== 'string') { value.description = ''; dirty = true; }
+            if (value.status !== 'active' && value.status !== 'paused' && value.status !== 'archived') {
+              value.status = 'active';
+              dirty = true;
+            }
+            if (dirty) {
+              const updateReq = cursor.update(value);
+              updateReq.onerror = () => {
+                console.error('[db migration v7] failed to backfill project row:', updateReq.error);
+              };
+            }
+            cursor.continue();
+          };
+        }
+      }
     };
   });
 }
