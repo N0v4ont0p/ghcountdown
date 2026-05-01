@@ -67,9 +67,28 @@ const LAUNCHER_HEIGHT = 132;
 const LAUNCHER_BOTTOM_OFFSET = 140;
 
 // Cross-platform global shortcut for the launcher.
-// macOS uses Option+Cmd+Space ("Alt+Cmd+Space" in Electron's accelerator syntax).
-// Windows/Linux use Control+Alt+Space.
-const LAUNCHER_SHORTCUT = isMac ? 'Alt+Cmd+Space' : 'Control+Alt+Space';
+//
+// macOS: `Alt+Shift+Space` (⌥⇧Space).  Previously this was `Alt+Cmd+Space`
+//   (⌥⌘Space), but that lives one modifier away from Spotlight (`⌘Space`)
+//   and the Spotlight character-viewer (`⌃⌘Space`), which made it easy to
+//   trigger by accident and confused users who expected Apple's Spotlight
+//   behaviour.  `⌥⇧Space` has no default macOS binding (the closest token,
+//   `⌥Space`, types a non-breaking space in text fields — and even that
+//   isn't bound to `⌥⇧Space`), so it's both conflict-free and an easy chord
+//   close to the old muscle memory.
+//
+// Windows / Linux: unchanged at `Control+Alt+Space`.
+//
+// Note on "double-tap Command": users sometimes ask for a Raycast-style
+// double-tap-⌘ trigger.  Electron's `globalShortcut` API only accepts
+// modifier+key Accelerator strings — it can't observe modifier-only key
+// events or double-tap timing.  A *global* (works while another app is
+// focused) double-tap-⌘ trigger therefore requires a native macOS
+// `CGEventTap`, which in turn requires Accessibility permission, a
+// bundled native module rebuilt per Electron version, and additional
+// signing.  That isn't a reliable single-PR change, so we stick with a
+// conventional accelerator until a native helper is on the roadmap.
+const LAUNCHER_SHORTCUT = isMac ? 'Alt+Shift+Space' : 'Control+Alt+Space';
 
 /**
  * Render the global shortcut as a human-readable label for menus.

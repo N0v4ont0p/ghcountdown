@@ -384,7 +384,7 @@ export function NotesView({ initialSelectedId, initialQuery }: NotesViewProps) {
           <p className="text-sm text-muted-foreground mt-1">
             Local-only notebook. Capture from anywhere with{' '}
             <kbd className="px-1.5 py-0.5 rounded bg-muted text-foreground/80 font-mono text-[11px]">
-              {navigator.platform.includes('Mac') ? '⌥⌘Space' : 'Ctrl+Alt+Space'}
+              {navigator.platform.includes('Mac') ? '⌥⇧Space' : 'Ctrl+Alt+Space'}
             </kbd>
             .
           </p>
@@ -478,7 +478,7 @@ export function NotesView({ initialSelectedId, initialQuery }: NotesViewProps) {
           <p className="text-sm text-muted-foreground mt-1.5 max-w-md mx-auto">
             Open the global launcher with{' '}
             <kbd className="px-1.5 py-0.5 rounded bg-muted text-foreground/80 font-mono text-[11px]">
-              {navigator.platform.includes('Mac') ? '⌥⌘Space' : 'Ctrl+Alt+Space'}
+              {navigator.platform.includes('Mac') ? '⌥⇧Space' : 'Ctrl+Alt+Space'}
             </kbd>{' '}
             to capture a thought from anywhere, or create one right here. Add{' '}
             <code className="px-1 py-0.5 rounded bg-muted text-foreground/80 font-mono text-[11px]">#tags</code>{' '}

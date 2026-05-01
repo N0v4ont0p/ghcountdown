@@ -44,7 +44,7 @@ const MODES: Array<{ id: Mode; label: string; placeholder: string; icon: typeof 
  *
  * Lives in its own dedicated Electron BrowserWindow (loaded with `?launcher=1`),
  * shown/hidden by the main process in response to the global shortcut
- * (Option+Cmd+Space on macOS, Ctrl+Alt+Space on Windows).  All user input is
+ * (Option+Shift+Space on macOS, Ctrl+Alt+Space on Windows).  All user input is
  * captured here; submission goes straight into the local IndexedDB.
  *
  * UX goals:
