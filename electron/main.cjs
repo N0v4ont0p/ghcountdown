@@ -268,19 +268,50 @@ function notifyMainWindowMiniPanelState(visible) {
 }
 
 /**
- * On macOS, un-hide the application at the OS level and steal focus so that
- * the app surfaces properly after being hidden via mainWindow.hide().
- * app.show() reverses the "hidden" state; app.focus({ steal: true }) makes the
- * app the active/frontmost application even when another app holds focus.
- * This is a no-op on other platforms.
+ * On macOS, ensure the app is presented as a normal Dock app and become the
+ * frontmost application.
+ *
+ * - `app.dock.show()` guarantees the Dock icon is visible. This is the
+ *   correct macOS API for restoring a normal Dock app — `app.show()` only
+ *   reverses an explicit `app.hide()` and is a no-op otherwise. The launcher
+ *   is a `type: 'panel'` BrowserWindow, which macOS treats as an auxiliary
+ *   window; after the main window is hidden and the panel has held focus,
+ *   the app can transiently appear "dockless" until Dock visibility is
+ *   re-asserted. Calling `app.dock.show()` on every restore path makes the
+ *   behavior deterministic.
+ * - `app.focus({ steal: true })` brings the app to the front even when
+ *   another app holds focus.
+ *
+ * No-op on non-macOS platforms.
  */
 function activateMacOSApp() {
-  if (isMac) {
-    app.show();
-    app.focus({ steal: true });
+  if (!isMac) return;
+  if (app.dock && typeof app.dock.show === 'function') {
+    // `app.dock.show()` returns a Promise that resolves when the Dock icon
+    // is visible. We intentionally don't await — show/focus below are safe
+    // to issue immediately. Attach `.catch` (not just try/catch) so an
+    // async rejection is logged rather than surfacing as an unhandled
+    // promise rejection.
+    try {
+      const p = app.dock.show();
+      if (p && typeof p.catch === 'function') {
+        p.catch((err) => console.error('[lifecycle] app.dock.show() rejected:', err));
+      }
+    } catch (err) {
+      console.error('[lifecycle] app.dock.show() threw:', err);
+    }
+  }
+  try { app.focus({ steal: true }); } catch (err) {
+    console.error('[lifecycle] app.focus failed:', err);
   }
 }
 
+/**
+ * Restore the main GHCountdown window as a normal macOS Dock app/window.
+ * Called from the tray menu, dock-icon activation, and any other "bring the
+ * app back" entry point. Always go through this so Dock visibility, window
+ * un-minimize, show, and focus are handled consistently.
+ */
 function showMainApp() {
   if (mainWindow && !mainWindow.isDestroyed()) {
     if (mainWindow.isMinimized()) mainWindow.restore();
@@ -289,6 +320,10 @@ function showMainApp() {
     mainWindow.focus();
   } else {
     createWindow();
+    // createWindow() builds a fresh window but doesn't bring the app to
+    // front on its own — make sure the Dock icon is visible and the app is
+    // frontmost when restoring after the main window was destroyed.
+    activateMacOSApp();
   }
 }
 
@@ -643,6 +678,11 @@ function presentLauncher() {
   // `.focus()` on the BrowserWindow alone may not steal it — the launcher
   // would then receive an immediate blur and hide itself, looking "broken".
   // Promoting the app to frontmost first makes focus reliable.
+  //
+  // Important: showing the launcher must NOT alter Dock visibility or the
+  // main window's lifecycle. We deliberately do *not* touch `app.dock` here
+  // (the launcher is a popup, not a Dock-app entry point), and we never
+  // show/hide the main window from launcher code paths.
   if (isMac) {
     try { app.focus({ steal: true }); } catch (err) {
       console.error('[launcher] app.focus failed:', err);
@@ -936,6 +976,23 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  // macOS: defensively assert that we are a normal Dock app. Nothing in this
+  // codebase calls `app.dock.hide()` or `setActivationPolicy('accessory')`,
+  // but explicitly showing the Dock icon at startup makes the lifecycle
+  // contract obvious and protects against any future code (or upstream
+  // Electron change) that might leave the app in accessory mode after the
+  // launcher panel is shown.
+  if (isMac && app.dock && typeof app.dock.show === 'function') {
+    try {
+      const p = app.dock.show();
+      if (p && typeof p.catch === 'function') {
+        p.catch((err) => console.error('[lifecycle] startup app.dock.show() rejected:', err));
+      }
+    } catch (err) {
+      console.error('[lifecycle] startup app.dock.show() threw:', err);
+    }
+  }
+
   // macOS: install the double-tap-⌘ launcher trigger on every webContents
   // we create.  Registered before the first window so the main window picks
   // it up via `web-contents-created`.
@@ -986,15 +1043,12 @@ app.whenReady().then(() => {
     console.warn(`[launcher] Failed to register global shortcut '${LAUNCHER_SHORTCUT}' — it may be in use by another app.`);
   }
 
-  // macOS: show main window when dock icon is clicked
+  // macOS: dock-icon click / app re-activation.  Always go through
+  // showMainApp so Dock visibility, window un-minimize, show, and focus are
+  // restored consistently — same code path as the tray "Open GHCountdown"
+  // action.
   app.on('activate', () => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      activateMacOSApp();
-      mainWindow.show();
-      mainWindow.focus();
-    } else if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
-    }
+    showMainApp();
   });
 });
 
