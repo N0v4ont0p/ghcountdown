@@ -5,6 +5,8 @@ import { useTheme } from '@/hooks/use-theme';
 import { createTodo } from '@/db/repositories/todosRepo';
 import { createQuickNote, extractInlineTags } from '@/db/repositories/notesRepo';
 import { parseTodoInput } from '@/lib/todoParse';
+import { initDB } from '@/db/core';
+import { broadcastDataChanged } from '@/lib/dataSync';
 
 type Mode = 'todo' | 'note';
 
@@ -42,8 +44,8 @@ const MODES: Array<{ id: Mode; label: string; placeholder: string; icon: typeof 
  *
  * Lives in its own dedicated Electron BrowserWindow (loaded with `?launcher=1`),
  * shown/hidden by the main process in response to the global shortcut
- * (Option+Cmd+Space on macOS, Ctrl+Alt+Space on Windows).  All user input is
- * captured here; submission goes straight into the local IndexedDB.
+ * (double-tap ⌘ or Option+Shift+Space on macOS, Ctrl+Alt+Space on Windows).
+ * All user input is captured here; submission goes straight into the local IndexedDB.
  *
  * UX goals:
  *  - obvious selected mode (pill highlight + accent)
@@ -58,8 +60,31 @@ export function LauncherView() {
   const [value, setValue] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [flash, setFlash] = useState<string | null>(null);
+  const [dbError, setDbError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const flashTimer = useRef<number | null>(null);
+
+  // Eagerly open the IndexedDB connection in the launcher renderer.  The
+  // launcher window is separate from the main app, so without this the very
+  // first save would lazily trigger initDB() — and any failure (corrupt DB,
+  // blocked upgrade, denied storage) would only surface as a generic
+  // "Save failed" toast.  Surfacing it here lets us tell the user up-front.
+  useEffect(() => {
+    let cancelled = false;
+    initDB()
+      .then(() => {
+        if (!cancelled) setDbError(null);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        const msg = err instanceof Error && err.message ? err.message : String(err);
+        console.error('[launcher] initDB failed:', err);
+        setDbError(msg);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const focusInput = useCallback(() => {
     // Defer so the window has actually rendered/focused first
@@ -102,13 +127,32 @@ export function LauncherView() {
     flashTimer.current = window.setTimeout(() => setFlash(null), FLASH_DURATION_MS);
   }
 
+  /**
+   * Notify other Electron windows that we just wrote to IndexedDB.  Without
+   * this, the main app (which is a separate renderer) wouldn't see the new
+   * todo/note until manual reload, making the launcher feel like it didn't
+   * actually save end-to-end.  Delegated to the shared helper so every
+   * mutation site uses the same wiring.
+   */
   async function submit() {
     const text = value.trim();
     if (!text || submitting) return;
+    if (dbError) {
+      // The DB never opened — saving will definitely fail.  Surface the
+      // specific reason instead of attempting a write that will throw with
+      // a less actionable error.
+      showFlash(`Database unavailable: ${dbError}`);
+      return;
+    }
     setSubmitting(true);
+    // Track which step we're in so any thrown error can be labelled
+    // accurately ("Parse failed" vs "DB write failed") instead of a vague
+    // "Save failed".
+    let step: 'parse' | 'write' = 'parse';
     try {
       if (mode === 'todo') {
         const parsed = parseTodoInput(text);
+        step = 'write';
         await createTodo({
           title: parsed.title,
           status: parsed.status,
@@ -118,7 +162,7 @@ export function LauncherView() {
           eventId: null,
           estimatedMinutes: parsed.estimatedMinutes,
         });
-        try { window.dispatchEvent(new Event('ghc-data-changed')); } catch { /* ignore */ }
+        broadcastDataChanged({ kind: 'todo' });
         showFlash(parsed.status === 'someday' ? 'Saved to someday' : 'Added to today');
       } else {
         // Notes: extract `#tags` from the input so users can categorize on the fly.
@@ -131,8 +175,9 @@ export function LauncherView() {
           showFlash('Nothing to save');
           return;
         }
+        step = 'write';
         await createQuickNote({ text: body, tags });
-        try { window.dispatchEvent(new Event('ghc-data-changed')); } catch { /* ignore */ }
+        broadcastDataChanged({ kind: 'note' });
         showFlash(tags.length > 0 ? `Note saved · ${tags.map(t => '#' + t).join(' ')}` : 'Note saved');
       }
       setValue('');
@@ -140,8 +185,13 @@ export function LauncherView() {
       // then auto-hide so the launcher feels like a fast capture tool.
       window.setTimeout(() => hide(), AUTO_HIDE_DELAY_MS);
     } catch (err) {
-      console.error('[launcher] submit failed:', err);
-      showFlash('Save failed');
+      console.error(`[launcher] submit failed at step '${step}':`, err);
+      const detail = err instanceof Error && err.message ? err.message : String(err);
+      // Surface the actual failure reason (and which step failed) instead of
+      // a vague "Save failed" so the user (and bug reports) can act on it.
+      const truncated = detail.length > 80 ? `${detail.slice(0, 77)}…` : detail;
+      const label = step === 'parse' ? 'Parse failed' : 'Save failed';
+      showFlash(`${label}: ${truncated}`);
     } finally {
       setSubmitting(false);
     }

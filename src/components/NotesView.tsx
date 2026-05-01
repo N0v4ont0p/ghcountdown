@@ -28,6 +28,7 @@ import {
   normalizeTag,
   dedupeTags,
 } from '@/db/repositories/notesRepo';
+import { broadcastDataChanged } from '@/lib/dataSync';
 
 const AUTOSAVE_DELAY_MS = 450;
 
@@ -145,7 +146,34 @@ export function NotesView({ initialSelectedId, initialQuery }: NotesViewProps) {
       return;
     }
     if (lastLoadedId.current !== selectedNote.id) {
-      // Different note picked — load fresh
+      // Different note picked — flush any pending autosave for the *previous*
+      // note FIRST, otherwise React will tear down the autosave effect (deps
+      // include `selectedNote`) and the in-flight debounce timer is cancelled,
+      // silently losing the user's most recent keystrokes.  This was the
+      // "Notes UI doesn't actually save" symptom users were hitting after
+      // clicking from one note to another within ~half a second of typing.
+      if (saveTimer.current !== null) {
+        window.clearTimeout(saveTimer.current);
+        saveTimer.current = null;
+      }
+      const prev = flushRef.current;
+      if (
+        prev.isDirty &&
+        prev.selectedId &&
+        prev.selectedId === lastLoadedId.current
+      ) {
+        // Best-effort: fire-and-forget, the new selection shouldn't wait on
+        // disk I/O for the *previous* note.  Errors are logged so a broken
+        // save doesn't appear as a generic UI hang.
+        void updateQuickNote(prev.selectedId, {
+          title: prev.title,
+          text: prev.text,
+          tags: prev.tags,
+        })
+          .then(() => broadcastDataChanged({ kind: 'note' }))
+          .catch((err) => console.error('[notes] flush-on-switch save failed:', err));
+      }
+      // Now load the newly-selected note into the editor
       setEditTitle(selectedNote.title ?? '');
       setEditText(selectedNote.text ?? '');
       setEditTags([...(selectedNote.tags ?? [])]);
@@ -169,10 +197,19 @@ export function NotesView({ initialSelectedId, initialQuery }: NotesViewProps) {
         });
         setSavedAt(Date.now());
         setIsDirty(false);
+        // Notify other windows / views (mini-panel, etc.) so they refresh.
+        // Local listeners are fine without this since `refresh()` below also
+        // re-renders our own list, but the cross-window IPC keeps everyone
+        // consistent with the same write.
+        broadcastDataChanged({ kind: 'note' });
         await refresh();
       } catch (err) {
         console.error('[notes] autosave failed:', err);
-        toast.error('Failed to save note');
+        const detail = err instanceof Error && err.message ? err.message : String(err);
+        // Surface the actual reason instead of a vague "failed to save" so
+        // users (and bug reports) know whether it's a quota, blocked upgrade,
+        // or transient I/O error.
+        toast.error(`Failed to save note: ${detail}`);
       }
     }, AUTOSAVE_DELAY_MS);
     return () => {
@@ -211,12 +248,15 @@ export function NotesView({ initialSelectedId, initialQuery }: NotesViewProps) {
       }
       const snap = flushRef.current;
       if (snap.selectedId && snap.isDirty) {
-        // Best-effort flush — fire and forget
+        // Best-effort flush — fire and forget.  Notify other windows once
+        // the write resolves so the mini-panel / launcher refresh too.
         void updateQuickNote(snap.selectedId, {
           title: snap.title,
           text: snap.text,
           tags: snap.tags,
-        });
+        })
+          .then(() => broadcastDataChanged({ kind: 'note' }))
+          .catch((err) => console.error('[notes] unmount flush save failed:', err));
       }
     };
   }, []);
@@ -229,6 +269,10 @@ export function NotesView({ initialSelectedId, initialQuery }: NotesViewProps) {
   async function handleNew() {
     try {
       const note = await createQuickNote({ text: '', title: '', tags: activeTagFilters });
+      // Tell other windows (and our own listeners) immediately so the new
+      // note appears everywhere — without this the mini-panel / launcher
+      // would still see the previous note count until the next mutation.
+      broadcastDataChanged({ kind: 'note' });
       await refresh();
       setSelectedId(note.id);
       setQuery('');
@@ -236,7 +280,11 @@ export function NotesView({ initialSelectedId, initialQuery }: NotesViewProps) {
       requestAnimationFrame(() => editTextRef.current?.focus());
     } catch (err) {
       console.error('[notes] create failed:', err);
-      toast.error('Failed to create note');
+      const detail = err instanceof Error && err.message ? err.message : String(err);
+      // Tell the user *why* it failed (quota, blocked upgrade, …) rather
+      // than a generic message, since the most common cause — a corrupt or
+      // locked IndexedDB — is actionable (clear site data / restart).
+      toast.error(`Failed to create note: ${detail}`);
     }
   }
 
@@ -244,11 +292,13 @@ export function NotesView({ initialSelectedId, initialQuery }: NotesViewProps) {
     if (!selectedNote) return;
     try {
       await deleteQuickNote(selectedNote.id);
+      broadcastDataChanged({ kind: 'note' });
       toast.success('Note deleted');
       await refresh();
     } catch (err) {
       console.error('[notes] delete failed:', err);
-      toast.error('Failed to delete note');
+      const detail = err instanceof Error && err.message ? err.message : String(err);
+      toast.error(`Failed to delete note: ${detail}`);
     } finally {
       setConfirmDeleteOpen(false);
     }
@@ -334,7 +384,7 @@ export function NotesView({ initialSelectedId, initialQuery }: NotesViewProps) {
           <p className="text-sm text-muted-foreground mt-1">
             Local-only notebook. Capture from anywhere with{' '}
             <kbd className="px-1.5 py-0.5 rounded bg-muted text-foreground/80 font-mono text-[11px]">
-              {navigator.platform.includes('Mac') ? '⌥⌘Space' : 'Ctrl+Alt+Space'}
+              {navigator.platform.includes('Mac') ? '⌘⌘ or ⌥⇧Space' : 'Ctrl+Alt+Space'}
             </kbd>
             .
           </p>
@@ -428,7 +478,7 @@ export function NotesView({ initialSelectedId, initialQuery }: NotesViewProps) {
           <p className="text-sm text-muted-foreground mt-1.5 max-w-md mx-auto">
             Open the global launcher with{' '}
             <kbd className="px-1.5 py-0.5 rounded bg-muted text-foreground/80 font-mono text-[11px]">
-              {navigator.platform.includes('Mac') ? '⌥⌘Space' : 'Ctrl+Alt+Space'}
+              {navigator.platform.includes('Mac') ? '⌘⌘ or ⌥⇧Space' : 'Ctrl+Alt+Space'}
             </kbd>{' '}
             to capture a thought from anywhere, or create one right here. Add{' '}
             <code className="px-1 py-0.5 rounded bg-muted text-foreground/80 font-mono text-[11px]">#tags</code>{' '}

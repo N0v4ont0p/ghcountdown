@@ -103,4 +103,27 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('launcher:shown', handler);
     return () => ipcRenderer.removeListener('launcher:shown', handler);
   },
+
+  // ---------------------------------------------------------------------------
+  // Cross-window data sync
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Tell the main process that this renderer just wrote to IndexedDB so it can
+   * notify every other window to refresh.  Used by the launcher (which is its
+   * own BrowserWindow) so newly-created todos/notes appear in the main app
+   * without a manual reload.  `payload` is forwarded verbatim and is optional.
+   */
+  notifyDataChanged: (payload) => ipcRenderer.send('data:changed', payload),
+
+  /**
+   * Subscribe to data-change broadcasts from other renderers.  Callback
+   * receives the optional payload sent by the originator.  Returns an
+   * unsubscribe function.
+   */
+  onDataChanged: (callback) => {
+    const handler = (_event, payload) => callback(payload);
+    ipcRenderer.on('data:changed', handler);
+    return () => ipcRenderer.removeListener('data:changed', handler);
+  },
 });
