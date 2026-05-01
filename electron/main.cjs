@@ -662,6 +662,20 @@ function createLauncherWindow() {
  * exists and is not destroyed.  Safe to call repeatedly; gates the
  * 'launcher:shown' IPC on the renderer being loaded so the message is never
  * dropped on the floor.
+ *
+ * Lifecycle contract: this function MUST NOT alter the main app's Dock
+ * visibility or the main window's lifecycle. The launcher is a lightweight
+ * popup, not a Dock-app entry point. We deliberately:
+ *   - never call `app.dock.show/hide`
+ *   - never call `app.show/hide/quit`
+ *   - never touch `mainWindow.show/hide`
+ *   - avoid `app.focus({ steal: true })` (which activates the *entire* app
+ *     and can re-surface other app windows or otherwise perturb the Dock
+ *     state). On macOS the launcher is a `type: 'panel'` BrowserWindow with
+ *     `setAlwaysOnTop(true, 'screen-saver')`; calling `show()` + `focus()`
+ *     + `moveTop()` makes the NSPanel become key without promoting the
+ *     whole app to frontmost. This is the lightest-touch presentation that
+ *     still lets the panel reliably receive keystrokes.
  */
 function presentLauncher() {
   if (!launcherWindow || launcherWindow.isDestroyed()) return;
@@ -671,22 +685,6 @@ function presentLauncher() {
     launcherWindow.setPosition(pos.x, pos.y);
   } catch (err) {
     console.error('[launcher] setPosition failed:', err);
-  }
-
-  // On macOS, the launcher is a `type: 'panel'` window which doesn't activate
-  // the app on its own.  If another app currently holds focus, calling
-  // `.focus()` on the BrowserWindow alone may not steal it — the launcher
-  // would then receive an immediate blur and hide itself, looking "broken".
-  // Promoting the app to frontmost first makes focus reliable.
-  //
-  // Important: showing the launcher must NOT alter Dock visibility or the
-  // main window's lifecycle. We deliberately do *not* touch `app.dock` here
-  // (the launcher is a popup, not a Dock-app entry point), and we never
-  // show/hide the main window from launcher code paths.
-  if (isMac) {
-    try { app.focus({ steal: true }); } catch (err) {
-      console.error('[launcher] app.focus failed:', err);
-    }
   }
 
   try {
@@ -757,9 +755,11 @@ function hideLauncher() {
 function toggleLauncher() {
   if (launcherWindow && !launcherWindow.isDestroyed() && launcherWindow.isVisible()) {
     // Already visible: just refocus the input (gives the user a clean slate).
+    // Stay symmetric with presentLauncher() — never call `app.focus({ steal })`
+    // here either, so toggling the launcher cannot perturb Dock/main-app state.
     try {
-      if (isMac) app.focus({ steal: true });
       launcherWindow.focus();
+      if (typeof launcherWindow.moveTop === 'function') launcherWindow.moveTop();
     } catch (err) {
       console.error('[launcher] toggle focus failed:', err);
     }
