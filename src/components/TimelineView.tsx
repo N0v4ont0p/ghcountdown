@@ -19,6 +19,8 @@ import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { RoutinePanel } from '@/components/RoutinePanel';
 import { PRIORITY_COLORS, withColorAlpha, scheduleMyDay, DAY_CAPACITY_MINUTES, DEFAULT_TODO_MINUTES } from '@/lib/schedulingUtils';
+import { pickFlexFillCandidate, explainAutoFill } from '@/lib/flexFill';
+import { getPeakFocusHours } from '@/lib/energyHours';
 import { detectBlockConflicts } from '@/lib/conflictDetection';
 import { EffectiveScheduleEntry, getCurrentLocation, getEffectiveScheduleForDate, getFreeSlotsForDate } from '@/lib/effectiveSchedule';
 import { predictActivity } from '@/lib/habitModel';
@@ -26,7 +28,6 @@ import {
   ALL_DAY_STATUSES,
   STATUS_META,
   getDayStatus,
-  prefersLowCognitiveLoad,
   setDayStatus,
   suppressesRoutine,
 } from '@/db/repositories/dayStatusRepo';
@@ -262,6 +263,9 @@ export function TimelineView() {
     if (suppressesRoutine(dayStatus)) return;
     const nowMinutes = now.getHours() * 60 + now.getMinutes();
     const allTodos = await getAllTodos();
+    const peakHours = await getPeakFocusHours();
+    // Track scheduledIds locally so multiple flex blocks filled in the same
+    // pass don't pick the same todo twice (avoids duplicates).
     const scheduledIds = new Set(blocks.filter(b => b.todoId).map(b => b.todoId as string));
 
     for (const block of blocks) {
@@ -270,35 +274,29 @@ export function TimelineView() {
       const [bH, bM] = block.startTime.split(':').map(Number);
       const blockStartMinutes = bH * 60 + bM;
       if (Math.abs(nowMinutes - blockStartMinutes) <= AUTO_FILL_THRESHOLD_MINUTES) {
-        await autoFillFlexBlock(block, allTodos, scheduledIds);
+        await autoFillFlexBlock(block, allTodos, scheduledIds, peakHours, now);
       }
     }
   }
 
-  async function autoFillFlexBlock(block: TimeBlock, allTodos: Todo[], scheduledIds: Set<string>) {
-    const candidates = allTodos.filter(t => t.status === 'today' && !scheduledIds.has(t.id));
-    let pool = candidates;
-    if ((block.slotType || 'fixed') === 'flex-project') {
-      pool = candidates.filter(t => block.projectId && t.projectId === block.projectId);
-    }
-    // On sick days, prefer low cognitive-load todos: rank a low-load p3 above
-    // a high-load p5.  We use a synthetic load weight (low=2, medium/null=1,
-    // high=0) added to priority so ties still fall back to priority order.
-    const sick = prefersLowCognitiveLoad(dayStatus);
-    const winner = pool.reduce<Todo | undefined>((best, t) => {
-      const score = (todo: Todo) => {
-        const loadWeight = sick
-          ? (todo.cognitiveLoad === 'low' ? 2 : todo.cognitiveLoad === 'high' ? 0 : 1)
-          : 0;
-        return todo.priority + loadWeight;
-      };
-      return best === undefined || score(t) > score(best) ? t : best;
-    }, undefined);
-    if (winner) {
-      await updateTimeBlock(block.id, { title: winner.title, todoId: winner.id });
-      toast.success(`Auto-filled flex slot with "${winner.title}"`);
-      loadData();
-    }
+  async function autoFillFlexBlock(
+    block: TimeBlock,
+    allTodos: Todo[],
+    scheduledIds: Set<string>,
+    peakHours: number[],
+    now: Date,
+  ): Promise<void> {
+    const result = pickFlexFillCandidate(block, allTodos, scheduledIds, dayStatus, {
+      peakHours,
+      now,
+    });
+    if (!result) return;
+    await updateTimeBlock(block.id, { title: result.todo.title, todoId: result.todo.id });
+    // Mutate the caller's set so subsequent flex blocks in the same pass
+    // can't pick the same todo (avoids duplicate scheduling).
+    scheduledIds.add(result.todo.id);
+    toast.success(`⚡ Auto-filled: ${explainAutoFill(result)}`);
+    loadData();
   }
 
   function resetForm() {
