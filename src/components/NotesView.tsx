@@ -10,6 +10,8 @@ import {
   X,
   Check,
   Folder,
+  ArrowUp,
+  ArrowDown,
 } from '@phosphor-icons/react';
 import { toast } from 'sonner';
 import { Input } from '@/components/ui/input';
@@ -66,6 +68,16 @@ export function NotesView({ initialSelectedId, initialQuery }: NotesViewProps) {
    *   - any id   → only notes assigned to that project
    */
   const [projectFilter, setProjectFilter] = useState<'all' | 'none' | string>('all');
+
+  /**
+   * Sort key for the note list.
+   *   - 'updated'  → most recently edited first (default — matches Apple Notes / Bear)
+   *   - 'created'  → newest creation first
+   *   - 'title'    → alphabetical by derived title
+   * The `sortDir` toggle flips ascending/descending for whichever key is active.
+   */
+  const [sortKey, setSortKey] = useState<'updated' | 'created' | 'title'>('updated');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
   // Keep the editor in sync if the parent passes a new note id (e.g. user
   // picked a search result while NotesView is already mounted).
@@ -134,8 +146,31 @@ export function NotesView({ initialSelectedId, initialQuery }: NotesViewProps) {
         n.tags.some((t) => t.includes(q))
       );
     }
-    return list;
-  }, [notes, query, activeTagFilters, projectFilter]);
+
+    // Sort the filtered list.  We slice() first because `notes` is the
+    // canonical state and `Array.sort` mutates in place — sorting the
+    // narrowed `list` directly would still mutate the original when no
+    // filters are applied (`list === notes`).
+    const sorted = list.slice();
+    sorted.sort((a, b) => {
+      let cmp = 0;
+      if (sortKey === 'title') {
+        cmp = deriveNoteTitle(a).localeCompare(deriveNoteTitle(b), undefined, {
+          sensitivity: 'base',
+          numeric: true,
+        });
+      } else if (sortKey === 'created') {
+        cmp = (a.createdAt ?? '').localeCompare(b.createdAt ?? '');
+      } else {
+        // 'updated' — fall back to createdAt for older rows that may lack it
+        cmp = (a.updatedAt ?? a.createdAt ?? '').localeCompare(
+          b.updatedAt ?? b.createdAt ?? '',
+        );
+      }
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+    return sorted;
+  }, [notes, query, activeTagFilters, projectFilter, sortKey, sortDir]);
 
   /** O(1) project lookup for rendering badges on the list and editor. */
   const projectsById = useMemo(() => {
@@ -500,6 +535,39 @@ export function NotesView({ initialSelectedId, initialQuery }: NotesViewProps) {
               </SelectContent>
             </Select>
           )}
+
+          {/* Sort selector — key + direction toggle */}
+          <Select
+            value={sortKey}
+            onValueChange={(v) => setSortKey(v as 'updated' | 'created' | 'title')}
+          >
+            <SelectTrigger
+              className="w-[150px] flex-shrink-0"
+              aria-label="Sort notes by"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="updated">Last updated</SelectItem>
+              <SelectItem value="created">Date created</SelectItem>
+              <SelectItem value="title">Title</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            onClick={() => setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))}
+            className="flex-shrink-0"
+            aria-label={`Sort direction: ${sortDir === 'asc' ? 'ascending' : 'descending'}`}
+            title={
+              sortKey === 'title'
+                ? sortDir === 'asc' ? 'A → Z' : 'Z → A'
+                : sortDir === 'asc' ? 'Oldest first' : 'Newest first'
+            }
+          >
+            {sortDir === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />}
+          </Button>
         </div>
 
         {tagCounts.length > 0 && (
