@@ -3,6 +3,7 @@ import { Location, ScheduleSkeletonEntry } from '@/db/schema';
 import { getAllScheduleSkeletonEntries } from '@/db/repositories/scheduleSkeletonRepo';
 import { getScheduleOverridesByDate } from '@/db/repositories/scheduleOverridesRepo';
 import { getAllLocations } from '@/db/repositories/locationsRepo';
+import { getDayStatus, suppressesRoutine } from '@/db/repositories/dayStatusRepo';
 
 export interface EffectiveScheduleEntry {
   id: string;
@@ -54,17 +55,25 @@ export async function getEffectiveScheduleForDate(date: string | Date): Promise<
   const targetDate = new Date(`${dateStr}T00:00:00`);
   const dayOfWeek = targetDate.getDay();
 
-  const [allSkeleton, overrides, locations] = await Promise.all([
+  const [allSkeleton, overrides, locations, dayStatus] = await Promise.all([
     getAllScheduleSkeletonEntries(),
     getScheduleOverridesByDate(dateStr),
     getAllLocations(),
+    getDayStatus(dateStr),
   ]);
 
   const locationById = new Map(locations.map((location) => [location.id, location]));
 
-  let effective = allSkeleton
-    .filter((entry) => entry.active && entry.daysOfWeek.includes(dayOfWeek))
-    .map((entry) => skeletonToEffective(entry));
+  // When the day is marked as a status that suppresses routine (vacation /
+  // off), drop the recurring skeleton entries entirely.  We still apply
+  // overrides — `add` overrides represent things the user explicitly added
+  // for *this* date, which should survive a vacation/off marker; `skip` and
+  // `replace` are no-ops on an empty effective list.
+  let effective = suppressesRoutine(dayStatus)
+    ? []
+    : allSkeleton
+        .filter((entry) => entry.active && entry.daysOfWeek.includes(dayOfWeek))
+        .map((entry) => skeletonToEffective(entry));
 
   for (const override of overrides) {
     if (override.action === 'skip' && override.skeletonEntryId) {

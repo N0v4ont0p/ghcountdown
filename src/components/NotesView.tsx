@@ -9,15 +9,19 @@ import {
   Hash,
   X,
   Check,
+  Folder,
+  ArrowUp,
+  ArrowDown,
 } from '@phosphor-icons/react';
 import { toast } from 'sonner';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { cn } from '@/lib/utils';
-import { QuickNote } from '@/db/schema';
+import { QuickNote, Project } from '@/db/schema';
 import {
   getAllQuickNotes,
   createQuickNote,
@@ -28,6 +32,7 @@ import {
   normalizeTag,
   dedupeTags,
 } from '@/db/repositories/notesRepo';
+import { getAllProjects } from '@/db/repositories/projectsRepo';
 import { broadcastDataChanged } from '@/lib/dataSync';
 
 const AUTOSAVE_DELAY_MS = 450;
@@ -52,9 +57,27 @@ interface NotesViewProps {
 export function NotesView({ initialSelectedId, initialQuery }: NotesViewProps) {
   const [notes, setNotes] = useState<QuickNote[]>([]);
   const [tagCounts, setTagCounts] = useState<Array<{ tag: string; count: number }>>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(initialSelectedId ?? null);
   const [query, setQuery] = useState<string>(initialQuery ?? '');
   const [activeTagFilters, setActiveTagFilters] = useState<string[]>([]);
+  /**
+   * Project filter:
+   *   - 'all'    → no project filter
+   *   - 'none'   → only standalone notes (`projectId === null`)
+   *   - any id   → only notes assigned to that project
+   */
+  const [projectFilter, setProjectFilter] = useState<'all' | 'none' | string>('all');
+
+  /**
+   * Sort key for the note list.
+   *   - 'updated'  → most recently edited first (default — matches Apple Notes / Bear)
+   *   - 'created'  → newest creation first
+   *   - 'title'    → alphabetical by derived title
+   * The `sortDir` toggle flips ascending/descending for whichever key is active.
+   */
+  const [sortKey, setSortKey] = useState<'updated' | 'created' | 'title'>('updated');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
   // Keep the editor in sync if the parent passes a new note id (e.g. user
   // picked a search result while NotesView is already mounted).
@@ -69,6 +92,7 @@ export function NotesView({ initialSelectedId, initialQuery }: NotesViewProps) {
   const [editTitle, setEditTitle] = useState('');
   const [editText, setEditText] = useState('');
   const [editTags, setEditTags] = useState<string[]>([]);
+  const [editProjectId, setEditProjectId] = useState<string | null>(null);
   const [tagDraft, setTagDraft] = useState('');
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [isDirty, setIsDirty] = useState(false);
@@ -79,9 +103,14 @@ export function NotesView({ initialSelectedId, initialQuery }: NotesViewProps) {
 
   // ── Load + refresh ────────────────────────────────────────────────────
   const refresh = useCallback(async () => {
-    const [all, tags] = await Promise.all([getAllQuickNotes(), getAllNoteTags()]);
+    const [all, tags, allProjects] = await Promise.all([
+      getAllQuickNotes(),
+      getAllNoteTags(),
+      getAllProjects(),
+    ]);
     setNotes(all);
     setTagCounts(tags);
+    setProjects(allProjects);
   }, []);
 
   useEffect(() => {
@@ -102,6 +131,11 @@ export function NotesView({ initialSelectedId, initialQuery }: NotesViewProps) {
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     let list = notes;
+    if (projectFilter === 'none') {
+      list = list.filter((n) => (n.projectId ?? null) === null);
+    } else if (projectFilter !== 'all') {
+      list = list.filter((n) => n.projectId === projectFilter);
+    }
     if (activeTagFilters.length > 0) {
       list = list.filter((n) => activeTagFilters.every((t) => n.tags.includes(t)));
     }
@@ -112,8 +146,38 @@ export function NotesView({ initialSelectedId, initialQuery }: NotesViewProps) {
         n.tags.some((t) => t.includes(q))
       );
     }
-    return list;
-  }, [notes, query, activeTagFilters]);
+
+    // Sort the filtered list.  We slice() first because `notes` is the
+    // canonical state and `Array.sort` mutates in place — sorting the
+    // narrowed `list` directly would still mutate the original when no
+    // filters are applied (`list === notes`).
+    const sorted = list.slice();
+    sorted.sort((a, b) => {
+      let cmp = 0;
+      if (sortKey === 'title') {
+        cmp = deriveNoteTitle(a).localeCompare(deriveNoteTitle(b), undefined, {
+          sensitivity: 'base',
+          numeric: true,
+        });
+      } else if (sortKey === 'created') {
+        cmp = (a.createdAt ?? '').localeCompare(b.createdAt ?? '');
+      } else {
+        // 'updated' — fall back to createdAt for older rows that may lack it
+        cmp = (a.updatedAt ?? a.createdAt ?? '').localeCompare(
+          b.updatedAt ?? b.createdAt ?? '',
+        );
+      }
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+    return sorted;
+  }, [notes, query, activeTagFilters, projectFilter, sortKey, sortDir]);
+
+  /** O(1) project lookup for rendering badges on the list and editor. */
+  const projectsById = useMemo(() => {
+    const map = new Map<string, Project>();
+    for (const p of projects) map.set(p.id, p);
+    return map;
+  }, [projects]);
 
   // Auto-select the first visible note when the selection becomes invalid
   useEffect(() => {
@@ -142,6 +206,7 @@ export function NotesView({ initialSelectedId, initialQuery }: NotesViewProps) {
       setEditTitle('');
       setEditText('');
       setEditTags([]);
+      setEditProjectId(null);
       setIsDirty(false);
       return;
     }
@@ -169,6 +234,7 @@ export function NotesView({ initialSelectedId, initialQuery }: NotesViewProps) {
           title: prev.title,
           text: prev.text,
           tags: prev.tags,
+          projectId: prev.projectId,
         })
           .then(() => broadcastDataChanged({ kind: 'note' }))
           .catch((err) => console.error('[notes] flush-on-switch save failed:', err));
@@ -177,6 +243,7 @@ export function NotesView({ initialSelectedId, initialQuery }: NotesViewProps) {
       setEditTitle(selectedNote.title ?? '');
       setEditText(selectedNote.text ?? '');
       setEditTags([...(selectedNote.tags ?? [])]);
+      setEditProjectId(selectedNote.projectId ?? null);
       setTagDraft('');
       setIsDirty(false);
       setSavedAt(null);
@@ -194,6 +261,7 @@ export function NotesView({ initialSelectedId, initialQuery }: NotesViewProps) {
           title: editTitle,
           text: editText,
           tags: editTags,
+          projectId: editProjectId,
         });
         setSavedAt(Date.now());
         setIsDirty(false);
@@ -215,7 +283,7 @@ export function NotesView({ initialSelectedId, initialQuery }: NotesViewProps) {
     return () => {
       if (saveTimer.current !== null) window.clearTimeout(saveTimer.current);
     };
-  }, [editTitle, editText, editTags, isDirty, selectedNote, refresh]);
+  }, [editTitle, editText, editTags, editProjectId, isDirty, selectedNote, refresh]);
 
   // Mirror the latest editor state into refs so the unmount-time flush below
   // sees current values (the empty-deps cleanup would otherwise capture stale
@@ -226,6 +294,7 @@ export function NotesView({ initialSelectedId, initialQuery }: NotesViewProps) {
     title: '',
     text: '',
     tags: [] as string[],
+    projectId: null as string | null,
   });
   useEffect(() => {
     flushRef.current = {
@@ -234,8 +303,9 @@ export function NotesView({ initialSelectedId, initialQuery }: NotesViewProps) {
       title: editTitle,
       text: editText,
       tags: editTags,
+      projectId: editProjectId,
     };
-  }, [selectedNote, isDirty, editTitle, editText, editTags]);
+  }, [selectedNote, isDirty, editTitle, editText, editTags, editProjectId]);
 
   // Cleanup on unmount: flush any pending save synchronously-ish so the user
   // doesn't lose typing when navigating away.  Reads the latest snapshot via
@@ -249,11 +319,12 @@ export function NotesView({ initialSelectedId, initialQuery }: NotesViewProps) {
       const snap = flushRef.current;
       if (snap.selectedId && snap.isDirty) {
         // Best-effort flush — fire and forget.  Notify other windows once
-        // the write resolves so the mini-panel / launcher refresh too.
+        // the write resolves so the mini-panel refreshes too.
         void updateQuickNote(snap.selectedId, {
           title: snap.title,
           text: snap.text,
           tags: snap.tags,
+          projectId: snap.projectId,
         })
           .then(() => broadcastDataChanged({ kind: 'note' }))
           .catch((err) => console.error('[notes] unmount flush save failed:', err));
@@ -268,10 +339,20 @@ export function NotesView({ initialSelectedId, initialQuery }: NotesViewProps) {
   // ── Actions ───────────────────────────────────────────────────────────
   async function handleNew() {
     try {
-      const note = await createQuickNote({ text: '', title: '', tags: activeTagFilters });
+      // If the user is filtering by a specific project, default the new note
+      // to that project so it stays visible after creation.  'all' / 'none'
+      // both create a standalone note.
+      const defaultProjectId =
+        projectFilter !== 'all' && projectFilter !== 'none' ? projectFilter : null;
+      const note = await createQuickNote({
+        text: '',
+        title: '',
+        tags: activeTagFilters,
+        projectId: defaultProjectId,
+      });
       // Tell other windows (and our own listeners) immediately so the new
-      // note appears everywhere — without this the mini-panel / launcher
-      // would still see the previous note count until the next mutation.
+      // note appears everywhere — without this the mini-panel would still
+      // see the previous note count until the next mutation.
       broadcastDataChanged({ kind: 'note' });
       await refresh();
       setSelectedId(note.id);
@@ -382,11 +463,9 @@ export function NotesView({ initialSelectedId, initialQuery }: NotesViewProps) {
             Notes
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Local-only notebook. Capture from anywhere with{' '}
-            <kbd className="px-1.5 py-0.5 rounded bg-muted text-foreground/80 font-mono text-[11px]">
-              {navigator.platform.includes('Mac') ? '⌥⇧Space' : 'Ctrl+Alt+Space'}
-            </kbd>
-            .
+            Local-only notebook. Add{' '}
+            <code className="px-1 py-0.5 rounded bg-muted text-foreground/80 font-mono text-[11px]">#tags</code>{' '}
+            inline to organize your notes.
           </p>
         </div>
         <Button onClick={handleNew} className="gap-1.5">
@@ -400,29 +479,95 @@ export function NotesView({ initialSelectedId, initialQuery }: NotesViewProps) {
 
       {/* ── Search + tag filters ── */}
       <div className="flex flex-col gap-2">
-        <div className="relative">
-          <MagnifyingGlass
-            size={16}
-            className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none"
-          />
-          <Input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search notes by title, body, or tag…"
-            className="pl-9"
-            aria-label="Search notes"
-          />
-          {query && (
-            <button
-              type="button"
-              onClick={() => setQuery('')}
-              className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
-              title="Clear search"
-              aria-label="Clear search"
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1">
+            <MagnifyingGlass
+              size={16}
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none"
+            />
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search notes by title, body, or tag…"
+              className="pl-9"
+              aria-label="Search notes"
+            />
+            {query && (
+              <button
+                type="button"
+                onClick={() => setQuery('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
+                title="Clear search"
+                aria-label="Clear search"
+              >
+                <X size={12} />
+              </button>
+            )}
+          </div>
+          {projects.length > 0 && (
+            <Select
+              value={projectFilter}
+              onValueChange={(v) => setProjectFilter(v as 'all' | 'none' | string)}
             >
-              <X size={12} />
-            </button>
+              <SelectTrigger
+                className="w-[200px] flex-shrink-0"
+                aria-label="Filter notes by project"
+              >
+                <Folder size={14} weight="duotone" className="text-muted-foreground mr-1" />
+                <SelectValue placeholder="All projects" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All projects</SelectItem>
+                <SelectItem value="none">No project</SelectItem>
+                {projects.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    <span className="flex items-center gap-2">
+                      <span
+                        className="w-2.5 h-2.5 rounded-full inline-block"
+                        style={{ backgroundColor: p.color }}
+                        aria-hidden
+                      />
+                      {p.icon && <span>{p.icon}</span>}
+                      {p.name}
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           )}
+
+          {/* Sort selector — key + direction toggle */}
+          <Select
+            value={sortKey}
+            onValueChange={(v) => setSortKey(v as 'updated' | 'created' | 'title')}
+          >
+            <SelectTrigger
+              className="w-[150px] flex-shrink-0"
+              aria-label="Sort notes by"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="updated">Last updated</SelectItem>
+              <SelectItem value="created">Date created</SelectItem>
+              <SelectItem value="title">Title</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            onClick={() => setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))}
+            className="flex-shrink-0"
+            aria-label={`Sort direction: ${sortDir === 'asc' ? 'ascending' : 'descending'}`}
+            title={
+              sortKey === 'title'
+                ? sortDir === 'asc' ? 'A → Z' : 'Z → A'
+                : sortDir === 'asc' ? 'Oldest first' : 'Newest first'
+            }
+          >
+            {sortDir === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />}
+          </Button>
         </div>
 
         {tagCounts.length > 0 && (
@@ -476,11 +621,7 @@ export function NotesView({ initialSelectedId, initialQuery }: NotesViewProps) {
           </div>
           <h2 className="text-lg font-semibold">No notes yet</h2>
           <p className="text-sm text-muted-foreground mt-1.5 max-w-md mx-auto">
-            Open the global launcher with{' '}
-            <kbd className="px-1.5 py-0.5 rounded bg-muted text-foreground/80 font-mono text-[11px]">
-              {navigator.platform.includes('Mac') ? '⌥⇧Space' : 'Ctrl+Alt+Space'}
-            </kbd>{' '}
-            to capture a thought from anywhere, or create one right here. Add{' '}
+            Create one to capture a thought. Add{' '}
             <code className="px-1 py-0.5 rounded bg-muted text-foreground/80 font-mono text-[11px]">#tags</code>{' '}
             to organize them.
           </p>
@@ -512,6 +653,7 @@ export function NotesView({ initialSelectedId, initialQuery }: NotesViewProps) {
                   const selected = n.id === selectedId;
                   const title = deriveNoteTitle(n);
                   const preview = n.text.replace(/\s+/g, ' ').trim().slice(0, 90);
+                  const noteProject = n.projectId ? projectsById.get(n.projectId) ?? null : null;
                   return (
                     <motion.button
                       key={n.id}
@@ -541,8 +683,23 @@ export function NotesView({ initialSelectedId, initialQuery }: NotesViewProps) {
                       {preview && preview !== title && (
                         <p className="text-xs text-muted-foreground mt-0.5 truncate">{preview}</p>
                       )}
-                      {n.tags.length > 0 && (
-                        <div className="flex flex-wrap gap-1 mt-1.5">
+                      {(n.tags.length > 0 || noteProject) && (
+                        <div className="flex flex-wrap items-center gap-1 mt-1.5">
+                          {noteProject && (
+                            <span
+                              className="inline-flex items-center gap-1 text-[9.5px] px-1.5 py-0.5 rounded-full border bg-card text-foreground/80 font-medium"
+                              style={{ borderColor: noteProject.color }}
+                              title={`Project: ${noteProject.name}`}
+                            >
+                              <Folder
+                                size={9}
+                                weight="fill"
+                                style={{ color: noteProject.color }}
+                              />
+                              {noteProject.icon && <span className="leading-none">{noteProject.icon}</span>}
+                              {noteProject.name}
+                            </span>
+                          )}
                           {n.tags.slice(0, 4).map((t) => (
                             <span
                               key={t}
@@ -603,6 +760,61 @@ export function NotesView({ initialSelectedId, initialQuery }: NotesViewProps) {
                   </Button>
                 </div>
 
+                {/* Project selector */}
+                <div className="px-4 py-2 border-b flex items-center gap-2">
+                  <Folder size={13} weight="duotone" className="text-muted-foreground flex-shrink-0" />
+                  <Select
+                    value={editProjectId ?? '__none__'}
+                    onValueChange={(v) => {
+                      setEditProjectId(v === '__none__' ? null : v);
+                      markDirty();
+                    }}
+                  >
+                    <SelectTrigger
+                      className="h-7 border-0 shadow-none focus:ring-0 focus:ring-offset-0 px-1 text-xs bg-transparent hover:bg-muted/50 w-auto gap-1"
+                      aria-label="Assign note to a project"
+                    >
+                      <SelectValue placeholder="No project" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">
+                        <span className="text-muted-foreground">No project (standalone)</span>
+                      </SelectItem>
+                      {projects.map((p) => (
+                        <SelectItem key={p.id} value={p.id}>
+                          <span className="flex items-center gap-2">
+                            <span
+                              className="w-2.5 h-2.5 rounded-full inline-block"
+                              style={{ backgroundColor: p.color }}
+                              aria-hidden
+                            />
+                            {p.icon && <span>{p.icon}</span>}
+                            {p.name}
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {(() => {
+                    const activeProject = editProjectId ? projectsById.get(editProjectId) : null;
+                    if (!activeProject) return null;
+                    return (
+                      <span
+                        className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full border bg-card text-foreground/80 font-medium"
+                        style={{ borderColor: activeProject.color }}
+                      >
+                        <span
+                          className="w-1.5 h-1.5 rounded-full inline-block"
+                          style={{ backgroundColor: activeProject.color }}
+                          aria-hidden
+                        />
+                        {activeProject.icon && <span>{activeProject.icon}</span>}
+                        {activeProject.name}
+                      </span>
+                    );
+                  })()}
+                </div>
+
                 {/* Tag editor */}
                 <div className="px-4 py-2 border-b flex flex-wrap items-center gap-1.5">
                   {editTags.map((t) => (
@@ -650,7 +862,7 @@ export function NotesView({ initialSelectedId, initialQuery }: NotesViewProps) {
                   ref={editTextRef}
                   value={editText}
                   onChange={(e) => { setEditText(e.target.value); markDirty(); }}
-                  placeholder="Start writing… Markdown is fine. Use #tag in the launcher to auto-tag."
+                  placeholder="Start writing… Markdown is fine. Use #tag inline to auto-tag."
                   className="flex-1 resize-none border-0 shadow-none focus-visible:ring-0 rounded-none p-4 text-sm leading-relaxed font-sans"
                 />
 

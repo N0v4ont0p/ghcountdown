@@ -9,8 +9,8 @@ const MAX_TAG_LENGTH = 32;
 /**
  * Strip leading "#tag" tokens from raw input and return them separately.
  * Inline `#hashtags` anywhere in the body are also captured.  This lets users
- * type things like "buy milk #errands #urgent" or "#idea start a podcast" in
- * the launcher and have them tagged automatically.
+ * type things like "buy milk #errands #urgent" or "#idea start a podcast"
+ * and have them tagged automatically.
  */
 export function extractInlineTags(raw: string): { text: string; tags: string[] } {
   const tags: string[] = [];
@@ -62,6 +62,8 @@ export interface CreateQuickNoteInput {
   text: string;
   title?: string;
   tags?: string[];
+  /** Optional project to assign the note to.  `null`/omitted = standalone. */
+  projectId?: string | null;
 }
 
 export async function createQuickNote(input: CreateQuickNoteInput | string): Promise<QuickNote> {
@@ -81,6 +83,7 @@ export async function createQuickNote(input: CreateQuickNoteInput | string): Pro
     title: (data.title ?? '').trim(),
     text,
     tags,
+    projectId: data.projectId ?? null,
     createdAt: now,
     updatedAt: now,
   };
@@ -90,7 +93,7 @@ export async function createQuickNote(input: CreateQuickNoteInput | string): Pro
 
 export async function updateQuickNote(
   id: string,
-  patch: Partial<Pick<QuickNote, 'title' | 'text' | 'tags'>>,
+  patch: Partial<Pick<QuickNote, 'title' | 'text' | 'tags' | 'projectId'>>,
 ): Promise<QuickNote | null> {
   const existing = await getQuickNoteById(id);
   if (!existing) return null;
@@ -99,6 +102,7 @@ export async function updateQuickNote(
     ...(patch.title !== undefined ? { title: patch.title.trim() } : {}),
     ...(patch.text !== undefined ? { text: patch.text } : {}),
     ...(patch.tags !== undefined ? { tags: dedupeTags(patch.tags) } : {}),
+    ...(patch.projectId !== undefined ? { projectId: patch.projectId } : {}),
     updatedAt: new Date().toISOString(),
   };
   await put(STORES.QUICK_NOTES, next);
@@ -118,6 +122,13 @@ export interface SearchOptions {
   query?: string;
   /** Restrict to notes that have ALL of these tags (lower-cased). */
   tags?: string[];
+  /**
+   * Filter by project assignment.
+   *   - omitted/undefined: no filter (all notes)
+   *   - a project id string: only notes belonging to that project
+   *   - `null`: only standalone notes (`projectId === null`)
+   */
+  projectId?: string | null;
   /** Cap the number of results returned. */
   limit?: number;
 }
@@ -127,6 +138,9 @@ export async function searchQuickNotes(opts: SearchOptions = {}): Promise<QuickN
   const q = (opts.query ?? '').trim().toLowerCase();
   const requiredTags = (opts.tags ?? []).map(normalizeTag).filter(Boolean);
   let filtered = all;
+  if (opts.projectId !== undefined) {
+    filtered = filtered.filter((n) => (n.projectId ?? null) === opts.projectId);
+  }
   if (requiredTags.length > 0) {
     filtered = filtered.filter((n) => requiredTags.every((t) => n.tags.includes(t)));
   }
@@ -139,6 +153,27 @@ export async function searchQuickNotes(opts: SearchOptions = {}): Promise<QuickN
   }
   if (typeof opts.limit === 'number') filtered = filtered.slice(0, opts.limit);
   return filtered;
+}
+
+/** Return all notes belonging to a specific project (or standalone if `null`). */
+export async function getQuickNotesByProject(projectId: string | null): Promise<QuickNote[]> {
+  const all = await getAllQuickNotes();
+  return all.filter((n) => (n.projectId ?? null) === projectId);
+}
+
+/**
+ * Set `projectId` to `null` for every note belonging to `projectId`.
+ * Used when a project is deleted so its notes survive as standalone notes
+ * rather than being silently removed.  Returns the number of notes unlinked.
+ */
+export async function unlinkNotesFromProject(projectId: string): Promise<number> {
+  const notes = await getQuickNotesByProject(projectId);
+  if (notes.length === 0) return 0;
+  const now = new Date().toISOString();
+  await Promise.all(
+    notes.map((n) => put(STORES.QUICK_NOTES, { ...n, projectId: null, updatedAt: now }))
+  );
+  return notes.length;
 }
 
 /** Aggregate every distinct tag with its usage count, ordered by frequency desc. */

@@ -1,6 +1,6 @@
 /**
- * Shared parser for natural-language todo capture used by both QuickCapture
- * (in-app modal) and the global Launcher window.
+ * Shared parser for natural-language todo capture used by QuickCapture
+ * (in-app modal).
  *
  * Keeps behavior identical so users learn one set of conventions:
  *   - "urgent" / "!!" / "asap"        → priority 5

@@ -1,5 +1,5 @@
 export const DB_NAME = 'ghcountdown';
-export const DB_VERSION = 5;
+export const DB_VERSION = 9;
 
 export interface QuickNote {
   id: string;
@@ -9,6 +9,8 @@ export interface QuickNote {
   text: string;
   /** Lower-cased, deduplicated tags for filtering & search. */
   tags: string[];
+  /** Optional project this note belongs to.  `null` for standalone notes. */
+  projectId: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -41,6 +43,12 @@ export interface Project {
   id: string;
   name: string;
   color: string;
+  /** Optional emoji / single-glyph icon shown next to the name. */
+  icon: string | null;
+  /** Free-form description for the project (markdown-ish, plain text fine). */
+  description: string;
+  /** Lifecycle state.  'active' is the default for new and migrated projects. */
+  status: 'active' | 'paused' | 'archived';
   createdAt: string;
   updatedAt: string;
 }
@@ -126,6 +134,69 @@ export interface ScheduleOverride {
   createdAt: string;
 }
 
+/** Lifecycle state of a single calendar day, used by the scheduler to decide
+ *  whether the user's normal routine, auto-fill, and suggestions apply.
+ *
+ *   - 'active'   → normal routine + auto-fill + suggestions (default)
+ *   - 'sick'     → routine still shown, but auto-fill / "Schedule Day" prefer
+ *                  low cognitive-load todos and reduce the daily cap
+ *   - 'vacation' → routine, auto-fill and suggestions are suppressed; only
+ *                  blocks the user manually adds will appear
+ *   - 'off'      → like 'vacation' but framed as a personal day
+ *
+ *  Days without an explicit row are treated as 'active'.
+ */
+export type DayStatusKind = 'active' | 'sick' | 'vacation' | 'off';
+
+export interface DayStatus {
+  /** Primary key — yyyy-MM-dd local-date string. */
+  date: string;
+  status: DayStatusKind;
+  /** Optional free-form note shown in the banner (e.g. "flu", "Spain"). */
+  note: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Built-in subscription categories, in the order shown in selectors.
+ *  A free-form `string` is also allowed (custom categories) — see
+ *  {@link Subscription.category}. */
+export const BUILTIN_SUBSCRIPTION_CATEGORIES = [
+  'AI',
+  'Content',
+  'Productivity',
+  'Cloud',
+  'Entertainment',
+  'Other',
+] as const;
+export type BuiltinSubscriptionCategory = typeof BUILTIN_SUBSCRIPTION_CATEGORIES[number];
+
+export type SubscriptionStatus = 'active' | 'trial' | 'cancelled';
+export type SubscriptionBillingCycle = 'weekly' | 'monthly' | 'yearly' | 'custom';
+
+export interface Subscription {
+  id: string;
+  /** Display name (e.g. "Netflix", "ChatGPT Plus"). Required, trimmed. */
+  name: string;
+  /** Either a built-in category or any free-form custom category string. */
+  category: string;
+  /** Numeric price per billing cycle in `currency`. Stored as a number; the UI formats. */
+  price: number;
+  /** ISO 4217 code, uppercase (e.g. "USD"). Defaults to "USD" when unspecified. */
+  currency: string;
+  billingCycle: SubscriptionBillingCycle;
+  /** Required only when `billingCycle === 'custom'` — length of one cycle in days. */
+  customCycleDays: number | null;
+  /** yyyy-MM-dd local date of the next charge.  `null` for cancelled rows that have no future charge. */
+  nextBillingDate: string | null;
+  status: SubscriptionStatus;
+  notes: string;
+  /** Optional project this subscription is associated with. `null` if standalone. */
+  projectId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Settings {
   theme: 'light' | 'dark' | 'system';
   accentColor: string;
@@ -152,4 +223,6 @@ export const STORES = {
   HABIT_MODEL: 'habitModel',
   GOALS: 'goals',
   QUICK_NOTES: 'quickNotes',
+  DAY_STATUSES: 'dayStatuses',
+  SUBSCRIPTIONS: 'subscriptions',
 } as const;

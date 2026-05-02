@@ -1,6 +1,6 @@
 'use strict';
 
-const { app, BrowserWindow, shell, nativeTheme, ipcMain, net, protocol, Tray, Menu, nativeImage, screen, globalShortcut } = require('electron');
+const { app, BrowserWindow, shell, nativeTheme, ipcMain, net, protocol, Tray, Menu, nativeImage, screen } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { pathToFileURL } = require('url');
@@ -59,55 +59,6 @@ const MINI_PANEL_WIDTH = 380;
 const MINI_PANEL_HEIGHT = 280;
 const MINI_PANEL_SCREEN_EDGE_BUFFER = 20;
 
-// Launcher window dimensions
-const LAUNCHER_WIDTH = 620;
-const LAUNCHER_HEIGHT = 132;
-// How far above the bottom of the active display the launcher floats.
-// Far enough above the dock/taskbar that it never overlaps.
-const LAUNCHER_BOTTOM_OFFSET = 140;
-
-// Cross-platform *global* shortcut for the launcher — works whether or not
-// the app is focused.
-//
-// macOS: `Alt+Shift+Space` (⌥⇧Space).  We deliberately avoid `⌥⌘Space`
-//   because it sits one modifier away from Spotlight (`⌘Space`) and the
-//   Spotlight character-viewer (`⌃⌘Space`), which made the old binding
-//   easy to trigger by accident.  `⌥⇧Space` has no default macOS binding,
-//   so it's conflict-free with Finder/Spotlight.
-//
-//   Note on double-tap ⌘: a *truly global* double-tap-⌘ trigger (one that
-//   fires while another app is focused) requires a native macOS
-//   `CGEventTap` (Swift helper or `uiohook-napi`-style native module) plus
-//   Accessibility permission, per-Electron-version native rebuilds, and
-//   extra signing/notarization work.  Electron's `globalShortcut` API
-//   cannot help — it only accepts modifier+key Accelerator strings and
-//   never fires for a modifier-only press.  We previously implemented
-//   double-tap ⌘ via `webContents.on('before-input-event')`, but that
-//   only fires while one of our windows already has focus, which is the
-//   opposite of what users expect from a "global" shortcut.  Advertising
-//   it as global was misleading, so it has been removed entirely.  The
-//   single, honestly-global trigger is `⌥⇧Space`.
-//
-// Windows / Linux: `Control+Alt+Space`.
-const LAUNCHER_SHORTCUT = isMac ? 'Alt+Shift+Space' : 'Control+Alt+Space';
-
-/**
- * Render the global shortcut as a human-readable label for menus.
- * Single source of truth: keeps the tray menu, future tooltips, and the
- * registration call from drifting apart.
- */
-function formatShortcutLabel(accelerator) {
-  if (isMac) {
-    return accelerator
-      .replace(/CommandOrControl|Cmd|Command/g, '⌘')
-      .replace(/Alt|Option/g, '⌥')
-      .replace(/Shift/g, '⇧')
-      .replace(/Ctrl|Control/g, '⌃')
-      .replace(/\+/g, '');
-  }
-  return accelerator;
-}
-
 // ---------------------------------------------------------------------------
 // Mini panel position persistence
 // ---------------------------------------------------------------------------
@@ -156,15 +107,6 @@ let mainWindow = null;
 let tray = null;
 /** @type {BrowserWindow | null} */
 let miniPanelWindow = null;
-/** @type {BrowserWindow | null} */
-let launcherWindow = null;
-/**
- * True once the launcher window has fired `ready-to-show` AND its webContents
- * have finished loading.  Used to gate show/focus/IPC calls so rapid-fire
- * shortcut presses (or a tray click during initial load) don't operate on a
- * half-initialized window.
- */
-let launcherReady = false;
 /** @type {object | null} */
 let lastTrayStatus = null;
 let appIsQuitting = false;
@@ -190,12 +132,9 @@ function notifyMainWindowMiniPanelState(visible) {
  *
  * - `app.dock.show()` guarantees the Dock icon is visible. This is the
  *   correct macOS API for restoring a normal Dock app — `app.show()` only
- *   reverses an explicit `app.hide()` and is a no-op otherwise. The launcher
- *   is a `type: 'panel'` BrowserWindow, which macOS treats as an auxiliary
- *   window; after the main window is hidden and the panel has held focus,
- *   the app can transiently appear "dockless" until Dock visibility is
- *   re-asserted. Calling `app.dock.show()` on every restore path makes the
- *   behavior deterministic.
+ *   reverses an explicit `app.hide()` and is a no-op otherwise. Calling
+ *   `app.dock.show()` on every restore path makes the behavior
+ *   deterministic.
  * - `app.focus({ steal: true })` brings the app to the front even when
  *   another app holds focus.
  *
@@ -310,10 +249,6 @@ function buildTrayMenu(status) {
   menuItems.push({
     label: 'Open GHCountdown',
     click: showMainApp,
-  });
-  menuItems.push({
-    label: `Open Launcher\t${formatShortcutLabel(LAUNCHER_SHORTCUT)}`,
-    click: () => showLauncher(),
   });
   menuItems.push({
     label: 'Open Timer',
@@ -459,245 +394,13 @@ function createMiniPanel() {
   });
 }
 
-// ---------------------------------------------------------------------------
-// Global launcher window
-// ---------------------------------------------------------------------------
-
-/**
- * Compute the on-screen position for the launcher: horizontally centered on
- * the display containing the cursor, anchored above the bottom edge.
- */
-function getLauncherPosition() {
-  const cursor = screen.getCursorScreenPoint();
-  const display = screen.getDisplayNearestPoint(cursor);
-  const { x, y, width, height } = display.workArea;
-  const px = Math.round(x + (width - LAUNCHER_WIDTH) / 2);
-  const py = Math.round(y + height - LAUNCHER_HEIGHT - LAUNCHER_BOTTOM_OFFSET);
-  return { x: px, y: py };
-}
-
-function createLauncherWindow() {
-  if (launcherWindow && !launcherWindow.isDestroyed()) return launcherWindow;
-
-  // Reset readiness — we'll flip this to true once the page is fully loaded.
-  launcherReady = false;
-
-  const { x, y } = getLauncherPosition();
-
-  launcherWindow = new BrowserWindow({
-    width: LAUNCHER_WIDTH,
-    height: LAUNCHER_HEIGHT,
-    x,
-    y,
-    show: false,
-    frame: false,
-    transparent: true,
-    resizable: false,
-    movable: true,
-    minimizable: false,
-    maximizable: false,
-    fullscreenable: false,
-    skipTaskbar: true,
-    alwaysOnTop: true,
-    hasShadow: true,
-    // Don't show in the macOS App Switcher (Cmd+Tab) — this is a utility popup,
-    // not a regular window.
-    ...(isMac ? { type: 'panel' } : {}),
-    webPreferences: {
-      preload: path.join(__dirname, 'preload.cjs'),
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true,
-    },
-  });
-
-  // Float above full-screen apps too — important for a global launcher.
-  launcherWindow.setAlwaysOnTop(true, 'screen-saver');
-  if (isMac) {
-    launcherWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-  }
-
-  const launcherUrl = isDev
-    ? `${process.env.ELECTRON_DEV_URL || 'http://localhost:5173'}?launcher=1`
-    : 'app://localhost/index.html?launcher=1';
-  // Surface load failures specifically rather than letting them silently
-  // strand the launcher in an invisible-but-existing state.  The fail handler
-  // below will tear down the broken window so the next press recreates it.
-  launcherWindow.loadURL(launcherUrl).catch((err) => {
-    console.error(`[launcher] loadURL('${launcherUrl}') rejected:`, err);
-  });
-
-  // Mark the window ready only after the renderer has actually finished
-  // loading.  ready-to-show alone is not enough: webContents.send() before
-  // the renderer has subscribed to 'launcher:shown' silently drops the event.
-  launcherWindow.webContents.once('did-finish-load', () => {
-    launcherReady = true;
-  });
-
-  // If the page fails to load (broken bundle, dev server down, app:// error),
-  // log the *specific* failure and destroy the window so the next show recreates
-  // it from scratch instead of silently doing nothing.
-  launcherWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
-    if (!isMainFrame) return;
-    console.error(
-      `[launcher] did-fail-load (${errorCode} ${errorDescription}) for ${validatedURL}`
-    );
-    launcherReady = false;
-    if (launcherWindow && !launcherWindow.isDestroyed()) {
-      launcherWindow.destroy();
-    }
-  });
-
-  // Hide instead of close when focus is lost so the popup feels lightweight.
-  launcherWindow.on('blur', () => {
-    if (!launcherWindow || launcherWindow.isDestroyed()) return;
-    // Don't auto-hide before the page has even finished loading: a transient
-    // blur during startup would otherwise leave the launcher invisible and
-    // make the very first shortcut press feel like it "failed".
-    if (!launcherReady) return;
-    if (launcherWindow.isVisible()) launcherWindow.hide();
-  });
-
-  launcherWindow.on('closed', () => {
-    launcherWindow = null;
-    launcherReady = false;
-  });
-
-  // Open external links in the default browser
-  launcherWindow.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
-    return { action: 'deny' };
-  });
-
-  return launcherWindow;
-}
-
-/**
- * Internal: actually present the launcher window.  Assumes `launcherWindow`
- * exists and is not destroyed.  Safe to call repeatedly; gates the
- * 'launcher:shown' IPC on the renderer being loaded so the message is never
- * dropped on the floor.
- *
- * Lifecycle contract: this function MUST NOT alter the main app's Dock
- * visibility or the main window's lifecycle. The launcher is a lightweight
- * popup, not a Dock-app entry point. We deliberately:
- *   - never call `app.dock.show/hide`
- *   - never call `app.show/hide/quit`
- *   - never touch `mainWindow.show/hide`
- *   - avoid `app.focus({ steal: true })` (which activates the *entire* app
- *     and can re-surface other app windows or otherwise perturb the Dock
- *     state). On macOS the launcher is a `type: 'panel'` BrowserWindow with
- *     `setAlwaysOnTop(true, 'screen-saver')`; calling `show()` + `focus()`
- *     + `moveTop()` makes the NSPanel become key without promoting the
- *     whole app to frontmost. This is the lightest-touch presentation that
- *     still lets the panel reliably receive keystrokes.
- */
-function presentLauncher() {
-  if (!launcherWindow || launcherWindow.isDestroyed()) return;
-
-  try {
-    const pos = getLauncherPosition();
-    launcherWindow.setPosition(pos.x, pos.y);
-  } catch (err) {
-    console.error('[launcher] setPosition failed:', err);
-  }
-
-  try {
-    launcherWindow.show();
-    launcherWindow.focus();
-    if (typeof launcherWindow.moveTop === 'function') launcherWindow.moveTop();
-  } catch (err) {
-    console.error('[launcher] show/focus failed:', err);
-  }
-
-  // Notify the renderer to refocus the input + clear stale flash, but only
-  // once it has actually subscribed.  Otherwise the message is silently lost
-  // and the input doesn't get focus on the very first show.
-  notifyLauncherShown();
-}
-
-/**
- * Send 'launcher:shown' to the renderer, deferring until the page is loaded.
- */
-function notifyLauncherShown() {
-  if (!launcherWindow || launcherWindow.isDestroyed()) return;
-  const wc = launcherWindow.webContents;
-  if (launcherReady && !wc.isLoading()) {
-    try { wc.send('launcher:shown'); } catch (err) {
-      console.error('[launcher] send(launcher:shown) failed:', err);
-    }
-    return;
-  }
-  // Page not ready yet — wait for it, then fire exactly once.
-  wc.once('did-finish-load', () => {
-    if (!launcherWindow || launcherWindow.isDestroyed()) return;
-    try { launcherWindow.webContents.send('launcher:shown'); } catch (err) {
-      console.error('[launcher] deferred send(launcher:shown) failed:', err);
-    }
-  });
-}
-
-/**
- * Show the launcher: create on first use, otherwise re-position to the active
- * display, show, and focus.  Sends 'launcher:shown' so the renderer can clear
- * any stale flash messages and re-focus the input.
- */
-function showLauncher() {
-  if (!launcherWindow || launcherWindow.isDestroyed()) {
-    createLauncherWindow();
-    // Wait for the page to be ready before showing — avoids a flash of blank.
-    // Using `once` on the BrowserWindow event is fine because createLauncherWindow
-    // creates a fresh window (and a fresh listener) every time.
-    launcherWindow.once('ready-to-show', () => {
-      presentLauncher();
-    });
-    return;
-  }
-
-  // Existing window: just present it.  presentLauncher() is safe whether or
-  // not the page has finished loading (it queues the 'launcher:shown' IPC).
-  presentLauncher();
-}
-
-function hideLauncher() {
-  if (launcherWindow && !launcherWindow.isDestroyed() && launcherWindow.isVisible()) {
-    try { launcherWindow.hide(); } catch (err) {
-      console.error('[launcher] hide failed:', err);
-    }
-  }
-}
-
-function toggleLauncher() {
-  if (launcherWindow && !launcherWindow.isDestroyed() && launcherWindow.isVisible()) {
-    // Already visible: just refocus the input (gives the user a clean slate).
-    // Stay symmetric with presentLauncher() — never call `app.focus({ steal })`
-    // here either, so toggling the launcher cannot perturb Dock/main-app state.
-    try {
-      launcherWindow.focus();
-      if (typeof launcherWindow.moveTop === 'function') launcherWindow.moveTop();
-    } catch (err) {
-      console.error('[launcher] toggle focus failed:', err);
-    }
-    notifyLauncherShown();
-    return;
-  }
-  showLauncher();
-}
-
-ipcMain.on('launcher:hide', () => hideLauncher());
-
 /**
  * Cross-window data change broadcast.
  *
- * The launcher is a separate BrowserWindow with its own renderer, so a
- * `window.dispatchEvent('ghc-data-changed')` fired inside the launcher is
- * never seen by the main app.  Without this hop, todos/notes created from
- * the launcher land in IndexedDB but the main app's lists don't refresh
- * until the user manually reloads, making the launcher feel like it
- * "didn't actually save".
- *
- * Any renderer can fire `'data:changed'`; the main process re-broadcasts
- * it to every window so they can re-fetch from IndexedDB.
+ * Any renderer can fire `'data:changed'`; the main process re-broadcasts it
+ * to every other window so they can re-fetch from IndexedDB. This keeps
+ * multiple BrowserWindows (e.g. the main app and the mini panel) consistent
+ * after a write.
  */
 ipcMain.on('data:changed', (event, payload) => {
   for (const win of BrowserWindow.getAllWindows()) {
@@ -866,7 +569,7 @@ function createWindow() {
   });
 
   // Closing the main window keeps the app alive in the menu bar (macOS) /
-  // system tray (Windows) so the global shortcut continues to work.  The user
+  // system tray (Windows) so the tray menu remains accessible. The user
   // can fully quit via the tray menu or Cmd+Q / Ctrl+Q.
   mainWindow.on('close', (event) => {
     if (!appIsQuitting) {
@@ -895,8 +598,7 @@ app.whenReady().then(() => {
   // codebase calls `app.dock.hide()` or `setActivationPolicy('accessory')`,
   // but explicitly showing the Dock icon at startup makes the lifecycle
   // contract obvious and protects against any future code (or upstream
-  // Electron change) that might leave the app in accessory mode after the
-  // launcher panel is shown.
+  // Electron change) that might leave the app in accessory mode.
   if (isMac && app.dock && typeof app.dock.show === 'function') {
     try {
       const p = app.dock.show();
@@ -907,14 +609,6 @@ app.whenReady().then(() => {
       console.error('[lifecycle] startup app.dock.show() threw:', err);
     }
   }
-
-  // macOS: register the global launcher shortcut after windows/tray are up
-  // (see the `globalShortcut.register` call further below).  We previously
-  // also wired a focused-only double-tap-⌘ detector via
-  // `webContents.on('before-input-event')`, but that only fired while one
-  // of our windows already had focus, which made it misleading to advertise
-  // as a "global" shortcut.  It has been removed; `⌥⇧Space` is the only
-  // honestly-global trigger.
 
   // Serve the production build through the custom 'app' scheme so that the
   // renderer has a real origin and IndexedDB works correctly.
@@ -945,19 +639,6 @@ app.whenReady().then(() => {
   createWindow();
   createTray();
 
-  // Register the *only* global launcher shortcut.  `⌥⇧Space` on macOS /
-  // `Ctrl+Alt+Space` on Windows/Linux works regardless of which app is
-  // focused.  We try the platform-default first and, if the OS rejects it
-  // (e.g. another app already grabbed the combination), log a warning
-  // rather than crash.  No double-tap-⌘ detector is registered: see the
-  // long comment on `LAUNCHER_SHORTCUT` for why.
-  const registered = globalShortcut.register(LAUNCHER_SHORTCUT, () => {
-    toggleLauncher();
-  });
-  if (!registered) {
-    console.warn(`[launcher] Failed to register global shortcut '${LAUNCHER_SHORTCUT}' — it may be in use by another app.`);
-  }
-
   // macOS: dock-icon click / app re-activation.  Always go through
   // showMainApp so Dock visibility, window un-minimize, show, and focus are
   // restored consistently — same code path as the tray "Open GHCountdown"
@@ -967,23 +648,17 @@ app.whenReady().then(() => {
   });
 });
 
-// The app must keep running even when every window is closed so the global
-// shortcut and tray menu stay live (matches Claude / ChatGPT desktop behaviour).
-// The user explicitly quits via the tray menu or Cmd+Q / Ctrl+Q.
+// The app must keep running even when every window is closed so the tray
+// menu stays live (matches Claude / ChatGPT desktop behaviour). The user
+// explicitly quits via the tray menu or Cmd+Q / Ctrl+Q.
 app.on('window-all-closed', () => {
   // Intentionally a no-op on every platform.
 });
 
-// Ensure a clean quit (destroy tray, release global shortcuts) when the app
-// is actually quitting.
+// Ensure a clean quit (destroy tray) when the app is actually quitting.
 app.on('before-quit', () => {
   appIsQuitting = true;
-  try { globalShortcut.unregisterAll(); } catch { /* best-effort */ }
   if (tray && !tray.isDestroyed()) {
     tray.destroy();
   }
-});
-
-app.on('will-quit', () => {
-  try { globalShortcut.unregisterAll(); } catch { /* best-effort */ }
 });

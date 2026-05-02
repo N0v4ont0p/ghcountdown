@@ -19,9 +19,19 @@ import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { RoutinePanel } from '@/components/RoutinePanel';
 import { PRIORITY_COLORS, withColorAlpha, scheduleMyDay, DAY_CAPACITY_MINUTES, DEFAULT_TODO_MINUTES } from '@/lib/schedulingUtils';
+import { pickFlexFillCandidate, explainAutoFill } from '@/lib/flexFill';
+import { getPeakFocusHours } from '@/lib/energyHours';
 import { detectBlockConflicts } from '@/lib/conflictDetection';
 import { EffectiveScheduleEntry, getCurrentLocation, getEffectiveScheduleForDate, getFreeSlotsForDate } from '@/lib/effectiveSchedule';
 import { predictActivity } from '@/lib/habitModel';
+import {
+  ALL_DAY_STATUSES,
+  STATUS_META,
+  getDayStatus,
+  setDayStatus,
+  suppressesRoutine,
+} from '@/db/repositories/dayStatusRepo';
+import { DayStatusKind } from '@/db/schema';
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
 const TIMELINE_HOUR_HEIGHT = 80;
@@ -70,6 +80,11 @@ export function TimelineView() {
   const [isRoutinePanelOpen, setIsRoutinePanelOpen] = useState(false);
   const [timelineZoom, setTimelineZoom] = useState(1);
   const timelineHourHeight = TIMELINE_HOUR_HEIGHT * timelineZoom;
+  /** Per-day status for the date currently shown in the header.  Defaults to
+   *  'active' until loaded from IndexedDB so the UI never flashes a banner
+   *  for the wrong day. */
+  const [dayStatus, setDayStatusState] = useState<DayStatusKind>('active');
+  const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
 
   const [formData, setFormData] = useState({
     title: '',
@@ -113,6 +128,13 @@ export function TimelineView() {
 
     async function buildGhostSuggestions() {
       const dateStr = format(currentDate, 'yyyy-MM-dd');
+      // Ghost activity predictions are part of "the routine".  When the user
+      // marks a day as vacation/off they don't want the model nagging them
+      // with predicted activities, so silence them entirely.
+      if (suppressesRoutine(dayStatus)) {
+        if (active) setGhostSuggestions([]);
+        return;
+      }
       const flexSlots = await getFreeSlotsForDate(dateStr);
       const toMinutes = (timeValue: string) => {
         const [h, m] = timeValue.split(':').map(Number);
@@ -158,7 +180,7 @@ export function TimelineView() {
     return () => {
       active = false;
     };
-  }, [currentDate, timeBlocks, ghostDismissedIds]);
+  }, [currentDate, timeBlocks, ghostDismissedIds, dayStatus]);
 
   useEffect(() => {
     if (timelineRef.current) {
@@ -171,7 +193,7 @@ export function TimelineView() {
 
   async function loadData() {
     const dateStr = format(currentDate, 'yyyy-MM-dd');
-    const [blocks, allTodos, allEvents, allProjects, timer, effectiveSchedule, currentLocation] = await Promise.all([
+    const [blocks, allTodos, allEvents, allProjects, timer, effectiveSchedule, currentLocation, status] = await Promise.all([
       getTimeBlocksByDate(dateStr),
       getAllTodos(),
       getAllEvents(),
@@ -179,6 +201,7 @@ export function TimelineView() {
       getRunningTimer(),
       getEffectiveScheduleForDate(dateStr),
       getCurrentLocation(),
+      getDayStatus(dateStr),
     ]);
     
     setTimeBlocks(blocks.sort((a, b) => a.startTime.localeCompare(b.startTime)));
@@ -188,6 +211,7 @@ export function TimelineView() {
     setRunningTimer(timer);
     setSkeletonEntries(effectiveSchedule);
     setCurrentLocationLabel(currentLocation ? `${currentLocation.icon} ${currentLocation.name}` : null);
+    setDayStatusState(status);
   }
 
   async function checkAutoTracking() {
@@ -233,9 +257,15 @@ export function TimelineView() {
       }
     }
 
-    // Auto-fill flex blocks whose start time is within 5 minutes
+    // Auto-fill flex blocks whose start time is within 5 minutes.
+    // Skip entirely on vacation/off — the user explicitly opted out of the
+    // routine for the day, and silently filling slots would surprise them.
+    if (suppressesRoutine(dayStatus)) return;
     const nowMinutes = now.getHours() * 60 + now.getMinutes();
     const allTodos = await getAllTodos();
+    const peakHours = await getPeakFocusHours();
+    // Track scheduledIds locally so multiple flex blocks filled in the same
+    // pass don't pick the same todo twice (avoids duplicates).
     const scheduledIds = new Set(blocks.filter(b => b.todoId).map(b => b.todoId as string));
 
     for (const block of blocks) {
@@ -244,26 +274,29 @@ export function TimelineView() {
       const [bH, bM] = block.startTime.split(':').map(Number);
       const blockStartMinutes = bH * 60 + bM;
       if (Math.abs(nowMinutes - blockStartMinutes) <= AUTO_FILL_THRESHOLD_MINUTES) {
-        await autoFillFlexBlock(block, allTodos, scheduledIds);
+        await autoFillFlexBlock(block, allTodos, scheduledIds, peakHours, now);
       }
     }
   }
 
-  async function autoFillFlexBlock(block: TimeBlock, allTodos: Todo[], scheduledIds: Set<string>) {
-    const candidates = allTodos.filter(t => t.status === 'today' && !scheduledIds.has(t.id));
-    let pool = candidates;
-    if ((block.slotType || 'fixed') === 'flex-project') {
-      pool = candidates.filter(t => block.projectId && t.projectId === block.projectId);
-    }
-    const winner = pool.reduce<Todo | undefined>(
-      (best, t) => (best === undefined || t.priority > best.priority ? t : best),
-      undefined
-    );
-    if (winner) {
-      await updateTimeBlock(block.id, { title: winner.title, todoId: winner.id });
-      toast.success(`Auto-filled flex slot with "${winner.title}"`);
-      loadData();
-    }
+  async function autoFillFlexBlock(
+    block: TimeBlock,
+    allTodos: Todo[],
+    scheduledIds: Set<string>,
+    peakHours: number[],
+    now: Date,
+  ): Promise<void> {
+    const result = pickFlexFillCandidate(block, allTodos, scheduledIds, dayStatus, {
+      peakHours,
+      now,
+    });
+    if (!result) return;
+    await updateTimeBlock(block.id, { title: result.todo.title, todoId: result.todo.id });
+    // Mutate the caller's set so subsequent flex blocks in the same pass
+    // can't pick the same todo (avoids duplicate scheduling).
+    scheduledIds.add(result.todo.id);
+    toast.success(`⚡ Auto-filled: ${explainAutoFill(result)}`);
+    loadData();
   }
 
   function resetForm() {
@@ -447,6 +480,34 @@ export function TimelineView() {
       } catch {
         toast.error('Failed to schedule todo');
       }
+    }
+  }
+
+  async function handleStatusChange(next: DayStatusKind) {
+    const dateStr = format(currentDate, 'yyyy-MM-dd');
+    setIsUpdatingStatus(true);
+    // Optimistic — the IndexedDB write usually completes in <5ms, but the
+    // Select's controlled `value` prop should track the user's choice
+    // immediately for snappiness.
+    const previous = dayStatus;
+    setDayStatusState(next);
+    try {
+      await setDayStatus(dateStr, next);
+      const meta = STATUS_META[next];
+      if (next === 'active') {
+        toast.success('Day set to Active — normal routine resumes');
+      } else {
+        toast.success(`Day set to ${meta.label}`);
+      }
+      window.dispatchEvent(new CustomEvent('ghc-data-changed'));
+      await loadData();
+    } catch (err) {
+      console.error('[timeline] failed to set day status:', err);
+      const detail = err instanceof Error && err.message ? err.message : String(err);
+      toast.error(`Failed to update day status: ${detail}`);
+      setDayStatusState(previous);
+    } finally {
+      setIsUpdatingStatus(false);
     }
   }
 
@@ -847,6 +908,37 @@ export function TimelineView() {
               Routine
             </Button>
 
+            {/* Day status selector — controls whether routine / auto-fill / suggestions apply. */}
+            <Select
+              value={dayStatus}
+              onValueChange={(v) => void handleStatusChange(v as DayStatusKind)}
+              disabled={isUpdatingStatus}
+            >
+              <SelectTrigger
+                className={cn(
+                  'h-9 rounded-xl gap-1.5 px-3 text-xs font-semibold border min-w-[120px]',
+                  STATUS_META[dayStatus].pill,
+                )}
+                aria-label={`Day status (currently ${STATUS_META[dayStatus].label})`}
+                title={STATUS_META[dayStatus].description}
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-current opacity-80" aria-hidden />
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {ALL_DAY_STATUSES.map((s) => (
+                  <SelectItem key={s} value={s}>
+                    <span className="flex flex-col items-start gap-0.5 py-0.5">
+                      <span className="font-medium">{STATUS_META[s].label}</span>
+                      <span className="text-[10.5px] text-muted-foreground leading-tight">
+                        {STATUS_META[s].description}
+                      </span>
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
             {unscheduledTodayTodos.length > 0 && (
               <Button
                 variant="secondary"
@@ -868,6 +960,39 @@ export function TimelineView() {
         </div>
 
         {/* Status banners */}
+        <AnimatePresence>
+          {dayStatus !== 'active' && (
+            <motion.div
+              key="day-status-banner"
+              initial={{ opacity: 0, y: -6, height: 0 }}
+              animate={{ opacity: 1, y: 0, height: 'auto' }}
+              exit={{ opacity: 0, y: -6, height: 0 }}
+              className={cn(
+                'flex items-start gap-2 rounded-xl px-3 py-2 border',
+                STATUS_META[dayStatus].banner,
+              )}
+              role="status"
+            >
+              <span
+                className="w-2 h-2 mt-1.5 rounded-full bg-current shrink-0"
+                aria-hidden
+              />
+              <div className="text-xs min-w-0 flex-1">
+                <span className="font-semibold">{STATUS_META[dayStatus].label} day.</span>{' '}
+                <span className="opacity-90">{STATUS_META[dayStatus].description}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => void handleStatusChange('active')}
+                disabled={isUpdatingStatus}
+                className="text-[11px] font-medium underline-offset-2 hover:underline opacity-90 hover:opacity-100 disabled:opacity-50 shrink-0"
+              >
+                Resume normal
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         <AnimatePresence>
           {warningMessage && (
             <motion.div

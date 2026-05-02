@@ -4,6 +4,11 @@ import { createTimeBlock } from '@/db/repositories/timeBlocksRepo';
 import { getAllEvents } from '@/db/repositories/eventsRepo';
 import { getPeakFocusHours } from '@/lib/energyHours';
 import { getEffectiveScheduleForDate } from '@/lib/effectiveSchedule';
+import {
+  getDayStatus,
+  prefersLowCognitiveLoad,
+  suppressesRoutine,
+} from '@/db/repositories/dayStatusRepo';
 import { toast } from 'sonner';
 
 export const PRIORITY_COLORS: Record<number, string> = {
@@ -124,6 +129,20 @@ export async function scheduleMyDay(
   existingBlocks: TimeBlock[]
 ): Promise<number> {
   if (unscheduledTodos.length === 0) return 0;
+
+  // Day-status gate: vacation / off pause auto-scheduling entirely.  The user
+  // can still drag individual todos onto the timeline.
+  const dayStatus = await getDayStatus(dateStr);
+  if (suppressesRoutine(dayStatus)) {
+    toast.info(
+      dayStatus === 'vacation'
+        ? "It's a vacation day — auto-schedule is paused. Drag todos in manually if you want."
+        : "It's marked off — auto-schedule is paused. Drag todos in manually if you want.",
+    );
+    return 0;
+  }
+  const isSick = prefersLowCognitiveLoad(dayStatus);
+
   const DAY_START = 7 * 60;
   const DAY_END = 22 * 60;
   const now = new Date();
@@ -147,14 +166,20 @@ export async function scheduleMyDay(
 
   const estimatedMinutesAll = unscheduledTodos.reduce((sum, todo) => sum + normalizeTodoMinutes(todo), 0);
   let todosToSchedule = unscheduledTodos;
-  const MAX_TODOS_UNDER_CAP = 5;
-  if (existingMinutes + estimatedMinutesAll > DAY_CAPACITY_MINUTES) {
+  // Half the daily cap on sick days so we don't pile work onto someone who's
+  // recovering.  The "top N under cap" path below uses the same cap.
+  const effectiveCap = isSick ? Math.round(DAY_CAPACITY_MINUTES / 2) : DAY_CAPACITY_MINUTES;
+  const MAX_TODOS_UNDER_CAP = isSick ? 3 : 5;
+  if (existingMinutes + estimatedMinutesAll > effectiveCap) {
     const scored = unscheduledTodos.map((todo) => ({ todo, score: todoScore(todo) }));
     scored.sort((a, b) => b.score - a.score);
     todosToSchedule = scored.slice(0, MAX_TODOS_UNDER_CAP).map((s) => s.todo);
     toast.warning(
-      `Day would exceed 8 hours — scheduling top ${MAX_TODOS_UNDER_CAP} tasks only. ` +
-      `${Math.max(0, unscheduledTodos.length - MAX_TODOS_UNDER_CAP)} task(s) skipped.`
+      isSick
+        ? `Sick day — scheduling top ${MAX_TODOS_UNDER_CAP} tasks only. ` +
+          `${Math.max(0, unscheduledTodos.length - MAX_TODOS_UNDER_CAP)} task(s) skipped.`
+        : `Day would exceed 8 hours — scheduling top ${MAX_TODOS_UNDER_CAP} tasks only. ` +
+          `${Math.max(0, unscheduledTodos.length - MAX_TODOS_UNDER_CAP)} task(s) skipped.`,
     );
   }
 
@@ -226,7 +251,11 @@ export async function scheduleMyDay(
   const highLoad = sortGroup(todosToSchedule.filter((t) => t.cognitiveLoad === 'high'));
   const mediumLoad = sortGroup(todosToSchedule.filter((t) => t.cognitiveLoad === 'medium' || t.cognitiveLoad === null));
   const lowLoad = sortGroup(todosToSchedule.filter((t) => t.cognitiveLoad === 'low'));
-  const orderedTodos = [...highLoad, ...mediumLoad, ...lowLoad];
+  // On sick days flip the order so low cognitive-load tasks are placed first
+  // (they get the best slots and are most likely to fit before the cap).
+  const orderedTodos = isSick
+    ? [...lowLoad, ...mediumLoad, ...highLoad]
+    : [...highLoad, ...mediumLoad, ...lowLoad];
 
   let created = 0;
   let skipped = 0;

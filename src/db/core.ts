@@ -133,6 +133,95 @@ export async function initDB(): Promise<IDBDatabase> {
           cursor.continue();
         };
       }
+      if (oldVersion < 6) {
+        // Add `projectId` to quickNotes and backfill existing rows with null
+        // so they remain valid standalone notes after the schema bump.
+        const tx = (event.target as IDBOpenDBRequest).transaction!;
+        if (db.objectStoreNames.contains(STORES.QUICK_NOTES)) {
+          const notesStore = tx.objectStore(STORES.QUICK_NOTES);
+          if (!notesStore.indexNames.contains('projectId')) {
+            notesStore.createIndex('projectId', 'projectId', { unique: false });
+          }
+          const cursorReq = notesStore.openCursor();
+          cursorReq.onerror = () => {
+            console.error('[db migration v6] failed to open cursor on quickNotes:', cursorReq.error);
+          };
+          cursorReq.onsuccess = () => {
+            const cursor = cursorReq.result;
+            if (!cursor) return;
+            const value = cursor.value as Partial<{ projectId: string | null }>;
+            if (value.projectId === undefined) {
+              value.projectId = null;
+              const updateReq = cursor.update(value);
+              updateReq.onerror = () => {
+                console.error('[db migration v6] failed to backfill quickNote projectId:', updateReq.error);
+              };
+            }
+            cursor.continue();
+          };
+        }
+      }
+
+      if (oldVersion < 7) {
+        // Backfill `icon`, `description`, `status` on every project row so the
+        // new optional-but-typed fields are present.  Old rows without these
+        // fields would otherwise serialise as `undefined`, breaking strict
+        // equality checks and falling through to "no icon" rendering anyway —
+        // but we want the data to match the schema for export/import too.
+        const tx = (event.target as IDBOpenDBRequest).transaction!;
+        if (db.objectStoreNames.contains(STORES.PROJECTS)) {
+          const projectsStore = tx.objectStore(STORES.PROJECTS);
+          if (!projectsStore.indexNames.contains('status')) {
+            projectsStore.createIndex('status', 'status', { unique: false });
+          }
+          const cursorReq = projectsStore.openCursor();
+          cursorReq.onerror = () => {
+            console.error('[db migration v7] failed to open cursor on projects:', cursorReq.error);
+          };
+          cursorReq.onsuccess = () => {
+            const cursor = cursorReq.result;
+            if (!cursor) return;
+            const value = cursor.value as Partial<{
+              icon: string | null;
+              description: string;
+              status: 'active' | 'paused' | 'archived';
+            }>;
+            let dirty = false;
+            if (value.icon === undefined) { value.icon = null; dirty = true; }
+            if (typeof value.description !== 'string') { value.description = ''; dirty = true; }
+            if (value.status !== 'active' && value.status !== 'paused' && value.status !== 'archived') {
+              value.status = 'active';
+              dirty = true;
+            }
+            if (dirty) {
+              const updateReq = cursor.update(value);
+              updateReq.onerror = () => {
+                console.error('[db migration v7] failed to backfill project row:', updateReq.error);
+              };
+            }
+            cursor.continue();
+          };
+        }
+      }
+      if (oldVersion < 8) {
+        // New per-day status store.  Keyed by `date` (yyyy-MM-dd) so each
+        // calendar day has at most one row; absence of a row means 'active'.
+        if (!db.objectStoreNames.contains(STORES.DAY_STATUSES)) {
+          const dayStore = db.createObjectStore(STORES.DAY_STATUSES, { keyPath: 'date' });
+          dayStore.createIndex('status', 'status', { unique: false });
+        }
+      }
+
+      if (oldVersion < 9) {
+        // Local-only subscription tracker.  Indexes power the most common
+        // filters (category, status) and the upcoming-renewal sort.
+        if (!db.objectStoreNames.contains(STORES.SUBSCRIPTIONS)) {
+          const subsStore = db.createObjectStore(STORES.SUBSCRIPTIONS, { keyPath: 'id' });
+          subsStore.createIndex('category', 'category', { unique: false });
+          subsStore.createIndex('status', 'status', { unique: false });
+          subsStore.createIndex('nextBillingDate', 'nextBillingDate', { unique: false });
+        }
+      }
     };
   });
 }
