@@ -10,7 +10,8 @@ import { getAllScheduleSkeletonEntries } from './repositories/scheduleSkeletonRe
 import { getAllScheduleOverrides } from './repositories/scheduleOverridesRepo';
 import { getAllQuickNotes } from './repositories/notesRepo';
 import { getAllDayStatuses } from './repositories/dayStatusRepo';
-import { Event, Project, Todo, TimeEntry, TimeBlock, Settings, Goal, Location, ScheduleSkeletonEntry, ScheduleOverride, QuickNote, DayStatus } from './schema';
+import { getAllSubscriptions } from './repositories/subscriptionsRepo';
+import { Event, Project, Todo, TimeEntry, TimeBlock, Settings, Goal, Location, ScheduleSkeletonEntry, ScheduleOverride, QuickNote, DayStatus, Subscription } from './schema';
 import { put, getDB } from './core';
 import { STORES } from './schema';
 
@@ -30,13 +31,14 @@ export interface ExportData {
     scheduleOverrides?: ScheduleOverride[];
     quickNotes?: QuickNote[];
     dayStatuses?: DayStatus[];
+    subscriptions?: Subscription[];
   };
 }
 
 export async function exportAllData(): Promise<ExportData> {
   const [
     events, projects, todos, timeEntries, timeBlocks, settings,
-    goals, locations, scheduleSkeleton, scheduleOverrides, quickNotes, dayStatuses,
+    goals, locations, scheduleSkeleton, scheduleOverrides, quickNotes, dayStatuses, subscriptions,
   ] = await Promise.all([
     getAllEvents(),
     getAllProjects(),
@@ -50,10 +52,11 @@ export async function exportAllData(): Promise<ExportData> {
     getAllScheduleOverrides(),
     getAllQuickNotes(),
     getAllDayStatuses(),
+    getAllSubscriptions(),
   ]);
 
   return {
-    version: '2.2.0',
+    version: '2.3.0',
     exportedAt: new Date().toISOString(),
     data: {
       events,
@@ -68,6 +71,7 @@ export async function exportAllData(): Promise<ExportData> {
       scheduleOverrides,
       quickNotes,
       dayStatuses,
+      subscriptions,
     },
   };
 }
@@ -100,7 +104,7 @@ export async function importAllData(exportData: ExportData): Promise<void> {
 
   const {
     events, projects, todos, timeEntries, timeBlocks, settings,
-    goals, locations, scheduleSkeleton, scheduleOverrides, quickNotes, dayStatuses,
+    goals, locations, scheduleSkeleton, scheduleOverrides, quickNotes, dayStatuses, subscriptions,
   } = exportData.data;
 
   // Use put() (upsert) so re-importing the same backup is idempotent.
@@ -171,6 +175,36 @@ export async function importAllData(exportData: ExportData): Promise<void> {
       note: typeof ds.note === 'string' ? ds.note : '',
       createdAt: ds.createdAt ?? new Date().toISOString(),
       updatedAt: ds.updatedAt ?? ds.createdAt ?? new Date().toISOString(),
+    });
+  }
+
+  // Subscriptions: defensive normalization on import so older partial backups
+  // can't corrupt the store with missing fields.
+  for (const sub of subscriptions ?? []) {
+    if (!sub || typeof sub.id !== 'string' || typeof sub.name !== 'string') continue;
+    const now = new Date().toISOString();
+    await put(STORES.SUBSCRIPTIONS, {
+      id: sub.id,
+      name: sub.name,
+      category: typeof sub.category === 'string' && sub.category ? sub.category : 'Other',
+      price: Number.isFinite(sub.price) ? sub.price : 0,
+      currency: (typeof sub.currency === 'string' && sub.currency ? sub.currency : 'USD').toUpperCase(),
+      billingCycle: sub.billingCycle === 'weekly' || sub.billingCycle === 'yearly' || sub.billingCycle === 'custom'
+        ? sub.billingCycle
+        : 'monthly',
+      customCycleDays:
+        sub.billingCycle === 'custom' && Number.isFinite(sub.customCycleDays as number) && (sub.customCycleDays as number) > 0
+          ? Math.round(sub.customCycleDays as number)
+          : null,
+      nextBillingDate:
+        typeof sub.nextBillingDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(sub.nextBillingDate)
+          ? sub.nextBillingDate
+          : null,
+      status: sub.status === 'trial' || sub.status === 'cancelled' ? sub.status : 'active',
+      notes: typeof sub.notes === 'string' ? sub.notes : '',
+      projectId: typeof sub.projectId === 'string' ? sub.projectId : null,
+      createdAt: sub.createdAt ?? now,
+      updatedAt: sub.updatedAt ?? sub.createdAt ?? now,
     });
   }
 }

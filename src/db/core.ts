@@ -211,6 +211,17 @@ export async function initDB(): Promise<IDBDatabase> {
           dayStore.createIndex('status', 'status', { unique: false });
         }
       }
+
+      if (oldVersion < 9) {
+        // Local-only subscription tracker.  Indexes power the most common
+        // filters (category, status) and the upcoming-renewal sort.
+        if (!db.objectStoreNames.contains(STORES.SUBSCRIPTIONS)) {
+          const subsStore = db.createObjectStore(STORES.SUBSCRIPTIONS, { keyPath: 'id' });
+          subsStore.createIndex('category', 'category', { unique: false });
+          subsStore.createIndex('status', 'status', { unique: false });
+          subsStore.createIndex('nextBillingDate', 'nextBillingDate', { unique: false });
+        }
+      }
     };
   });
 }

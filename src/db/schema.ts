@@ -1,5 +1,5 @@
 export const DB_NAME = 'ghcountdown';
-export const DB_VERSION = 8;
+export const DB_VERSION = 9;
 
 export interface QuickNote {
   id: string;
@@ -158,6 +158,45 @@ export interface DayStatus {
   updatedAt: string;
 }
 
+/** Built-in subscription categories, in the order shown in selectors.
+ *  A free-form `string` is also allowed (custom categories) — see
+ *  {@link Subscription.category}. */
+export const BUILTIN_SUBSCRIPTION_CATEGORIES = [
+  'AI',
+  'Content',
+  'Productivity',
+  'Cloud',
+  'Entertainment',
+  'Other',
+] as const;
+export type BuiltinSubscriptionCategory = typeof BUILTIN_SUBSCRIPTION_CATEGORIES[number];
+
+export type SubscriptionStatus = 'active' | 'trial' | 'cancelled';
+export type SubscriptionBillingCycle = 'weekly' | 'monthly' | 'yearly' | 'custom';
+
+export interface Subscription {
+  id: string;
+  /** Display name (e.g. "Netflix", "ChatGPT Plus"). Required, trimmed. */
+  name: string;
+  /** Either a built-in category or any free-form custom category string. */
+  category: string;
+  /** Numeric price per billing cycle in `currency`. Stored as a number; the UI formats. */
+  price: number;
+  /** ISO 4217 code, uppercase (e.g. "USD"). Defaults to "USD" when unspecified. */
+  currency: string;
+  billingCycle: SubscriptionBillingCycle;
+  /** Required only when `billingCycle === 'custom'` — length of one cycle in days. */
+  customCycleDays: number | null;
+  /** yyyy-MM-dd local date of the next charge.  `null` for cancelled rows that have no future charge. */
+  nextBillingDate: string | null;
+  status: SubscriptionStatus;
+  notes: string;
+  /** Optional project this subscription is associated with. `null` if standalone. */
+  projectId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Settings {
   theme: 'light' | 'dark' | 'system';
   accentColor: string;
@@ -185,4 +224,5 @@ export const STORES = {
   GOALS: 'goals',
   QUICK_NOTES: 'quickNotes',
   DAY_STATUSES: 'dayStatuses',
+  SUBSCRIPTIONS: 'subscriptions',
 } as const;

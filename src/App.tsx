@@ -9,6 +9,7 @@ import { TodosView } from '@/components/TodosView';
 import { NotesView } from '@/components/NotesView';
 import { TimelineView } from '@/components/TimelineView';
 import { TimerView } from '@/components/TimerView';
+import { SubscriptionsView } from '@/components/SubscriptionsView';
 import { StatisticsView } from '@/components/StatisticsView';
 import { AIAssistantView } from '@/components/AIAssistantView';
 import { QuickCapture } from '@/components/QuickCapture';
@@ -23,6 +24,7 @@ import { deleteAllEvents, getNextImportantEvent, getAllEvents } from '@/db/repos
 import { deleteAllTodos, getAllTodos, updateTodo } from '@/db/repositories/todosRepo';
 import { getSettings, updateSettings } from '@/db/repositories/settingsRepo';
 import { deleteAllProjects } from '@/db/repositories/projectsRepo';
+import { deleteAllSubscriptions } from '@/db/repositories/subscriptionsRepo';
 import { deleteAllTimeEntries, getAllTimeEntries } from '@/db/repositories/timeRepo';
 import { deleteAllTimeBlocks, getTimeBlocksByDate, getAllTimeBlocks } from '@/db/repositories/timeBlocksRepo';
 import { getAllGoals, getActiveGoals, deleteAllGoals } from '@/db/repositories/goalsRepo';
@@ -621,6 +623,7 @@ function MainApp() {
             deleteAllTimeEntries(),
             deleteAllTimeBlocks(),
             deleteAllGoals(),
+            deleteAllSubscriptions(),
           ]);
           break;
       }
@@ -893,6 +896,18 @@ function MainApp() {
                 transition={{ duration: 0.25 }}
               >
                 <TimelineView />
+              </motion.div>
+            )}
+
+            {currentView === 'subscriptions' && (
+              <motion.div
+                key="subscriptions"
+                initial={{ opacity: 0, y: 16 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -16 }}
+                transition={{ duration: 0.25 }}
+              >
+                <SubscriptionsView />
               </motion.div>
             )}
 
