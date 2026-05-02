@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { memo, useCallback, useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Todo, Project, Goal } from '@/db/schema';
 import { getAllTodos, createTodo, updateTodo, deleteTodo } from '@/db/repositories/todosRepo';
@@ -77,6 +77,141 @@ function oklchToHexFallback(value: string): string {
   return /^#[0-9a-fA-F]{6}$/.test(value) ? value : '#888888';
 }
 
+// ---------------------------------------------------------------------------
+// TodoItem
+// ---------------------------------------------------------------------------
+// Defined at module scope (NOT inside TodosView) so its component identity
+// stays stable across parent re-renders.  TodosView re-renders frequently
+// because App.tsx ticks `nowTick` every second; if TodoItem were redeclared
+// inside TodosView, React would treat each render as a new component type
+// and unmount + remount every row, which made the framer-motion entrance
+// animation replay constantly (most visibly when the user hovered a trash
+// button — the hover was unrelated, the timer was the cause).  React.memo
+// also short-circuits re-renders when none of the relevant props changed.
+// ---------------------------------------------------------------------------
+interface TodoItemProps {
+  todo: Todo;
+  project: Project | null;
+  showProject?: boolean;
+  isOverdue: boolean;
+  onToggle: (todo: Todo) => void;
+  onMoveToToday: (todo: Todo) => void;
+  onEdit: (todo: Todo) => void;
+  onDelete: (id: string) => void;
+}
+
+const TodoItem = memo(function TodoItem({
+  todo,
+  project,
+  showProject = false,
+  isOverdue: overdue,
+  onToggle,
+  onMoveToToday,
+  onEdit,
+  onDelete,
+}: TodoItemProps) {
+  const isDone = todo.status === 'done';
+
+  return (
+    <motion.div
+      layout
+      initial={false}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.95 }}
+      transition={{ type: 'spring', stiffness: 420, damping: 34, mass: 0.45 }}
+    >
+      <Card className={cn(
+        "p-3 group hover:shadow-sm transition-all duration-200",
+        isDone && "opacity-60",
+        overdue && "border-l-4 border-l-red-500"
+      )}>
+        <div className="flex items-start gap-3">
+          <div className="pt-0.5">
+            <Checkbox
+              checked={isDone}
+              onCheckedChange={() => onToggle(todo)}
+              className="h-5 w-5"
+            />
+          </div>
+
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className={cn(
+                "font-medium",
+                isDone && "line-through text-muted-foreground"
+              )}>
+                {todo.title}
+              </span>
+              {overdue && (
+                <Badge variant="destructive" className="h-5 text-xs bg-red-600">OVERDUE</Badge>
+              )}
+              {!overdue && todo.priority >= 4 && (
+                <Badge variant="destructive" className="h-5 text-xs">High</Badge>
+              )}
+              {showProject && project && (
+                <Badge
+                  variant="outline"
+                  className="h-5 text-xs"
+                  style={{ borderColor: project.color }}
+                >
+                  <Folder size={10} weight="fill" style={{ color: project.color }} className="mr-1" />
+                  {project.icon && <span className="mr-1">{project.icon}</span>}
+                  {project.name}
+                </Badge>
+              )}
+            </div>
+
+            {todo.dueAt && (
+              <p className={cn(
+                "text-xs mt-1",
+                overdue ? "text-red-500 font-medium" : "text-muted-foreground"
+              )}>
+                Due: {format(new Date(todo.dueAt), 'MMM d, yyyy')}
+              </p>
+            )}
+          </div>
+
+          {/* Hover action controls — pure CSS opacity transition, no React
+              re-renders or remounts triggered by hover.  The buttons stay in
+              the DOM so the layout never shifts. */}
+          <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            {todo.status === 'inbox' && (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => onMoveToToday(todo)}
+                className="h-7 px-2 text-xs hover:scale-105 active:scale-95 transition-transform"
+              >
+                → Today
+              </Button>
+            )}
+            <Button
+              size="icon"
+              variant="ghost"
+              onClick={() => onEdit(todo)}
+              className="h-7 w-7 text-muted-foreground hover:text-foreground hover:scale-110 active:scale-95 transition-transform"
+              aria-label="Edit todo"
+              title="Edit todo"
+            >
+              <PencilSimple size={14} />
+            </Button>
+            <Button
+              size="icon"
+              variant="ghost"
+              onClick={() => onDelete(todo.id)}
+              className="h-7 w-7 text-destructive hover:text-destructive hover:scale-110 active:scale-95 transition-transform"
+              aria-label="Delete todo"
+              title="Delete todo"
+            >
+              <Trash size={14} />
+            </Button>
+          </div>
+        </div>
+      </Card>
+    </motion.div>
+  );
+});
+
 export function TodosView() {
   const [todos, setTodos] = useState<Todo[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -107,9 +242,20 @@ export function TodosView() {
 
   const [projectFormData, setProjectFormData] = useState<ProjectFormData>(EMPTY_PROJECT_FORM);
 
-  useEffect(() => {
-    loadData();
+  const loadData = useCallback(async () => {
+    const [allTodos, allProjects, activeGoals] = await Promise.all([
+      getAllTodos(),
+      getAllProjects(),
+      getActiveGoals(),
+    ]);
+    setTodos(allTodos);
+    setProjects(allProjects);
+    setGoals(activeGoals);
   }, []);
+
+  useEffect(() => {
+    void loadData();
+  }, [loadData]);
 
   useEffect(() => {
     function onDataChange() { void loadData(); }
@@ -119,18 +265,7 @@ export function TodosView() {
       window.removeEventListener('ghc-data-changed', onDataChange);
       window.removeEventListener('app:datachange', onDataChange);
     };
-  }, []);
-
-  async function loadData() {
-    const [allTodos, allProjects, activeGoals] = await Promise.all([
-      getAllTodos(),
-      getAllProjects(),
-      getActiveGoals(),
-    ]);
-    setTodos(allTodos);
-    setProjects(allProjects);
-    setGoals(activeGoals);
-  }
+  }, [loadData]);
 
   function resetForm() {
     setFormData({
@@ -155,7 +290,7 @@ export function TodosView() {
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
   }
 
-  function openEditTodo(todo: Todo) {
+  const openEditTodo = useCallback((todo: Todo) => {
     setEditingTodoId(todo.id);
     setFormData({
       title: todo.title,
@@ -173,7 +308,7 @@ export function TodosView() {
           : '',
     });
     setIsDialogOpen(true);
-  }
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -228,7 +363,7 @@ export function TodosView() {
     }
   }
 
-  async function handleToggle(todo: Todo) {
+  const handleToggle = useCallback(async (todo: Todo) => {
     const newStatus = todo.status === 'done' ? 'today' : 'done';
     await updateTodo(todo.id, { status: newStatus });
     if (newStatus === 'done') {
@@ -238,19 +373,19 @@ export function TodosView() {
       await Promise.all(running.map(e => updateTimeEntry(e.id, { endAt: new Date().toISOString() })));
       toast.success('Task completed');
     }
-    loadData();
-  }
+    void loadData();
+  }, [loadData]);
 
-  async function handleMoveToToday(todo: Todo) {
+  const handleMoveToToday = useCallback(async (todo: Todo) => {
     await updateTodo(todo.id, { status: 'today' });
     toast.success('Moved to Today');
-    loadData();
-  }
+    void loadData();
+  }, [loadData]);
 
-  async function handleDelete(id: string) {
+  const handleDelete = useCallback((id: string) => {
     setTodoToDelete(id);
     setDeleteConfirmOpen(true);
-  }
+  }, []);
 
   async function handleDeleteConfirm() {
     if (!todoToDelete) return;
@@ -371,103 +506,23 @@ export function TodosView() {
     return todo.status !== 'done' && !!todo.dueAt && new Date(todo.dueAt).getTime() < Date.now();
   }
 
-  function TodoItem({ todo, showProject = false }: { todo: Todo; showProject?: boolean }) {
-    const project = todo.projectId ? projects.find(p => p.id === todo.projectId) : null;
-    const isDone = todo.status === 'done';
-    const overdue = isOverdue(todo);
-
+  /** Render a TodoItem with the project lookup + handlers wired in.  This
+   *  keeps the call sites short and ensures every list passes the same
+   *  stable, memoizable props. */
+  function renderTodoItem(todo: Todo, showProject = false) {
+    const project = todo.projectId ? projects.find(p => p.id === todo.projectId) ?? null : null;
     return (
-      <motion.div
-        layout
-        initial={false}
-        animate={{ opacity: 1, scale: 1 }}
-        exit={{ opacity: 0, scale: 0.95 }}
-        transition={{ type: 'spring', stiffness: 420, damping: 34, mass: 0.45 }}
-      >
-        <Card className={cn(
-          "p-3 group hover:shadow-sm transition-all duration-200",
-          isDone && "opacity-60",
-          overdue && "border-l-4 border-l-red-500"
-        )}>
-          <div className="flex items-start gap-3">
-            <div className="pt-0.5">
-              <Checkbox
-                checked={isDone}
-                onCheckedChange={() => handleToggle(todo)}
-                className="h-5 w-5"
-              />
-            </div>
-
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className={cn(
-                  "font-medium",
-                  isDone && "line-through text-muted-foreground"
-                )}>
-                  {todo.title}
-                </span>
-                {overdue && (
-                  <Badge variant="destructive" className="h-5 text-xs bg-red-600">OVERDUE</Badge>
-                )}
-                {!overdue && todo.priority >= 4 && (
-                  <Badge variant="destructive" className="h-5 text-xs">High</Badge>
-                )}
-                {showProject && project && (
-                  <Badge
-                    variant="outline"
-                    className="h-5 text-xs"
-                    style={{ borderColor: project.color }}
-                  >
-                    <Folder size={10} weight="fill" style={{ color: project.color }} className="mr-1" />
-                    {project.icon && <span className="mr-1">{project.icon}</span>}
-                    {project.name}
-                  </Badge>
-                )}
-              </div>
-              
-              {todo.dueAt && (
-                <p className={cn(
-                  "text-xs mt-1",
-                  overdue ? "text-red-500 font-medium" : "text-muted-foreground"
-                )}>
-                  Due: {format(new Date(todo.dueAt), 'MMM d, yyyy')}
-                </p>
-              )}
-            </div>
-
-            <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-              {todo.status === 'inbox' && (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => handleMoveToToday(todo)}
-                  className="h-7 px-2 text-xs hover:scale-105 active:scale-95 transition-transform"
-                >
-                  → Today
-                </Button>
-              )}
-              <Button
-                size="icon"
-                variant="ghost"
-                onClick={() => openEditTodo(todo)}
-                className="h-7 w-7 text-muted-foreground hover:text-foreground hover:scale-110 active:scale-95 transition-transform"
-                aria-label="Edit todo"
-                title="Edit todo"
-              >
-                <PencilSimple size={14} />
-              </Button>
-              <Button
-                size="icon"
-                variant="ghost"
-                onClick={() => handleDelete(todo.id)}
-                className="h-7 w-7 text-destructive hover:text-destructive hover:scale-110 active:scale-95 transition-transform"
-              >
-                <Trash size={14} />
-              </Button>
-            </div>
-          </div>
-        </Card>
-      </motion.div>
+      <TodoItem
+        key={todo.id}
+        todo={todo}
+        project={project}
+        showProject={showProject}
+        isOverdue={isOverdue(todo)}
+        onToggle={handleToggle}
+        onMoveToToday={handleMoveToToday}
+        onEdit={openEditTodo}
+        onDelete={handleDelete}
+      />
     );
   }
 
@@ -857,7 +912,7 @@ export function TodosView() {
           ) : (
             <AnimatePresence initial={false} mode="popLayout">
               {todayTodos.map((todo) => (
-                <TodoItem key={todo.id} todo={todo} showProject />
+                renderTodoItem(todo, true)
               ))}
             </AnimatePresence>
           )}
@@ -873,7 +928,7 @@ export function TodosView() {
           ) : (
             <AnimatePresence initial={false} mode="popLayout">
               {someDayTodos.map((todo) => (
-                <TodoItem key={todo.id} todo={todo} showProject />
+                renderTodoItem(todo, true)
               ))}
             </AnimatePresence>
           )}
@@ -962,7 +1017,7 @@ export function TodosView() {
                           </p>
                         ) : (
                           projectTodos.map((todo) => (
-                            <TodoItem key={todo.id} todo={todo} />
+                            renderTodoItem(todo)
                           ))
                         )}
                       </AnimatePresence>
@@ -985,7 +1040,7 @@ export function TodosView() {
           <div className="space-y-2">
             <AnimatePresence initial={false} mode="popLayout">
               {doneTodos.slice(0, 5).map((todo) => (
-                <TodoItem key={todo.id} todo={todo} showProject />
+                renderTodoItem(todo, true)
               ))}
             </AnimatePresence>
           </div>
