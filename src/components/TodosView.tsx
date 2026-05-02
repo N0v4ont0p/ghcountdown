@@ -16,6 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { IconPicker } from '@/components/IconPicker';
 import { Plus, Trash, Folder, CheckCircle, CalendarCheck, Cloud, PencilSimple } from '@phosphor-icons/react';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
@@ -588,21 +589,20 @@ export function TodosView() {
                     <div className="grid grid-cols-[80px_1fr] gap-3">
                       <div>
                         <Label htmlFor="projectIcon">Icon</Label>
-                        <Input
-                          id="projectIcon"
-                          value={projectFormData.icon}
-                          onChange={(e) =>
-                            // Allow at most one emoji / glyph (cluster).  Use Array.from
-                            // to count by code points so a single emoji counts as 1.
-                            setProjectFormData({
-                              ...projectFormData,
-                              icon: Array.from(e.target.value).slice(0, 2).join(''),
-                            })
-                          }
-                          placeholder="🚀"
-                          className="text-center text-xl h-10"
-                          aria-label="Project icon (single emoji or character)"
-                        />
+                        <div className="mt-1">
+                          <IconPicker
+                            id="projectIcon"
+                            value={projectFormData.icon || null}
+                            onChange={(next) =>
+                              setProjectFormData({
+                                ...projectFormData,
+                                icon: next ?? '',
+                              })
+                            }
+                            ariaLabel="Project icon"
+                            placeholder="🚀"
+                          />
+                        </div>
                       </div>
                       <div>
                         <Label htmlFor="projectName">Project Name</Label>

@@ -8,6 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
+import { IconPicker } from '@/components/IconPicker';
 import { Sparkle, Trash, PencilSimple } from '@phosphor-icons/react';
 import { toast } from 'sonner';
 import { Location, ScheduleSkeletonEntry } from '@/db/schema';
@@ -443,12 +444,17 @@ export function ScheduleSkeletonView() {
               </div>
               <div>
                 <Label htmlFor="location-icon">Icon</Label>
-                <Input
-                  id="location-icon"
-                  value={locationForm.icon}
-                  onChange={(e) => setLocationForm((prev) => ({ ...prev, icon: e.target.value }))}
-                  placeholder="📚"
-                />
+                <div className="mt-1">
+                  <IconPicker
+                    id="location-icon"
+                    value={locationForm.icon || null}
+                    onChange={(next) =>
+                      setLocationForm((prev) => ({ ...prev, icon: next ?? '' }))
+                    }
+                    ariaLabel="Location icon"
+                    placeholder="📍"
+                  />
+                </div>
               </div>
               <div>
                 <Label htmlFor="location-color">Color</Label>
