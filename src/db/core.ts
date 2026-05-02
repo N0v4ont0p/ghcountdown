@@ -203,6 +203,14 @@ export async function initDB(): Promise<IDBDatabase> {
           };
         }
       }
+      if (oldVersion < 8) {
+        // New per-day status store.  Keyed by `date` (yyyy-MM-dd) so each
+        // calendar day has at most one row; absence of a row means 'active'.
+        if (!db.objectStoreNames.contains(STORES.DAY_STATUSES)) {
+          const dayStore = db.createObjectStore(STORES.DAY_STATUSES, { keyPath: 'date' });
+          dayStore.createIndex('status', 'status', { unique: false });
+        }
+      }
     };
   });
 }

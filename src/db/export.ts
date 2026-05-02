@@ -9,7 +9,8 @@ import { getAllLocations } from './repositories/locationsRepo';
 import { getAllScheduleSkeletonEntries } from './repositories/scheduleSkeletonRepo';
 import { getAllScheduleOverrides } from './repositories/scheduleOverridesRepo';
 import { getAllQuickNotes } from './repositories/notesRepo';
-import { Event, Project, Todo, TimeEntry, TimeBlock, Settings, Goal, Location, ScheduleSkeletonEntry, ScheduleOverride, QuickNote } from './schema';
+import { getAllDayStatuses } from './repositories/dayStatusRepo';
+import { Event, Project, Todo, TimeEntry, TimeBlock, Settings, Goal, Location, ScheduleSkeletonEntry, ScheduleOverride, QuickNote, DayStatus } from './schema';
 import { put, getDB } from './core';
 import { STORES } from './schema';
 
@@ -28,13 +29,14 @@ export interface ExportData {
     scheduleSkeleton?: ScheduleSkeletonEntry[];
     scheduleOverrides?: ScheduleOverride[];
     quickNotes?: QuickNote[];
+    dayStatuses?: DayStatus[];
   };
 }
 
 export async function exportAllData(): Promise<ExportData> {
   const [
     events, projects, todos, timeEntries, timeBlocks, settings,
-    goals, locations, scheduleSkeleton, scheduleOverrides, quickNotes,
+    goals, locations, scheduleSkeleton, scheduleOverrides, quickNotes, dayStatuses,
   ] = await Promise.all([
     getAllEvents(),
     getAllProjects(),
@@ -47,10 +49,11 @@ export async function exportAllData(): Promise<ExportData> {
     getAllScheduleSkeletonEntries(),
     getAllScheduleOverrides(),
     getAllQuickNotes(),
+    getAllDayStatuses(),
   ]);
 
   return {
-    version: '2.1.0',
+    version: '2.2.0',
     exportedAt: new Date().toISOString(),
     data: {
       events,
@@ -64,6 +67,7 @@ export async function exportAllData(): Promise<ExportData> {
       scheduleSkeleton,
       scheduleOverrides,
       quickNotes,
+      dayStatuses,
     },
   };
 }
@@ -96,7 +100,7 @@ export async function importAllData(exportData: ExportData): Promise<void> {
 
   const {
     events, projects, todos, timeEntries, timeBlocks, settings,
-    goals, locations, scheduleSkeleton, scheduleOverrides, quickNotes,
+    goals, locations, scheduleSkeleton, scheduleOverrides, quickNotes, dayStatuses,
   } = exportData.data;
 
   // Use put() (upsert) so re-importing the same backup is idempotent.
@@ -156,6 +160,18 @@ export async function importAllData(exportData: ExportData): Promise<void> {
       updatedAt: note.updatedAt ?? note.createdAt,
     };
     await put(STORES.QUICK_NOTES, normalized);
+  }
+
+  // Day statuses are simple value rows keyed by `date`; just upsert.
+  for (const ds of dayStatuses ?? []) {
+    if (!ds || typeof ds.date !== 'string') continue;
+    await put(STORES.DAY_STATUSES, {
+      date: ds.date,
+      status: ds.status,
+      note: typeof ds.note === 'string' ? ds.note : '',
+      createdAt: ds.createdAt ?? new Date().toISOString(),
+      updatedAt: ds.updatedAt ?? ds.createdAt ?? new Date().toISOString(),
+    });
   }
 }
 

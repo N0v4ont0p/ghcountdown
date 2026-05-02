@@ -1,5 +1,5 @@
 export const DB_NAME = 'ghcountdown';
-export const DB_VERSION = 7;
+export const DB_VERSION = 8;
 
 export interface QuickNote {
   id: string;
@@ -134,6 +134,30 @@ export interface ScheduleOverride {
   createdAt: string;
 }
 
+/** Lifecycle state of a single calendar day, used by the scheduler to decide
+ *  whether the user's normal routine, auto-fill, and suggestions apply.
+ *
+ *   - 'active'   → normal routine + auto-fill + suggestions (default)
+ *   - 'sick'     → routine still shown, but auto-fill / "Schedule Day" prefer
+ *                  low cognitive-load todos and reduce the daily cap
+ *   - 'vacation' → routine, auto-fill and suggestions are suppressed; only
+ *                  blocks the user manually adds will appear
+ *   - 'off'      → like 'vacation' but framed as a personal day
+ *
+ *  Days without an explicit row are treated as 'active'.
+ */
+export type DayStatusKind = 'active' | 'sick' | 'vacation' | 'off';
+
+export interface DayStatus {
+  /** Primary key — yyyy-MM-dd local-date string. */
+  date: string;
+  status: DayStatusKind;
+  /** Optional free-form note shown in the banner (e.g. "flu", "Spain"). */
+  note: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Settings {
   theme: 'light' | 'dark' | 'system';
   accentColor: string;
@@ -160,4 +184,5 @@ export const STORES = {
   HABIT_MODEL: 'habitModel',
   GOALS: 'goals',
   QUICK_NOTES: 'quickNotes',
+  DAY_STATUSES: 'dayStatuses',
 } as const;
