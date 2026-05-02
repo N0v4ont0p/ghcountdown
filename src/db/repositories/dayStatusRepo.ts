@@ -1,3 +1,10 @@
+import type { Icon } from '@phosphor-icons/react';
+import {
+  AirplaneTilt,
+  House,
+  SunHorizon,
+  ThermometerSimple,
+} from '@phosphor-icons/react';
 import { DayStatus, DayStatusKind, STORES } from '../schema';
 import { clearStore, getAll, getByKey, put, remove } from '../core';
 
@@ -16,10 +23,18 @@ export interface DayStatusMeta {
   label: string;
   /** One-line explanation shown in the banner. */
   description: string;
-  /** Tailwind utility classes for the banner. */
+  /** Visual icon for the status (Phosphor icon). */
+  icon: Icon;
+  /** Tailwind utility classes for the banner container (background + border). */
   banner: string;
-  /** Tailwind utility classes for the trigger pill / chip. */
-  pill: string;
+  /** Tailwind utility classes for the colored accent strip / left border. */
+  accent: string;
+  /** Tailwind utility classes for the icon halo on the banner. */
+  iconBg: string;
+  /** Tailwind utility classes for the title / status text color. */
+  text: string;
+  /** Tailwind utility classes for the segmented-control item when selected. */
+  segmentSelected: string;
   /** Whether normal routine + auto-fill should be suppressed for this status. */
   suppressesRoutine: boolean;
   /** Whether the scheduler should prefer low cognitive-load todos. */
@@ -29,31 +44,42 @@ export interface DayStatusMeta {
 export const STATUS_META: Record<DayStatusKind, DayStatusMeta> = {
   active: {
     label: 'Active',
-    description: 'Normal routine, auto-fill, and suggestions apply.',
-    banner: 'bg-muted/40 border-border text-muted-foreground',
-    pill: 'bg-card border-border text-muted-foreground',
+    description: 'Normal scheduling — routine, auto-fill, and suggestions all apply.',
+    icon: SunHorizon,
+    banner: 'bg-card border-border',
+    accent: 'bg-emerald-500',
+    iconBg: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300',
+    text: 'text-foreground',
+    segmentSelected:
+      'data-[state=on]:!bg-emerald-500 data-[state=on]:!text-white data-[state=on]:shadow-sm',
     suppressesRoutine: false,
     prefersLowCognitiveLoad: false,
   },
   sick: {
     label: 'Sick',
     description:
-      'Sick day — schedule pressure reduced and low cognitive-load tasks are preferred.',
-    banner:
-      'bg-rose-500/10 border-rose-500/30 text-rose-700 dark:text-rose-300',
-    pill:
-      'bg-rose-500/10 border-rose-500/30 text-rose-700 dark:text-rose-300',
+      'Low-energy day — routine still runs but the scheduler prefers low cognitive-load tasks.',
+    icon: ThermometerSimple,
+    banner: 'bg-rose-500/[0.07] border-rose-500/30',
+    accent: 'bg-rose-500',
+    iconBg: 'bg-rose-500/15 text-rose-700 dark:text-rose-300',
+    text: 'text-rose-800 dark:text-rose-200',
+    segmentSelected:
+      'data-[state=on]:!bg-rose-500 data-[state=on]:!text-white data-[state=on]:shadow-sm',
     suppressesRoutine: false,
     prefersLowCognitiveLoad: true,
   },
   vacation: {
     label: 'Vacation',
     description:
-      'Vacation — your normal routine and auto-fill are paused. Manually added blocks still appear.',
-    banner:
-      'bg-sky-500/10 border-sky-500/30 text-sky-700 dark:text-sky-300',
-    pill:
-      'bg-sky-500/10 border-sky-500/30 text-sky-700 dark:text-sky-300',
+      'Routine paused — auto-fill and suggestions are off. Manually added blocks still appear.',
+    icon: AirplaneTilt,
+    banner: 'bg-sky-500/[0.07] border-sky-500/30',
+    accent: 'bg-sky-500',
+    iconBg: 'bg-sky-500/15 text-sky-700 dark:text-sky-300',
+    text: 'text-sky-800 dark:text-sky-200',
+    segmentSelected:
+      'data-[state=on]:!bg-sky-500 data-[state=on]:!text-white data-[state=on]:shadow-sm',
     suppressesRoutine: true,
     prefersLowCognitiveLoad: false,
   },
@@ -61,10 +87,13 @@ export const STATUS_META: Record<DayStatusKind, DayStatusMeta> = {
     label: 'Off',
     description:
       'Personal day — no routine unless you add it manually.',
-    banner:
-      'bg-violet-500/10 border-violet-500/30 text-violet-700 dark:text-violet-300',
-    pill:
-      'bg-violet-500/10 border-violet-500/30 text-violet-700 dark:text-violet-300',
+    icon: House,
+    banner: 'bg-violet-500/[0.07] border-violet-500/30',
+    accent: 'bg-violet-500',
+    iconBg: 'bg-violet-500/15 text-violet-700 dark:text-violet-300',
+    text: 'text-violet-800 dark:text-violet-200',
+    segmentSelected:
+      'data-[state=on]:!bg-violet-500 data-[state=on]:!text-white data-[state=on]:shadow-sm',
     suppressesRoutine: true,
     prefersLowCognitiveLoad: false,
   },
