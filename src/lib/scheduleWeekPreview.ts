@@ -216,41 +216,75 @@ function sortGroup(todos: Todo[], dateStr: string): Todo[] {
   });
 }
 
-function reasonFor(todo: Todo, dateStr: string, isPeak: boolean): string {
+function reasonFor(
+  todo: Todo,
+  dateStr: string,
+  isPeak: boolean,
+  opts: {
+    /** Length of the chosen free slot, in minutes. */
+    intervalLengthMinutes: number;
+    /** Duration the todo will occupy, in minutes. */
+    durationMinutes: number;
+    /** True when the day's status flags low-cognitive-load only (sick). */
+    isSick: boolean;
+  },
+): string {
+  const { intervalLengthMinutes, durationMinutes, isSick } = opts;
   const parts: string[] = [];
-  if (todo.cognitiveLoad === 'high' && isPeak) {
+
+  // 1. Urgency leads — most actionable signal for the user.
+  let urgencyLabel: string | null = null;
+  if (todo.dueAt) {
+    const due = new Date(todo.dueAt);
+    if (!Number.isNaN(due.getTime())) {
+      const dueDateStr = format(due, 'yyyy-MM-dd');
+      if (dueDateStr < dateStr) urgencyLabel = 'Overdue';
+      else if (dueDateStr === dateStr) urgencyLabel = 'Due today';
+      else {
+        const slotDay = new Date(`${dateStr}T00:00:00`);
+        const dueDay = new Date(`${dueDateStr}T00:00:00`);
+        const daysUntil = Math.round((dueDay.getTime() - slotDay.getTime()) / 86_400_000);
+        if (daysUntil === 1) urgencyLabel = 'Due tomorrow';
+        else if (daysUntil <= 3) urgencyLabel = 'Due soon';
+      }
+    }
+  }
+  if (urgencyLabel) parts.push(urgencyLabel);
+
+  // 2. Sick-day light-work callout — explains why a low-energy task got the slot.
+  if (isSick && todo.cognitiveLoad === 'low') {
+    parts.push('Low-energy task for sick day');
+  } else if (isSick && todo.cognitiveLoad !== 'high') {
+    parts.push('Lighter task for sick day');
+  } else if (todo.cognitiveLoad === 'high' && isPeak) {
     parts.push('Deep work in peak focus hours');
   } else if (todo.cognitiveLoad === 'low' && !isPeak) {
     parts.push('Light task in off-peak hours');
   } else if (isPeak) {
     parts.push('Peak focus window');
-  } else {
+  } else if (parts.length === 0) {
+    // Only fall back to "Next free slot" if nothing more specific landed.
     parts.push('Next free slot');
   }
-  if (todo.priority >= 4) {
+
+  // 3. Priority + project context — surfaces "High priority project task".
+  if (todo.priority >= 4 && todo.projectId) {
+    parts.push(todo.priority >= 5 ? 'Critical project task' : 'High-priority project task');
+  } else if (todo.priority >= 4) {
     parts.push(`P${todo.priority} priority`);
   }
-  // Surface dueAt urgency relative to the day this slot lives on, not "today".
-  if (todo.dueAt) {
-    const due = new Date(todo.dueAt);
-    if (!Number.isNaN(due.getTime())) {
-      const dueDateStr = format(due, 'yyyy-MM-dd');
-      if (dueDateStr < dateStr) {
-        parts.push('Overdue');
-      } else if (dueDateStr === dateStr) {
-        parts.push('Due today');
-      } else {
-        // "Due soon" if the due date is within ~2 days after the slot's date.
-        const slotDay = new Date(`${dateStr}T00:00:00`);
-        const dueDay = new Date(`${dueDateStr}T00:00:00`);
-        const daysUntil = Math.round((dueDay.getTime() - slotDay.getTime()) / 86_400_000);
-        if (daysUntil > 0 && daysUntil <= 2) {
-          parts.push('Due soon');
-        }
-      }
+
+  // 4. Duration fit — note when the task snugly uses the chosen gap.
+  if (intervalLengthMinutes > 0 && durationMinutes > 0) {
+    const ratio = durationMinutes / intervalLengthMinutes;
+    if (ratio >= 0.7) {
+      const gap = Math.round(intervalLengthMinutes / 5) * 5;
+      parts.push(`Fits ${gap}m gap`);
     }
   }
-  return parts.join(' · ');
+
+  // Cap at 3 segments to keep the chip readable.
+  return parts.slice(0, 3).join(' · ');
 }
 
 interface DayPlanContext {
@@ -463,6 +497,7 @@ async function planDay(ctx: DayPlanContext): Promise<DayPreview> {
     const winner = candidates[0].interval;
     const startMinute = winner.start;
     const endMinute = startMinute + duration;
+    const intervalLength = winner.end - winner.start;
     const centerHour = Math.floor((startMinute + duration / 2) / 60);
     const isPeak = peakSet.has(centerHour);
     const color = PRIORITY_COLORS[todo.priority] ?? PRIORITY_COLORS[3];
@@ -476,7 +511,11 @@ async function planDay(ctx: DayPlanContext): Promise<DayPreview> {
       projectId: todo.projectId,
       projectName: todo.projectId ? (projectNameById.get(todo.projectId) ?? null) : null,
       color,
-      reason: reasonFor(todo, dateStr, isPeak),
+      reason: reasonFor(todo, dateStr, isPeak, {
+        intervalLengthMinutes: intervalLength,
+        durationMinutes: duration,
+        isSick,
+      }),
     });
 
     // Update day-level state so subsequent slot scoring sees this placement.
