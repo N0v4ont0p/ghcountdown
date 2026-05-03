@@ -21,6 +21,7 @@ import { format } from 'date-fns';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { broadcastDataChanged } from '@/lib/dataSync';
+import { useScrollPreservation } from '@/lib/scrollPreservation';
 
 /** Curated palette of project colors.  Users can also pick a custom color. */
 const PROJECT_COLOR_PALETTE: string[] = [
@@ -242,6 +243,12 @@ export function TodosView() {
 
   const [projectFormData, setProjectFormData] = useState<ProjectFormData>(EMPTY_PROJECT_FORM);
 
+  // Keeps the user's scroll position stable across data reloads triggered by
+  // create/edit/delete actions.  Without this, framer-motion `layout`
+  // transitions and Radix dialog focus restoration can nudge the surrounding
+  // `<main>` scroll container after every save.
+  const { rootRef, preserveScroll } = useScrollPreservation<HTMLDivElement>();
+
   const loadData = useCallback(async () => {
     const [allTodos, allProjects, activeGoals] = await Promise.all([
       getAllTodos(),
@@ -268,14 +275,14 @@ export function TodosView() {
   }, [loadData]);
 
   useEffect(() => {
-    function onDataChange() { void loadData(); }
+    function onDataChange() { void preserveScroll(loadData); }
     window.addEventListener('ghc-data-changed', onDataChange);
     window.addEventListener('app:datachange', onDataChange);
     return () => {
       window.removeEventListener('ghc-data-changed', onDataChange);
       window.removeEventListener('app:datachange', onDataChange);
     };
-  }, [loadData]);
+  }, [loadData, preserveScroll]);
 
   function resetForm() {
     setFormData({
@@ -368,7 +375,7 @@ export function TodosView() {
       setIsDialogOpen(false);
       resetForm();
       broadcastDataChanged({ kind: 'todo' });
-      loadData();
+      void preserveScroll(loadData);
     } catch (error) {
       toast.error(editingTodoId ? 'Failed to update todo' : 'Failed to create todo');
     }
@@ -384,14 +391,14 @@ export function TodosView() {
       await Promise.all(running.map(e => updateTimeEntry(e.id, { endAt: new Date().toISOString() })));
       toast.success('Task completed');
     }
-    void loadData();
-  }, [loadData]);
+    void preserveScroll(loadData);
+  }, [loadData, preserveScroll]);
 
   const handleMoveToToday = useCallback(async (todo: Todo) => {
     await updateTodo(todo.id, { status: 'today' });
     toast.success('Moved to Today');
-    void loadData();
-  }, [loadData]);
+    void preserveScroll(loadData);
+  }, [loadData, preserveScroll]);
 
   const handleDelete = useCallback((id: string) => {
     setTodoToDelete(id);
@@ -417,12 +424,12 @@ export function TodosView() {
               const { add } = await import('@/db/core');
               const { STORES } = await import('@/db/schema');
               await add(STORES.TODOS, entry.data);
-              await loadData();
+              await preserveScroll(loadData);
             }
           },
         },
       });
-      await loadData();
+      await preserveScroll(loadData);
     } catch (error) {
       toast.error('Failed to delete todo');
     } finally {
@@ -441,7 +448,7 @@ export function TodosView() {
       await deleteProject(projectToDelete);
       toast.success('Project deleted');
       broadcastDataChanged({ kind: 'project' });
-      await loadData();
+      await preserveScroll(loadData);
     } catch (error) {
       toast.error('Failed to delete project');
     } finally {
@@ -493,7 +500,7 @@ export function TodosView() {
       }
       closeProjectDialog();
       broadcastDataChanged({ kind: 'project' });
-      loadData();
+      void preserveScroll(loadData);
     } catch (error) {
       toast.error(editingProjectId ? 'Failed to update project' : 'Failed to create project');
     }
@@ -558,7 +565,7 @@ export function TodosView() {
   }
 
   return (
-    <div className="max-w-4xl mx-auto">
+    <div ref={rootRef} className="max-w-4xl mx-auto">
       <div className="mb-6 flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h2 className="text-3xl font-semibold mb-2">Todos</h2>
