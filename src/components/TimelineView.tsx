@@ -14,8 +14,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
-import { Plus, Play, Stop, Trash, Clock, CalendarBlank, CheckSquare, Lightning, Warning, CalendarDots, CaretLeft, CaretRight, MapPin, MagnifyingGlassPlus, MagnifyingGlassMinus } from '@phosphor-icons/react';
-import { format } from 'date-fns';
+import { Plus, Play, Stop, Trash, Clock, CalendarBlank, CheckSquare, Lightning, Warning, CalendarDots, CaretLeft, CaretRight, MapPin, MagnifyingGlassPlus, MagnifyingGlassMinus, CalendarCheck } from '@phosphor-icons/react';
+import { addDays, format, startOfWeek } from 'date-fns';
+import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { RoutinePanel } from '@/components/RoutinePanel';
@@ -79,6 +80,7 @@ export function TimelineView() {
   const [ghostDismissedIds, setGhostDismissedIds] = useState<Set<string>>(new Set());
   const [ghostSuggestions, setGhostSuggestions] = useState<GhostSuggestion[]>([]);
   const [isRoutinePanelOpen, setIsRoutinePanelOpen] = useState(false);
+  const [isScheduleWeekOpen, setIsScheduleWeekOpen] = useState(false);
   const [timelineZoom, setTimelineZoom] = useState(1);
   const timelineHourHeight = TIMELINE_HOUR_HEIGHT * timelineZoom;
   /** Per-day status for the date currently shown in the header.  Defaults to
@@ -907,6 +909,17 @@ export function TimelineView() {
             <Button variant="outline" size="sm" onClick={() => setIsRoutinePanelOpen(true)} className="gap-1.5 rounded-xl">
               <CalendarDots size={14} />
               Routine
+            </Button>
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsScheduleWeekOpen(true)}
+              className="gap-1.5 rounded-xl"
+            >
+              <CalendarCheck size={14} />
+              <span className="hidden sm:inline">Schedule Week</span>
+              <span className="sm:hidden">Week</span>
             </Button>
 
             {unscheduledTodayTodos.length > 0 && (
@@ -1866,6 +1879,141 @@ export function TimelineView() {
           <RoutinePanel onClose={() => setIsRoutinePanelOpen(false)} />
         </DialogContent>
       </Dialog>
+
+      <ScheduleWeekDialog
+        open={isScheduleWeekOpen}
+        onOpenChange={setIsScheduleWeekOpen}
+        anchorDate={currentDate}
+      />
     </div>
+  );
+}
+
+interface ScheduleWeekDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  /** Date the user is currently looking at; the dialog defaults to the week
+   *  containing this date (Monday-start). */
+  anchorDate: Date;
+}
+
+/**
+ * Entry point for "Schedule Week".  Renders a preview of the seven days in the
+ * selected week with per-day toggles and Apply/Cancel actions.  Intentionally
+ * does NOT mutate any data on its own — Apply currently confirms the user's
+ * intent via a toast so the actual auto-scheduling can be wired up in a
+ * follow-up change without changing this entry point.
+ */
+function ScheduleWeekDialog({ open, onOpenChange, anchorDate }: ScheduleWeekDialogProps) {
+  // Match the rest of the app: weeks start on Monday.
+  const weekStart = useMemo(() => startOfWeek(anchorDate, { weekStartsOn: 1 }), [anchorDate]);
+  const days = useMemo(
+    () => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)),
+    [weekStart],
+  );
+
+  // Default to all seven days selected; reset whenever the dialog re-opens or
+  // the anchor week changes so users always start from "current week, all
+  // days".
+  const [selected, setSelected] = useState<Set<string>>(
+    () => new Set(days.map((d) => format(d, 'yyyy-MM-dd'))),
+  );
+  useEffect(() => {
+    if (!open) return;
+    setSelected(new Set(days.map((d) => format(d, 'yyyy-MM-dd'))));
+  }, [open, days]);
+
+  const todayStr = format(new Date(), 'yyyy-MM-dd');
+
+  function toggleDay(dateStr: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(dateStr)) next.delete(dateStr);
+      else next.add(dateStr);
+      return next;
+    });
+  }
+
+  function handleApply() {
+    // Intentionally a no-op preview for the entry-point change: the dialog
+    // hands selection back to the user via a toast and closes.  Wiring it up
+    // to actually create blocks is a follow-up so this change can ship safely
+    // without mutating data.
+    const count = selected.size;
+    if (count === 0) {
+      toast.info('Pick at least one day to schedule.');
+      return;
+    }
+    toast.success(
+      `Ready to schedule ${count} day${count !== 1 ? 's' : ''} (${format(weekStart, 'MMM d')} – ${format(addDays(weekStart, 6), 'MMM d')})`,
+    );
+    onOpenChange(false);
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <CalendarCheck size={18} weight="bold" />
+            Schedule Week
+          </DialogTitle>
+          <DialogDescription>
+            {format(weekStart, 'MMM d')} – {format(addDays(weekStart, 6), 'MMM d, yyyy')}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-1.5 py-1">
+          {days.map((day) => {
+            const dateStr = format(day, 'yyyy-MM-dd');
+            const isToday = dateStr === todayStr;
+            const isPast = dateStr < todayStr;
+            const checked = selected.has(dateStr);
+            return (
+              <label
+                key={dateStr}
+                htmlFor={`schedule-week-${dateStr}`}
+                className={cn(
+                  'flex items-center gap-3 px-3 py-2 rounded-lg border transition-colors cursor-pointer',
+                  checked
+                    ? 'bg-accent/40 border-accent'
+                    : 'border-border/60 hover:bg-muted/40',
+                  isPast && 'opacity-60',
+                )}
+              >
+                <Checkbox
+                  id={`schedule-week-${dateStr}`}
+                  checked={checked}
+                  onCheckedChange={() => toggleDay(dateStr)}
+                />
+                <div className="flex-1 min-w-0 flex items-baseline justify-between gap-2">
+                  <span className="text-sm font-medium">
+                    {format(day, 'EEEE')}
+                    {isToday && (
+                      <span className="ml-2 text-[10px] uppercase tracking-wide text-primary font-semibold">
+                        Today
+                      </span>
+                    )}
+                  </span>
+                  <span className="text-xs text-muted-foreground tabular-nums">
+                    {format(day, 'MMM d')}
+                  </span>
+                </div>
+              </label>
+            );
+          })}
+        </div>
+
+        <div className="flex items-center justify-end gap-2 pt-2">
+          <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button size="sm" onClick={handleApply} disabled={selected.size === 0} className="gap-1.5">
+            <Lightning size={14} weight="bold" />
+            Apply
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
