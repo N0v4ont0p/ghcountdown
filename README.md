@@ -30,7 +30,7 @@ It runs as a native Electron app on macOS, or as a web app in any browser. No ac
 |---|---|
 | **Home** | Countdown hero to your next important event, today's time blocks, active todos, deadline pressure strip, momentum indicators, and AI nudges |
 | **Timeline** | Hour-by-hour day planner. Create time blocks, start/stop focus timers, see event markers, detect scheduling conflicts, and get habit-based ghost suggestions |
-| **Todos** | Inbox → Today workflow. Tabs for Inbox, Today, and Projects. Priority 1–5, due dates, project grouping |
+| **Todos** | Unified active list auto-grouped by project, plus an Individual Todos group and a collapsible Completed section. Priority 1–5, due dates, project grouping. Pickable emoji icons for projects |
 | **Events** | Create and manage deadlines and milestones. Priority, tags, notes, all-day or timed |
 | **Stats** | Focus time totals (today / week / month), completed tasks and events, streak tracking, most productive hour, manual time entry log |
 | **Settings** | Theme (light / dark / system), AI API key, accent color, priority threshold for countdown hero, timeline hours, data import/export, bulk delete |

@@ -27,11 +27,11 @@ This is a full-featured productivity suite with multiple interconnected views (H
 - Success criteria: Event appears immediately in lists, persists after app restart, validates required fields
 
 **Todo System with Projects**
-- Functionality: Manage todos across Inbox, Today, and custom Projects with drag-to-organize, priority levels, and event linking
+- Functionality: Manage todos in a single unified list auto-grouped by project (with a separate Individual Todos group for project-less items and a collapsible Completed section), with priority levels and event linking. Projects pick their icon from a curated emoji palette
 - Purpose: Organize tasks by context and urgency, connect todos to countdown events
-- Trigger: Press T for new todo, drag between sections, or use quick-add input
-- Progression: Create todo → Appears in Inbox → Drag to Today or Project → Mark complete with animation → Archives to done state
-- Success criteria: Todos persist locally, drag works smoothly, completion animations delight, filters work instantly
+- Trigger: Press T for new todo, or use the New Todo / New Project buttons on the Todos page
+- Progression: Create todo → Appears in its project group (or Individual Todos) → Sorted by overdue → priority → due date → recency → Mark complete with animation → Moves into the collapsible Completed section
+- Success criteria: Todos persist locally, grouping/sorting updates instantly, completion animations delight
 
 **In-Day Timeline (Today View)**
 - Functionality: Vertical hour-by-hour timeline (5:00-24:00) showing scheduled blocks, events for today, and "now" indicator
@@ -118,8 +118,7 @@ Animations should embody macOS fluidity—spring-based physics for natural motio
 - **Components**: 
   - Dialog for event/todo editing with form fields (Input, Textarea, Select for priority/tags)
   - Command palette using Command component for ⌘K
-  - Card for event items, todo items, time entries
-  - Tabs for switching between Inbox/Today/Projects in Todos view
+  - Card for event items, todo items, time entries, and per-project todo groups
   - Progress for countdown progress rings (optional visual enhancement)
   - Badge for priority indicators and tags
   - Separator for visual section breaks
