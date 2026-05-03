@@ -179,10 +179,10 @@ export function IconPicker({
         {/* Category tabs (hidden while searching) */}
         {!query.trim() && (
           <Tabs value={activeCategory} onValueChange={setActiveCategory} className="px-2 pt-2">
-            <TabsList className="h-8 w-full overflow-x-auto justify-start gap-0.5 bg-transparent p-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <TabsList className="h-8 w-full max-w-full overflow-x-auto overflow-y-hidden flex-nowrap justify-start gap-0.5 bg-transparent p-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               <TabsTrigger
                 value="all"
-                className="h-7 px-2 text-[11px] data-[state=active]:bg-muted data-[state=active]:shadow-none rounded-md"
+                className="h-7 px-2 text-[11px] data-[state=active]:bg-muted data-[state=active]:shadow-none rounded-md flex-none shrink-0"
                 title="All icons"
               >
                 All
@@ -191,7 +191,7 @@ export function IconPicker({
                 <TabsTrigger
                   key={cat.id}
                   value={cat.id}
-                  className="h-7 px-2 text-[11px] data-[state=active]:bg-muted data-[state=active]:shadow-none rounded-md"
+                  className="h-7 px-2 text-[11px] data-[state=active]:bg-muted data-[state=active]:shadow-none rounded-md flex-none shrink-0"
                   title={cat.label}
                 >
                   <span aria-hidden className="mr-1">{cat.tabIcon}</span>
