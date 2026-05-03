@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { CaretLeft, CaretRight, MagnifyingGlass, X } from '@phosphor-icons/react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -86,6 +86,14 @@ export function IconPicker({
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
   const tabsVisible = !query.trim();
+  // Tracks an in-progress pointer drag so we can convert horizontal mouse
+  // movement into native horizontal scrolling for users without a trackpad.
+  const dragStateRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startScrollLeft: number;
+    moved: boolean;
+  } | null>(null);
 
   const updateScrollAffordances = useCallback(() => {
     const el = tabsScrollRef.current;
@@ -98,6 +106,14 @@ export function IconPicker({
     setCanScrollLeft(el.scrollLeft > 1);
     setCanScrollRight(max > 1 && el.scrollLeft < max - 1);
   }, []);
+
+  // Reset drag bookkeeping whenever the popover closes so the next open
+  // behaves like a fresh session.
+  useEffect(() => {
+    if (!open) {
+      dragStateRef.current = null;
+    }
+  }, [open]);
 
   // Track scroll position + element resize so the chevron buttons stay accurate.
   useEffect(() => {
@@ -114,28 +130,33 @@ export function IconPicker({
     };
   }, [open, tabsVisible, updateScrollAffordances]);
 
-  // Convert vertical wheel/trackpad gestures over the tab strip into horizontal
-  // scrolling.  Attached natively so we can `preventDefault` on a non-passive
-  // listener (React's synthetic onWheel is passive in modern React).
+  // Wheel handler: only redirect *vertical* wheel events into horizontal scroll
+  // (so a regular mouse wheel still moves the strip).  Native horizontal
+  // trackpad gestures (where deltaX dominates) are left completely untouched
+  // so macOS keeps its smooth inertial scrolling and rubber-band behaviour.
   useEffect(() => {
     if (!open || !tabsVisible) return;
     const el = tabsScrollRef.current;
     if (!el) return;
     const onWheel = (e: WheelEvent) => {
       if (el.scrollWidth <= el.clientWidth) return;
-      // Prefer the dominant axis so trackpads with native horizontal scrolling
-      // still work normally.
-      const delta = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
-      if (delta === 0) return;
+      // Let the browser handle anything that already has a horizontal component
+      // — this covers Mac trackpad two-finger horizontal swipes, shift+wheel,
+      // and horizontal mice.  Only intercept pure vertical wheel input.
+      if (Math.abs(e.deltaX) >= Math.abs(e.deltaY)) return;
+      if (e.deltaY === 0) return;
       e.preventDefault();
-      el.scrollLeft += delta;
+      el.scrollLeft += e.deltaY;
     };
     el.addEventListener('wheel', onWheel, { passive: false });
     return () => el.removeEventListener('wheel', onWheel);
   }, [open, tabsVisible]);
 
   // Whenever the active category changes (via click, keyboard arrows, etc.)
-  // ensure the corresponding tab is visible inside the scrollable strip.
+  // nudge the corresponding tab into view — but only the *strip* scrolls, never
+  // any ancestor (popover/page).  We compute the minimal scrollLeft delta and
+  // call `scrollTo` on the strip directly instead of `Element.scrollIntoView`
+  // (which walks up the ancestor chain and can scroll the popover content).
   useEffect(() => {
     if (!open || !tabsVisible) return;
     const el = tabsScrollRef.current;
@@ -144,12 +165,81 @@ export function IconPicker({
       `[data-tab-id="${activeCategory}"]`,
     );
     if (!active) return;
+    // Small padding so the tab isn't flush against the chevron gradient.
+    const PAD = 8;
     const elRect = el.getBoundingClientRect();
     const aRect = active.getBoundingClientRect();
-    if (aRect.left < elRect.left || aRect.right > elRect.right) {
-      active.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
+    let delta = 0;
+    if (aRect.left < elRect.left + PAD) {
+      delta = aRect.left - elRect.left - PAD;
+    } else if (aRect.right > elRect.right - PAD) {
+      delta = aRect.right - elRect.right + PAD;
     }
+    if (delta === 0) return;
+    el.scrollTo({ left: el.scrollLeft + delta, behavior: 'smooth' });
   }, [activeCategory, open, tabsVisible]);
+
+  // Pointer drag-to-scroll for mouse users.  Touch input is left to the
+  // browser's native panning so it stays buttery on touchscreens/trackpads.
+  const handlePointerDown = useCallback((e: ReactPointerEvent<HTMLDivElement>) => {
+    if (e.pointerType !== 'mouse') return;
+    if (e.button !== 0) return;
+    const el = tabsScrollRef.current;
+    if (!el) return;
+    if (el.scrollWidth <= el.clientWidth) return;
+    dragStateRef.current = {
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      startScrollLeft: el.scrollLeft,
+      moved: false,
+    };
+    try {
+      el.setPointerCapture(e.pointerId);
+    } catch {
+      // setPointerCapture can throw if the pointer is already released.
+    }
+  }, []);
+
+  const handlePointerMove = useCallback((e: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = dragStateRef.current;
+    if (!drag || drag.pointerId !== e.pointerId) return;
+    const el = tabsScrollRef.current;
+    if (!el) return;
+    const dx = e.clientX - drag.startX;
+    if (!drag.moved && Math.abs(dx) > 3) {
+      drag.moved = true;
+    }
+    if (drag.moved) {
+      el.scrollLeft = drag.startScrollLeft - dx;
+    }
+  }, []);
+
+  const handlePointerEnd = useCallback((e: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = dragStateRef.current;
+    if (!drag || drag.pointerId !== e.pointerId) return;
+    const el = tabsScrollRef.current;
+    // If the pointer actually moved, swallow the click so we don't accidentally
+    // change the active tab when the user is just scrubbing the strip.
+    if (drag.moved && el) {
+      const swallow = (clickEvt: MouseEvent) => {
+        clickEvt.preventDefault();
+        clickEvt.stopPropagation();
+        el.removeEventListener('click', swallow, true);
+      };
+      el.addEventListener('click', swallow, true);
+      // Safety net: if no click ever fires (e.g. pointer released outside),
+      // remove the listener on the next tick.
+      window.setTimeout(() => el.removeEventListener('click', swallow, true), 0);
+    }
+    if (el) {
+      try {
+        el.releasePointerCapture(e.pointerId);
+      } catch {
+        // Ignore — capture may have already been released.
+      }
+    }
+    dragStateRef.current = null;
+  }, []);
 
   const scrollTabsBy = useCallback((direction: 1 | -1) => {
     const el = tabsScrollRef.current;
@@ -288,7 +378,12 @@ export function IconPicker({
               )}
               <div
                 ref={tabsScrollRef}
-                className="overflow-x-auto overflow-y-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                onPointerDown={handlePointerDown}
+                onPointerMove={handlePointerMove}
+                onPointerUp={handlePointerEnd}
+                onPointerCancel={handlePointerEnd}
+                style={{ touchAction: 'pan-x', overscrollBehaviorX: 'contain' }}
+                className="overflow-x-auto overflow-y-hidden cursor-grab active:cursor-grabbing select-none [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
               >
                 <TabsList className="h-8 w-max flex-nowrap justify-start gap-0.5 bg-transparent p-0">
                   <TabsTrigger
