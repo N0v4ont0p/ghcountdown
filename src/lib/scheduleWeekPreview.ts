@@ -129,11 +129,81 @@ function dueUrgencyBias(todo: Todo, dateStr: string): number {
   return 0;
 }
 
+/**
+ * Small bias for older todos so a long-stale task isn't forever outranked
+ * by fresher work of equal priority.  Capped at +2 (≥30d old) to stay
+ * subordinate to due-soon urgency.
+ */
+function taskAgeBias(todo: Todo, dateStr: string): number {
+  if (!todo.createdAt) return 0;
+  const created = new Date(todo.createdAt);
+  if (Number.isNaN(created.getTime())) return 0;
+  const slot = new Date(`${dateStr}T00:00:00`);
+  const days = Math.max(0, Math.round((slot.getTime() - created.getTime()) / 86_400_000));
+  if (days <= 1) return 0;
+  if (days >= 30) return 2;
+  return Math.min(2, days / 15);
+}
+
+/**
+ * Reward placing a todo in a slot whose length is close to the todo's
+ * duration; penalize burning a much longer free interval on a short task,
+ * which would leave only thin slivers behind for the remaining todos.
+ * Returns roughly [-1.5, +1].
+ */
+function durationFitBias(durationMinutes: number, intervalLengthMinutes: number): number {
+  if (intervalLengthMinutes <= 0 || durationMinutes <= 0) return 0;
+  const ratio = durationMinutes / intervalLengthMinutes;
+  if (ratio >= 0.85) return 1;       // snug fit — best
+  if (ratio >= 0.6) return 0.5;
+  if (ratio >= 0.35) return 0;
+  if (ratio >= 0.2) return -0.5;
+  return -1.5;                        // tiny task in a huge slot
+}
+
+/**
+ * Pressure penalty as the day fills toward its effective capacity.
+ * 0 when empty, ramps up to ~-2 once we hit cap.  Lets a high-urgency
+ * task still squeeze in but discourages piling more onto an already-full
+ * day when other days have room.
+ */
+function workloadPressureBias(dayMinutesUsed: number, effectiveCap: number): number {
+  if (effectiveCap <= 0) return 0;
+  const ratio = Math.min(1.5, dayMinutesUsed / effectiveCap);
+  if (ratio <= 0.5) return 0;
+  return -2 * (ratio - 0.5) / 1;
+}
+
+/**
+ * Cluster same-project work within a single day (tiny positive bias when
+ * the day already has a block from the same project), and discourage
+ * concentrating one project on one day across the whole week (negative
+ * bias once a project already owns several blocks earlier in the week).
+ */
+function projectBalanceBias(
+  todo: Todo,
+  dayProjectCounts: Map<string, number>,
+  weeklyProjectCounts: Map<string, number>,
+): number {
+  if (!todo.projectId) return 0;
+  const dayCount = dayProjectCounts.get(todo.projectId) ?? 0;
+  const weekCount = weeklyProjectCounts.get(todo.projectId) ?? 0;
+  // Mild clustering bonus for the first-and-second hit on the same day.
+  const clusterBonus = dayCount === 0 ? 0 : dayCount === 1 ? 0.5 : 0;
+  // Across the week, after a project already has 2 blocks elsewhere, push
+  // additional ones toward other days (small negative).  Note: the day's
+  // own count is included in weekCount, so we subtract it to consider
+  // *other* days only for the balance term.
+  const elsewhere = weekCount - dayCount;
+  const balancePenalty = elsewhere >= 2 ? -1 : elsewhere >= 1 ? -0.4 : 0;
+  return clusterBonus + balancePenalty;
+}
+
 function sortGroup(todos: Todo[], dateStr: string): Todo[] {
   return [...todos].sort((a, b) => {
-    // Primary: combined priority + due-urgency. Higher first.
-    const aRank = a.priority + dueUrgencyBias(a, dateStr);
-    const bRank = b.priority + dueUrgencyBias(b, dateStr);
+    // Primary: combined priority + due-urgency + age. Higher first.
+    const aRank = a.priority + dueUrgencyBias(a, dateStr) + taskAgeBias(a, dateStr);
+    const bRank = b.priority + dueUrgencyBias(b, dateStr) + taskAgeBias(b, dateStr);
     if (bRank !== aRank) return bRank - aRank;
     // Secondary: earlier dueAt wins (treat undefined as far future).
     const aDue = daysUntilDue(a, dateStr);
@@ -193,10 +263,22 @@ interface DayPlanContext {
    *  the routine (vacation / off).  Sick still applies its lighter-load
    *  rules — that's a capacity adjustment, not a hard skip. */
   allowSkippedDay: boolean;
+  /** Cumulative projectId → block count across previously planned days in
+   *  the same week.  Mutated by planDay as it places new blocks so later
+   *  days can see and push back against concentration. */
+  weeklyProjectCounts: Map<string, number>;
 }
 
 async function planDay(ctx: DayPlanContext): Promise<DayPreview> {
-  const { dateStr, unscheduledTodos, existingBlocks, projectNameById, peakSet, allowSkippedDay } = ctx;
+  const {
+    dateStr,
+    unscheduledTodos,
+    existingBlocks,
+    projectNameById,
+    peakSet,
+    allowSkippedDay,
+    weeklyProjectCounts,
+  } = ctx;
   const dayStatus = await getDayStatus(dateStr);
   if (suppressesRoutine(dayStatus) && !allowSkippedDay) {
     return {
@@ -251,9 +333,13 @@ async function planDay(ctx: DayPlanContext): Promise<DayPreview> {
   if (existingMinutes + estimatedMinutesAll > effectiveCap) {
     const scored = todosToSchedule.map((todo) => ({
       todo,
-      // Boost capacity-cap selection with due-soon urgency so a critical
-      // task isn't dropped just because its base priority is moderate.
-      score: todoScore(todo) + dueUrgencyBias(todo, dateStr),
+      // Boost capacity-cap selection with due-soon urgency + age so a
+      // critical or long-stale task isn't dropped just because its base
+      // priority is moderate.
+      score:
+        todoScore(todo) +
+        dueUrgencyBias(todo, dateStr) +
+        taskAgeBias(todo, dateStr),
     }));
     scored.sort((a, b) => b.score - a.score);
     todosToSchedule = scored.slice(0, MAX_TODOS_UNDER_CAP).map((s) => s.todo);
@@ -305,16 +391,42 @@ async function planDay(ctx: DayPlanContext): Promise<DayPreview> {
     return free;
   })();
 
-  function scoreSlot(todo: Todo, startMinute: number, durationMinutes: number): number {
+  // Day-level state used by the slot scorer.  Seeded with whatever
+  // already-scheduled blocks are on the day so newly proposed work still
+  // respects existing project distribution and remaining headroom.
+  const dayProjectCounts = new Map<string, number>();
+  for (const block of existingBlocks) {
+    if (block.projectId) {
+      dayProjectCounts.set(block.projectId, (dayProjectCounts.get(block.projectId) ?? 0) + 1);
+    }
+  }
+  let dayMinutesUsed = existingMinutes;
+
+  function scoreSlot(
+    todo: Todo,
+    startMinute: number,
+    durationMinutes: number,
+    intervalLengthMinutes: number,
+  ): number {
     const centerHour = Math.floor((startMinute + durationMinutes / 2) / 60);
     const isPeak = peakSet.has(centerHour);
+    // Cognitive-load × time-of-day fit.
     const loadBias =
       todo.cognitiveLoad === 'high' ? (isPeak ? 4 : -2) :
       todo.cognitiveLoad === 'low' ? (isPeak ? -1 : 2) :
       (isPeak ? 2 : 0);
-    const urgencyBias = todo.priority + dueUrgencyBias(todo, dateStr);
+    // Priority + due-soon urgency + age.
+    const urgencyBias =
+      todo.priority + dueUrgencyBias(todo, dateStr) + taskAgeBias(todo, dateStr);
+    // Prefer earlier starts so urgent work happens before the day drifts.
     const earlierBias = (DAY_END - startMinute) / 120;
-    return loadBias + urgencyBias + earlierBias;
+    // Penalize burning a much-longer slot on a tiny task.
+    const fitBias = durationFitBias(durationMinutes, intervalLengthMinutes);
+    // Penalize piling onto a day that's already near its effective cap.
+    const pressureBias = workloadPressureBias(dayMinutesUsed, effectiveCap);
+    // Cluster within day, balance across week.
+    const projectBias = projectBalanceBias(todo, dayProjectCounts, weeklyProjectCounts);
+    return loadBias + urgencyBias + earlierBias + fitBias + pressureBias + projectBias;
   }
 
   const highLoad = sortGroup(todosToSchedule.filter((t) => t.cognitiveLoad === 'high'), dateStr);
@@ -339,7 +451,7 @@ async function planDay(ctx: DayPlanContext): Promise<DayPreview> {
       .filter((interval) => interval.end - interval.start >= duration)
       .map((interval) => ({
         interval,
-        score: scoreSlot(todo, interval.start, duration),
+        score: scoreSlot(todo, interval.start, duration, interval.end - interval.start),
       }))
       .sort((a, b) => b.score - a.score || a.interval.start - b.interval.start);
 
@@ -366,6 +478,19 @@ async function planDay(ctx: DayPlanContext): Promise<DayPreview> {
       color,
       reason: reasonFor(todo, dateStr, isPeak),
     });
+
+    // Update day-level state so subsequent slot scoring sees this placement.
+    dayMinutesUsed += duration;
+    if (todo.projectId) {
+      dayProjectCounts.set(
+        todo.projectId,
+        (dayProjectCounts.get(todo.projectId) ?? 0) + 1,
+      );
+      weeklyProjectCounts.set(
+        todo.projectId,
+        (weeklyProjectCounts.get(todo.projectId) ?? 0) + 1,
+      );
+    }
 
     const nextIntervals: Array<{ start: number; end: number }> = [];
     for (const interval of freeIntervals) {
@@ -426,9 +551,19 @@ export async function previewWeekSchedule(input: PreviewInput): Promise<DayPrevi
     }),
   );
   const claimed = new Set<string>();
+  // Seed week-wide project counts from blocks that already exist before
+  // planning starts.  The planner mutates this map as it places new
+  // blocks, so later days within the same call see the running total.
+  const weeklyProjectCounts = new Map<string, number>();
   for (const blocks of blocksByDate.values()) {
     for (const block of blocks) {
       if (block.todoId) claimed.add(block.todoId);
+      if (block.projectId) {
+        weeklyProjectCounts.set(
+          block.projectId,
+          (weeklyProjectCounts.get(block.projectId) ?? 0) + 1,
+        );
+      }
     }
   }
 
@@ -443,6 +578,7 @@ export async function previewWeekSchedule(input: PreviewInput): Promise<DayPrevi
       projectNameById,
       peakSet,
       allowSkippedDay: allowedSkippedDates?.has(dateStr) ?? false,
+      weeklyProjectCounts,
     });
     for (const block of day.blocks) claimed.add(block.todoId);
     days.push(day);
