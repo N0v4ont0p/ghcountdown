@@ -17,6 +17,7 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { Plus, Play, Stop, Trash, Clock, CalendarBlank, CheckSquare, Lightning, Warning, CalendarDots, CaretLeft, CaretRight, MapPin, MagnifyingGlassPlus, MagnifyingGlassMinus, CalendarCheck } from '@phosphor-icons/react';
 import { addDays, format, startOfWeek } from 'date-fns';
 import { Checkbox } from '@/components/ui/checkbox';
+import { previewWeekSchedule, applyWeekPreview, DayPreview } from '@/lib/scheduleWeekPreview';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { RoutinePanel } from '@/components/RoutinePanel';
@@ -1884,6 +1885,11 @@ export function TimelineView() {
         open={isScheduleWeekOpen}
         onOpenChange={setIsScheduleWeekOpen}
         anchorDate={currentDate}
+        candidateTodos={todos.filter((t) => t.status === 'today')}
+        projects={projects}
+        onApplied={() => {
+          loadData();
+        }}
       />
     </div>
   );
@@ -1895,32 +1901,63 @@ interface ScheduleWeekDialogProps {
   /** Date the user is currently looking at; the dialog defaults to the week
    *  containing this date (Monday-start). */
   anchorDate: Date;
+  /** Pool of todos to consider for scheduling (currently the "today" list). */
+  candidateTodos: Todo[];
+  /** Used to look up project display names for the preview. */
+  projects: Project[];
+  /** Called after Apply successfully creates blocks so the parent can refresh. */
+  onApplied?: () => void;
 }
 
+type DialogStep = 'select' | 'preview';
+
 /**
- * Entry point for "Schedule Week".  Renders a preview of the seven days in the
- * selected week with per-day toggles and Apply/Cancel actions.  Intentionally
- * does NOT mutate any data on its own — Apply currently confirms the user's
- * intent via a toast so the actual auto-scheduling can be wired up in a
- * follow-up change without changing this entry point.
+ * Schedule Week dialog.  Two-step flow:
+ *   1. **select**  — pick the days in the current week to plan.
+ *   2. **preview** — show proposed blocks grouped by day; user can Apply
+ *      (creates the blocks via {@link applyWeekPreview}) or Cancel (no
+ *      mutations).
+ *
+ * No data changes happen until Apply is clicked.
  */
-function ScheduleWeekDialog({ open, onOpenChange, anchorDate }: ScheduleWeekDialogProps) {
+function ScheduleWeekDialog({
+  open,
+  onOpenChange,
+  anchorDate,
+  candidateTodos,
+  projects,
+  onApplied,
+}: ScheduleWeekDialogProps) {
   // Match the rest of the app: weeks start on Monday.
   const weekStart = useMemo(() => startOfWeek(anchorDate, { weekStartsOn: 1 }), [anchorDate]);
   const days = useMemo(
     () => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)),
     [weekStart],
   );
+  const projectNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const p of projects) map.set(p.id, p.name);
+    return map;
+  }, [projects]);
 
-  // Default to all seven days selected; reset whenever the dialog re-opens or
-  // the anchor week changes so users always start from "current week, all
-  // days".
   const [selected, setSelected] = useState<Set<string>>(
     () => new Set(days.map((d) => format(d, 'yyyy-MM-dd'))),
   );
+  const [step, setStep] = useState<DialogStep>('select');
+  const [preview, setPreview] = useState<DayPreview[] | null>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [isApplying, setIsApplying] = useState(false);
+
+  // Reset to step 1 with all days selected each time the dialog re-opens or
+  // the anchor week changes — keeps "Cancel" semantics clean (nothing
+  // persists across opens).
   useEffect(() => {
     if (!open) return;
     setSelected(new Set(days.map((d) => format(d, 'yyyy-MM-dd'))));
+    setStep('select');
+    setPreview(null);
+    setIsGenerating(false);
+    setIsApplying(false);
   }, [open, days]);
 
   const todayStr = format(new Date(), 'yyyy-MM-dd');
@@ -1934,84 +1971,233 @@ function ScheduleWeekDialog({ open, onOpenChange, anchorDate }: ScheduleWeekDial
     });
   }
 
-  function handleApply() {
-    // Intentionally a no-op preview for the entry-point change: the dialog
-    // hands selection back to the user via a toast and closes.  Wiring it up
-    // to actually create blocks is a follow-up so this change can ship safely
-    // without mutating data.
-    const count = selected.size;
-    if (count === 0) {
+  async function handleGeneratePreview() {
+    if (selected.size === 0) {
       toast.info('Pick at least one day to schedule.');
       return;
     }
-    toast.success(
-      `Ready to schedule ${count} day${count !== 1 ? 's' : ''} (${format(weekStart, 'MMM d')} – ${format(addDays(weekStart, 6), 'MMM d')})`,
-    );
-    onOpenChange(false);
+    setIsGenerating(true);
+    try {
+      const dateStrs = days
+        .map((d) => format(d, 'yyyy-MM-dd'))
+        .filter((d) => selected.has(d));
+      const result = await previewWeekSchedule({
+        dateStrs,
+        candidateTodos,
+        projectNameById,
+      });
+      setPreview(result);
+      setStep('preview');
+    } catch (err) {
+      console.error('[schedule-week] preview failed', err);
+      toast.error('Failed to generate preview');
+    } finally {
+      setIsGenerating(false);
+    }
   }
+
+  async function handleApply() {
+    if (!preview) return;
+    setIsApplying(true);
+    try {
+      const created = await applyWeekPreview(preview);
+      if (created === 0) {
+        toast.info('Nothing to schedule for the selected days.');
+      } else {
+        toast.success(`Scheduled ${created} block${created !== 1 ? 's' : ''} across the week`);
+      }
+      onApplied?.();
+      onOpenChange(false);
+    } catch (err) {
+      console.error('[schedule-week] apply failed', err);
+      toast.error('Failed to apply schedule');
+    } finally {
+      setIsApplying(false);
+    }
+  }
+
+  const totalProposed = preview?.reduce((sum, d) => sum + d.blocks.length, 0) ?? 0;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-md max-h-[80vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <CalendarCheck size={18} weight="bold" />
             Schedule Week
           </DialogTitle>
           <DialogDescription>
-            {format(weekStart, 'MMM d')} – {format(addDays(weekStart, 6), 'MMM d, yyyy')}
+            {step === 'select'
+              ? `${format(weekStart, 'MMM d')} – ${format(addDays(weekStart, 6), 'MMM d, yyyy')}`
+              : `Preview · ${totalProposed} block${totalProposed !== 1 ? 's' : ''} proposed`}
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-1.5 py-1">
-          {days.map((day) => {
-            const dateStr = format(day, 'yyyy-MM-dd');
-            const isToday = dateStr === todayStr;
-            const isPast = dateStr < todayStr;
-            const checked = selected.has(dateStr);
-            return (
-              <label
-                key={dateStr}
-                htmlFor={`schedule-week-${dateStr}`}
-                className={cn(
-                  'flex items-center gap-3 px-3 py-2 rounded-lg border transition-colors cursor-pointer',
-                  checked
-                    ? 'bg-accent/40 border-accent'
-                    : 'border-border/60 hover:bg-muted/40',
-                  isPast && 'opacity-60',
-                )}
-              >
-                <Checkbox
-                  id={`schedule-week-${dateStr}`}
-                  checked={checked}
-                  onCheckedChange={() => toggleDay(dateStr)}
-                />
-                <div className="flex-1 min-w-0 flex items-baseline justify-between gap-2">
-                  <span className="text-sm font-medium">
-                    {format(day, 'EEEE')}
-                    {isToday && (
-                      <span className="ml-2 text-[10px] uppercase tracking-wide text-primary font-semibold">
-                        Today
+        {step === 'select' ? (
+          <div className="space-y-1.5 py-1">
+            {days.map((day) => {
+              const dateStr = format(day, 'yyyy-MM-dd');
+              const isToday = dateStr === todayStr;
+              const isPast = dateStr < todayStr;
+              const checked = selected.has(dateStr);
+              return (
+                <label
+                  key={dateStr}
+                  htmlFor={`schedule-week-${dateStr}`}
+                  className={cn(
+                    'flex items-center gap-3 px-3 py-2 rounded-lg border transition-colors cursor-pointer',
+                    checked
+                      ? 'bg-accent/40 border-accent'
+                      : 'border-border/60 hover:bg-muted/40',
+                    isPast && 'opacity-60',
+                  )}
+                >
+                  <Checkbox
+                    id={`schedule-week-${dateStr}`}
+                    checked={checked}
+                    onCheckedChange={() => toggleDay(dateStr)}
+                  />
+                  <div className="flex-1 min-w-0 flex items-baseline justify-between gap-2">
+                    <span className="text-sm font-medium">
+                      {format(day, 'EEEE')}
+                      {isToday && (
+                        <span className="ml-2 text-[10px] uppercase tracking-wide text-primary font-semibold">
+                          Today
+                        </span>
+                      )}
+                    </span>
+                    <span className="text-xs text-muted-foreground tabular-nums">
+                      {format(day, 'MMM d')}
+                    </span>
+                  </div>
+                </label>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="space-y-3 py-1">
+            {preview && preview.length > 0 ? (
+              preview.map((day) => {
+                const dayDate = new Date(`${day.date}T00:00:00`);
+                return (
+                  <div key={day.date} className="space-y-1.5">
+                    <div className="flex items-baseline justify-between gap-2 px-1">
+                      <span className="text-sm font-semibold">
+                        {format(dayDate, 'EEEE')}
+                        <span className="ml-2 text-xs text-muted-foreground font-normal tabular-nums">
+                          {format(dayDate, 'MMM d')}
+                        </span>
                       </span>
+                      <span className="text-[11px] text-muted-foreground">
+                        {day.skippedReason
+                          ? day.skippedReason
+                          : `${day.blocks.length} block${day.blocks.length !== 1 ? 's' : ''}`}
+                      </span>
+                    </div>
+                    {day.skippedReason ? (
+                      <div className="px-3 py-2 rounded-lg border border-dashed border-border/60 text-xs text-muted-foreground">
+                        Skipped — {day.skippedReason.toLowerCase()}.
+                      </div>
+                    ) : day.blocks.length === 0 ? (
+                      <div className="px-3 py-2 rounded-lg border border-dashed border-border/60 text-xs text-muted-foreground">
+                        Nothing to schedule.
+                      </div>
+                    ) : (
+                      <ul className="space-y-1">
+                        {day.blocks.map((block, idx) => (
+                          <li
+                            key={`${day.date}-${idx}-${block.todoId}`}
+                            className="flex gap-3 px-3 py-2 rounded-lg border border-border/60 bg-card/50"
+                          >
+                            <span
+                              className="mt-0.5 w-1 rounded-full self-stretch shrink-0"
+                              style={{ backgroundColor: block.color }}
+                              aria-hidden
+                            />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-baseline justify-between gap-2">
+                                <span className="text-sm font-medium truncate">{block.title}</span>
+                                <span className="text-[11px] text-muted-foreground tabular-nums shrink-0">
+                                  {block.startTime}–{block.endTime}
+                                </span>
+                              </div>
+                              {(block.projectName || block.reason) && (
+                                <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
+                                  {block.projectName && (
+                                    <span className="font-medium text-foreground/70">
+                                      {block.projectName}
+                                    </span>
+                                  )}
+                                  {block.projectName && block.reason && <span aria-hidden>·</span>}
+                                  {block.reason && <span>{block.reason}</span>}
+                                </div>
+                              )}
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
                     )}
-                  </span>
-                  <span className="text-xs text-muted-foreground tabular-nums">
-                    {format(day, 'MMM d')}
-                  </span>
-                </div>
-              </label>
-            );
-          })}
-        </div>
+                    {day.unplaced > 0 && !day.skippedReason && (
+                      <div className="px-1 text-[11px] text-muted-foreground">
+                        {day.unplaced} task{day.unplaced !== 1 ? 's' : ''} couldn't fit.
+                      </div>
+                    )}
+                  </div>
+                );
+              })
+            ) : (
+              <div className="px-3 py-6 text-center text-sm text-muted-foreground">
+                No proposals generated.
+              </div>
+            )}
+          </div>
+        )}
 
-        <div className="flex items-center justify-end gap-2 pt-2">
-          <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button size="sm" onClick={handleApply} disabled={selected.size === 0} className="gap-1.5">
-            <Lightning size={14} weight="bold" />
-            Apply
-          </Button>
+        <div className="flex items-center justify-between gap-2 pt-2">
+          {step === 'preview' ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setStep('select')}
+              disabled={isApplying}
+              className="gap-1"
+            >
+              <CaretLeft size={14} /> Back
+            </Button>
+          ) : (
+            <span />
+          )}
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => onOpenChange(false)}
+              disabled={isGenerating || isApplying}
+            >
+              Cancel
+            </Button>
+            {step === 'select' ? (
+              <Button
+                size="sm"
+                onClick={handleGeneratePreview}
+                disabled={selected.size === 0 || isGenerating}
+                className="gap-1.5"
+              >
+                <Lightning size={14} weight="bold" />
+                {isGenerating ? 'Generating…' : 'Generate preview'}
+              </Button>
+            ) : (
+              <Button
+                size="sm"
+                onClick={handleApply}
+                disabled={isApplying || totalProposed === 0}
+                className="gap-1.5"
+              >
+                <Lightning size={14} weight="bold" />
+                {isApplying ? 'Applying…' : `Apply${totalProposed > 0 ? ` (${totalProposed})` : ''}`}
+              </Button>
+            )}
+          </div>
         </div>
       </DialogContent>
     </Dialog>
