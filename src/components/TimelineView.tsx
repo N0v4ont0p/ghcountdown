@@ -1948,6 +1948,12 @@ function ScheduleWeekDialog({
   const [isGenerating, setIsGenerating] = useState(false);
   const [isApplying, setIsApplying] = useState(false);
   const [includeSkippedDays, setIncludeSkippedDays] = useState(false);
+  // Synchronous guard against rapid double-clicks on Apply.  The `disabled`
+  // prop on the button only updates on re-render, so a fast second click can
+  // fire `handleApply` again before React commits the `isApplying = true`
+  // state.  A ref flips synchronously inside the handler and reliably blocks
+  // the second invocation, preventing duplicate `createTimeBlock` calls.
+  const applyingRef = useRef(false);
 
   // Reset to step 1 with all days selected each time the dialog re-opens or
   // the anchor week changes — keeps "Cancel" semantics clean (nothing
@@ -1959,6 +1965,7 @@ function ScheduleWeekDialog({
     setPreview(null);
     setIsGenerating(false);
     setIsApplying(false);
+    applyingRef.current = false;
     setIncludeSkippedDays(false);
   }, [open, days]);
 
@@ -2004,6 +2011,9 @@ function ScheduleWeekDialog({
 
   async function handleApply() {
     if (!preview) return;
+    // Synchronous re-entry guard — see `applyingRef` declaration above.
+    if (applyingRef.current) return;
+    applyingRef.current = true;
     setIsApplying(true);
     try {
       const created = await applyWeekPreview(preview);
@@ -2019,6 +2029,7 @@ function ScheduleWeekDialog({
       toast.error('Failed to apply schedule');
     } finally {
       setIsApplying(false);
+      applyingRef.current = false;
     }
   }
 
