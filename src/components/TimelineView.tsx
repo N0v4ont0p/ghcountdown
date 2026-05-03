@@ -1947,6 +1947,7 @@ function ScheduleWeekDialog({
   const [preview, setPreview] = useState<DayPreview[] | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isApplying, setIsApplying] = useState(false);
+  const [includeSkippedDays, setIncludeSkippedDays] = useState(false);
 
   // Reset to step 1 with all days selected each time the dialog re-opens or
   // the anchor week changes — keeps "Cancel" semantics clean (nothing
@@ -1958,6 +1959,7 @@ function ScheduleWeekDialog({
     setPreview(null);
     setIsGenerating(false);
     setIsApplying(false);
+    setIncludeSkippedDays(false);
   }, [open, days]);
 
   const todayStr = format(new Date(), 'yyyy-MM-dd');
@@ -1985,6 +1987,10 @@ function ScheduleWeekDialog({
         dateStrs,
         candidateTodos,
         projectNameById,
+        // When the user opts in, treat every selected date as explicitly
+        // allowed; the planner still consults dayStatus for sick-day
+        // capacity rules.
+        allowedSkippedDates: includeSkippedDays ? new Set(dateStrs) : undefined,
       });
       setPreview(result);
       setStep('preview');
@@ -2073,6 +2079,17 @@ function ScheduleWeekDialog({
                 </label>
               );
             })}
+            <label
+              htmlFor="schedule-week-include-skipped"
+              className="flex items-center gap-2 px-3 py-2 mt-2 text-xs text-muted-foreground cursor-pointer"
+            >
+              <Checkbox
+                id="schedule-week-include-skipped"
+                checked={includeSkippedDays}
+                onCheckedChange={(value) => setIncludeSkippedDays(value === true)}
+              />
+              <span>Include vacation / off days (override skip)</span>
+            </label>
           </div>
         ) : (
           <div className="space-y-3 py-1">

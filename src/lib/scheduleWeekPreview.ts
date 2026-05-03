@@ -189,12 +189,16 @@ interface DayPlanContext {
   existingBlocks: TimeBlock[];
   projectNameById: Map<string, string>;
   peakSet: Set<number>;
+  /** When true, schedule even if the day's status would normally suppress
+   *  the routine (vacation / off).  Sick still applies its lighter-load
+   *  rules — that's a capacity adjustment, not a hard skip. */
+  allowSkippedDay: boolean;
 }
 
 async function planDay(ctx: DayPlanContext): Promise<DayPreview> {
-  const { dateStr, unscheduledTodos, existingBlocks, projectNameById, peakSet } = ctx;
+  const { dateStr, unscheduledTodos, existingBlocks, projectNameById, peakSet, allowSkippedDay } = ctx;
   const dayStatus = await getDayStatus(dateStr);
-  if (suppressesRoutine(dayStatus)) {
+  if (suppressesRoutine(dayStatus) && !allowSkippedDay) {
     return {
       date: dateStr,
       blocks: [],
@@ -236,9 +240,16 @@ async function planDay(ctx: DayPlanContext): Promise<DayPreview> {
   );
   const effectiveCap = isSick ? Math.round(DAY_CAPACITY_MINUTES / 2) : DAY_CAPACITY_MINUTES;
   const MAX_TODOS_UNDER_CAP = isSick ? 3 : 5;
-  let todosToSchedule = unscheduledTodos;
+  // On sick days, drop high-cognitive-load tasks from the candidate pool
+  // entirely — sick days are for lighter work only.  prefersLowCognitiveLoad
+  // already biases ordering, but the explicit filter makes the rule
+  // observable in the preview and prevents a "deep work" task from sneaking
+  // in just because it's overdue.
+  let todosToSchedule = isSick
+    ? unscheduledTodos.filter((t) => t.cognitiveLoad !== 'high')
+    : unscheduledTodos;
   if (existingMinutes + estimatedMinutesAll > effectiveCap) {
-    const scored = unscheduledTodos.map((todo) => ({
+    const scored = todosToSchedule.map((todo) => ({
       todo,
       // Boost capacity-cap selection with due-soon urgency so a critical
       // task isn't dropped just because its base priority is moderate.
@@ -313,7 +324,10 @@ async function planDay(ctx: DayPlanContext): Promise<DayPreview> {
   );
   const lowLoad = sortGroup(todosToSchedule.filter((t) => t.cognitiveLoad === 'low'), dateStr);
   const orderedTodos = isSick
-    ? [...lowLoad, ...mediumLoad, ...highLoad]
+    // High-cognitive-load todos were filtered out of `todosToSchedule`
+    // earlier on sick days, so `highLoad` is always empty here — list only
+    // the bands that can actually contribute, light first.
+    ? [...lowLoad, ...mediumLoad]
     : [...highLoad, ...mediumLoad, ...lowLoad];
 
   const blocks: ProposedBlock[] = [];
@@ -381,6 +395,12 @@ interface PreviewInput {
   candidateTodos: Todo[];
   /** Map of projectId → display name for surfacing project context. */
   projectNameById: Map<string, string>;
+  /**
+   * Date strings for which the planner is *explicitly* allowed to schedule
+   * even though the day's status (vacation / off) would normally suppress
+   * the routine.  Days not in this set follow the default skip behaviour.
+   */
+  allowedSkippedDates?: Set<string>;
 }
 
 /**
@@ -390,7 +410,7 @@ interface PreviewInput {
  * returned with `skippedReason` set so callers can surface that to the user.
  */
 export async function previewWeekSchedule(input: PreviewInput): Promise<DayPreview[]> {
-  const { dateStrs, candidateTodos, projectNameById } = input;
+  const { dateStrs, candidateTodos, projectNameById, allowedSkippedDates } = input;
   const peakHours = await getPeakFocusHours();
   const peakSet = new Set(peakHours.length ? peakHours : FALLBACK_PEAK_HOURS);
 
@@ -422,6 +442,7 @@ export async function previewWeekSchedule(input: PreviewInput): Promise<DayPrevi
       existingBlocks,
       projectNameById,
       peakSet,
+      allowSkippedDay: allowedSkippedDates?.has(dateStr) ?? false,
     });
     for (const block of day.blocks) claimed.add(block.todoId);
     days.push(day);
