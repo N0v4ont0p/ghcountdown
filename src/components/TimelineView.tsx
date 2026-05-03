@@ -1885,7 +1885,7 @@ export function TimelineView() {
         open={isScheduleWeekOpen}
         onOpenChange={setIsScheduleWeekOpen}
         anchorDate={currentDate}
-        candidateTodos={todos.filter((t) => t.status === 'today')}
+        candidateTodos={todayTodos}
         projects={projects}
         onApplied={() => {
           loadData();

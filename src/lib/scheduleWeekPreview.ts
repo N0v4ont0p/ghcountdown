@@ -100,9 +100,46 @@ function mergeIntervals(
   return merged;
 }
 
-function sortGroup(todos: Todo[]): Todo[] {
+/**
+ * Days-until-due relative to a given date string.  Returns `Infinity` for
+ * todos with no due date so they sort last on this axis.  Negative values
+ * mean overdue.
+ */
+function daysUntilDue(todo: Todo, dateStr: string): number {
+  if (!todo.dueAt) return Infinity;
+  const due = new Date(todo.dueAt);
+  if (Number.isNaN(due.getTime())) return Infinity;
+  const dueDay = new Date(`${format(due, 'yyyy-MM-dd')}T00:00:00`);
+  const slotDay = new Date(`${dateStr}T00:00:00`);
+  return Math.round((dueDay.getTime() - slotDay.getTime()) / 86_400_000);
+}
+
+/**
+ * Bias added to slot scores for due-soon / overdue todos.  Tuned so an
+ * overdue or same-day-due task outranks a higher-priority task that isn't
+ * urgent, without overwhelming peak-focus alignment.
+ */
+function dueUrgencyBias(todo: Todo, dateStr: string): number {
+  const days = daysUntilDue(todo, dateStr);
+  if (!Number.isFinite(days)) return 0;
+  if (days < 0) return 6;        // overdue
+  if (days === 0) return 5;      // due today
+  if (days === 1) return 3;      // due tomorrow
+  if (days <= 3) return 1.5;     // due this week
+  return 0;
+}
+
+function sortGroup(todos: Todo[], dateStr: string): Todo[] {
   return [...todos].sort((a, b) => {
-    if (b.priority !== a.priority) return b.priority - a.priority;
+    // Primary: combined priority + due-urgency. Higher first.
+    const aRank = a.priority + dueUrgencyBias(a, dateStr);
+    const bRank = b.priority + dueUrgencyBias(b, dateStr);
+    if (bRank !== aRank) return bRank - aRank;
+    // Secondary: earlier dueAt wins (treat undefined as far future).
+    const aDue = daysUntilDue(a, dateStr);
+    const bDue = daysUntilDue(b, dateStr);
+    if (aDue !== bDue) return aDue - bDue;
+    // Tertiary: cluster by project to reduce context switching.
     const aProj = a.projectId ?? '';
     const bProj = b.projectId ?? '';
     return aProj.localeCompare(bProj);
@@ -201,7 +238,12 @@ async function planDay(ctx: DayPlanContext): Promise<DayPreview> {
   const MAX_TODOS_UNDER_CAP = isSick ? 3 : 5;
   let todosToSchedule = unscheduledTodos;
   if (existingMinutes + estimatedMinutesAll > effectiveCap) {
-    const scored = unscheduledTodos.map((todo) => ({ todo, score: todoScore(todo) }));
+    const scored = unscheduledTodos.map((todo) => ({
+      todo,
+      // Boost capacity-cap selection with due-soon urgency so a critical
+      // task isn't dropped just because its base priority is moderate.
+      score: todoScore(todo) + dueUrgencyBias(todo, dateStr),
+    }));
     scored.sort((a, b) => b.score - a.score);
     todosToSchedule = scored.slice(0, MAX_TODOS_UNDER_CAP).map((s) => s.todo);
   }
@@ -259,16 +301,17 @@ async function planDay(ctx: DayPlanContext): Promise<DayPreview> {
       todo.cognitiveLoad === 'high' ? (isPeak ? 4 : -2) :
       todo.cognitiveLoad === 'low' ? (isPeak ? -1 : 2) :
       (isPeak ? 2 : 0);
-    const urgencyBias = todo.priority;
+    const urgencyBias = todo.priority + dueUrgencyBias(todo, dateStr);
     const earlierBias = (DAY_END - startMinute) / 120;
     return loadBias + urgencyBias + earlierBias;
   }
 
-  const highLoad = sortGroup(todosToSchedule.filter((t) => t.cognitiveLoad === 'high'));
+  const highLoad = sortGroup(todosToSchedule.filter((t) => t.cognitiveLoad === 'high'), dateStr);
   const mediumLoad = sortGroup(
     todosToSchedule.filter((t) => t.cognitiveLoad === 'medium' || t.cognitiveLoad === null),
+    dateStr,
   );
-  const lowLoad = sortGroup(todosToSchedule.filter((t) => t.cognitiveLoad === 'low'));
+  const lowLoad = sortGroup(todosToSchedule.filter((t) => t.cognitiveLoad === 'low'), dateStr);
   const orderedTodos = isSick
     ? [...lowLoad, ...mediumLoad, ...highLoad]
     : [...highLoad, ...mediumLoad, ...lowLoad];
@@ -351,13 +394,27 @@ export async function previewWeekSchedule(input: PreviewInput): Promise<DayPrevi
   const peakHours = await getPeakFocusHours();
   const peakSet = new Set(peakHours.length ? peakHours : FALLBACK_PEAK_HOURS);
 
-  // Tracks which todos have been claimed by an earlier day in the week so
-  // they don't get double-booked across days.
+  // Pre-fetch existing blocks for every day in the preview window so we can
+  // (a) reuse them per-day as busy intervals (preserving fixed/manual blocks),
+  // and (b) seed the dedupe set with todoIds that are *already* scheduled
+  // anywhere in the week — no todo should be proposed twice.
+  const blocksByDate = new Map<string, TimeBlock[]>();
+  await Promise.all(
+    dateStrs.map(async (dateStr) => {
+      const blocks = await getTimeBlocksByDate(dateStr);
+      blocksByDate.set(dateStr, blocks);
+    }),
+  );
   const claimed = new Set<string>();
-  const days: DayPreview[] = [];
+  for (const blocks of blocksByDate.values()) {
+    for (const block of blocks) {
+      if (block.todoId) claimed.add(block.todoId);
+    }
+  }
 
+  const days: DayPreview[] = [];
   for (const dateStr of dateStrs) {
-    const existingBlocks = await getTimeBlocksByDate(dateStr);
+    const existingBlocks = blocksByDate.get(dateStr) ?? [];
     const remaining = candidateTodos.filter((t) => !claimed.has(t.id));
     const day = await planDay({
       dateStr,
