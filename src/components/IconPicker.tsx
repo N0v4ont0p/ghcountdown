@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { MagnifyingGlass, X } from '@phosphor-icons/react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { CaretLeft, CaretRight, MagnifyingGlass, X } from '@phosphor-icons/react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -80,6 +80,82 @@ export function IconPicker({
   const [query, setQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState<string>('all');
   const [custom, setCustom] = useState('');
+
+  // Refs/state used by the scrollable category tab strip.
+  const tabsScrollRef = useRef<HTMLDivElement>(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
+  const tabsVisible = !query.trim();
+
+  const updateScrollAffordances = useCallback(() => {
+    const el = tabsScrollRef.current;
+    if (!el) {
+      setCanScrollLeft(false);
+      setCanScrollRight(false);
+      return;
+    }
+    const max = el.scrollWidth - el.clientWidth;
+    setCanScrollLeft(el.scrollLeft > 1);
+    setCanScrollRight(max > 1 && el.scrollLeft < max - 1);
+  }, []);
+
+  // Track scroll position + element resize so the chevron buttons stay accurate.
+  useEffect(() => {
+    if (!open || !tabsVisible) return;
+    const el = tabsScrollRef.current;
+    if (!el) return;
+    updateScrollAffordances();
+    el.addEventListener('scroll', updateScrollAffordances, { passive: true });
+    const ro = new ResizeObserver(updateScrollAffordances);
+    ro.observe(el);
+    return () => {
+      el.removeEventListener('scroll', updateScrollAffordances);
+      ro.disconnect();
+    };
+  }, [open, tabsVisible, updateScrollAffordances]);
+
+  // Convert vertical wheel/trackpad gestures over the tab strip into horizontal
+  // scrolling.  Attached natively so we can `preventDefault` on a non-passive
+  // listener (React's synthetic onWheel is passive in modern React).
+  useEffect(() => {
+    if (!open || !tabsVisible) return;
+    const el = tabsScrollRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (el.scrollWidth <= el.clientWidth) return;
+      // Prefer the dominant axis so trackpads with native horizontal scrolling
+      // still work normally.
+      const delta = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+      if (delta === 0) return;
+      e.preventDefault();
+      el.scrollLeft += delta;
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, [open, tabsVisible]);
+
+  // Whenever the active category changes (via click, keyboard arrows, etc.)
+  // ensure the corresponding tab is visible inside the scrollable strip.
+  useEffect(() => {
+    if (!open || !tabsVisible) return;
+    const el = tabsScrollRef.current;
+    if (!el) return;
+    const active = el.querySelector<HTMLElement>(
+      `[data-tab-id="${activeCategory}"]`,
+    );
+    if (!active) return;
+    const elRect = el.getBoundingClientRect();
+    const aRect = active.getBoundingClientRect();
+    if (aRect.left < elRect.left || aRect.right > elRect.right) {
+      active.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
+    }
+  }, [activeCategory, open, tabsVisible]);
+
+  const scrollTabsBy = useCallback((direction: 1 | -1) => {
+    const el = tabsScrollRef.current;
+    if (!el) return;
+    el.scrollBy({ left: direction * Math.max(80, el.clientWidth * 0.8), behavior: 'smooth' });
+  }, []);
 
   const filtered = useMemo(() => filterIcons(query), [query]);
 
@@ -177,28 +253,67 @@ export function IconPicker({
         </div>
 
         {/* Category tabs (hidden while searching) */}
-        {!query.trim() && (
+        {tabsVisible && (
           <Tabs value={activeCategory} onValueChange={setActiveCategory} className="px-2 pt-2">
-            <TabsList className="h-8 w-full overflow-x-auto justify-start gap-0.5 bg-transparent p-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-              <TabsTrigger
-                value="all"
-                className="h-7 px-2 text-[11px] data-[state=active]:bg-muted data-[state=active]:shadow-none rounded-md"
-                title="All icons"
-              >
-                All
-              </TabsTrigger>
-              {ICON_CATEGORIES.map((cat) => (
-                <TabsTrigger
-                  key={cat.id}
-                  value={cat.id}
-                  className="h-7 px-2 text-[11px] data-[state=active]:bg-muted data-[state=active]:shadow-none rounded-md"
-                  title={cat.label}
+            <div className="relative">
+              {canScrollLeft && (
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  aria-label="Scroll categories left"
+                  onClick={() => scrollTabsBy(-1)}
+                  className={cn(
+                    'absolute left-0 top-0 bottom-0 z-10 flex items-center justify-center w-6',
+                    'bg-gradient-to-r from-popover via-popover/90 to-transparent',
+                    'text-muted-foreground hover:text-foreground transition-colors',
+                  )}
                 >
-                  <span aria-hidden className="mr-1">{cat.tabIcon}</span>
-                  <span className="hidden sm:inline">{cat.label}</span>
-                </TabsTrigger>
-              ))}
-            </TabsList>
+                  <CaretLeft size={12} weight="bold" />
+                </button>
+              )}
+              {canScrollRight && (
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  aria-label="Scroll categories right"
+                  onClick={() => scrollTabsBy(1)}
+                  className={cn(
+                    'absolute right-0 top-0 bottom-0 z-10 flex items-center justify-center w-6',
+                    'bg-gradient-to-l from-popover via-popover/90 to-transparent',
+                    'text-muted-foreground hover:text-foreground transition-colors',
+                  )}
+                >
+                  <CaretRight size={12} weight="bold" />
+                </button>
+              )}
+              <div
+                ref={tabsScrollRef}
+                className="overflow-x-auto overflow-y-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+              >
+                <TabsList className="h-8 w-max flex-nowrap justify-start gap-0.5 bg-transparent p-0">
+                  <TabsTrigger
+                    value="all"
+                    data-tab-id="all"
+                    className="h-7 px-2 text-[11px] data-[state=active]:bg-muted data-[state=active]:shadow-none rounded-md flex-none shrink-0"
+                    title="All icons"
+                  >
+                    All
+                  </TabsTrigger>
+                  {ICON_CATEGORIES.map((cat) => (
+                    <TabsTrigger
+                      key={cat.id}
+                      value={cat.id}
+                      data-tab-id={cat.id}
+                      className="h-7 px-2 text-[11px] data-[state=active]:bg-muted data-[state=active]:shadow-none rounded-md flex-none shrink-0"
+                      title={cat.label}
+                    >
+                      <span aria-hidden className="mr-1">{cat.tabIcon}</span>
+                      <span className="hidden sm:inline">{cat.label}</span>
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
+              </div>
+            </div>
           </Tabs>
         )}
 
