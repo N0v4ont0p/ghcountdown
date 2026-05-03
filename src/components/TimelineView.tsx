@@ -2023,6 +2023,41 @@ function ScheduleWeekDialog({
   }
 
   const totalProposed = preview?.reduce((sum, d) => sum + d.blocks.length, 0) ?? 0;
+  const totalUnplaced = preview?.reduce((sum, d) => sum + d.unplaced, 0) ?? 0;
+  const hasCandidates = candidateTodos.length > 0;
+  const allDaysSkipped =
+    !!preview && preview.length > 0 && preview.every((d) => d.skippedReason);
+  // Classify the preview for an empty-state banner.  Order matters: skipped
+  // days dominate, then "no todos", then distinguish "already scheduled"
+  // (candidates exist but were all claimed by existing blocks → 0 unplaced)
+  // from "no free time" (candidates exist and at least one couldn't fit).
+  const emptyState: 'noTodos' | 'allSkipped' | 'allScheduled' | 'noFreeTime' | null = (() => {
+    if (!preview) return null;
+    if (totalProposed > 0) return null;
+    if (allDaysSkipped) return 'allSkipped';
+    if (!hasCandidates) return 'noTodos';
+    if (totalUnplaced === 0) return 'allScheduled';
+    return 'noFreeTime';
+  })();
+  const emptyStateMessage: Record<NonNullable<typeof emptyState>, { title: string; body: string }> =
+    {
+      noTodos: {
+        title: 'No todos to schedule',
+        body: 'Add some todos to your list, then come back to plan your week.',
+      },
+      allSkipped: {
+        title: 'All selected days are off',
+        body: 'Every selected day is marked vacation or off. Pick different days, or enable “Include vacation / off days” to override.',
+      },
+      allScheduled: {
+        title: 'Everything is already scheduled',
+        body: 'Your todos already have time blocks for these days. Nothing new to add.',
+      },
+      noFreeTime: {
+        title: 'No free time this week',
+        body: "These days are fully booked by existing blocks or events, so nothing new could fit. Free up time or pick different days.",
+      },
+    };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -2040,6 +2075,14 @@ function ScheduleWeekDialog({
         </DialogHeader>
 
         {step === 'select' ? (
+          !hasCandidates ? (
+            <div className="px-3 py-6 text-center space-y-1.5">
+              <p className="text-sm font-medium">No todos to schedule</p>
+              <p className="text-xs text-muted-foreground">
+                Add some todos to your list, then come back to plan your week.
+              </p>
+            </div>
+          ) : (
           <div className="space-y-1.5 py-1">
             {days.map((day) => {
               const dateStr = format(day, 'yyyy-MM-dd');
@@ -2091,8 +2134,17 @@ function ScheduleWeekDialog({
               <span>Include vacation / off days (override skip)</span>
             </label>
           </div>
+          )
         ) : (
           <div className="space-y-3 py-1">
+            {emptyState && (
+              <div className="px-3 py-4 rounded-lg border border-dashed border-border/60 bg-muted/30 space-y-1">
+                <p className="text-sm font-medium">{emptyStateMessage[emptyState].title}</p>
+                <p className="text-xs text-muted-foreground">
+                  {emptyStateMessage[emptyState].body}
+                </p>
+              </div>
+            )}
             {preview && preview.length > 0 ? (
               preview.map((day) => {
                 const dayDate = new Date(`${day.date}T00:00:00`);
@@ -2197,7 +2249,7 @@ function ScheduleWeekDialog({
               <Button
                 size="sm"
                 onClick={handleGeneratePreview}
-                disabled={selected.size === 0 || isGenerating}
+                disabled={selected.size === 0 || isGenerating || !hasCandidates}
                 className="gap-1.5"
               >
                 <Lightning size={14} weight="bold" />
