@@ -13,11 +13,10 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { IconPicker } from '@/components/IconPicker';
-import { Plus, Trash, Folder, CheckCircle, CalendarCheck, Cloud, PencilSimple } from '@phosphor-icons/react';
+import { Plus, Trash, Folder, CheckCircle, CalendarCheck, PencilSimple, CaretDown, CaretRight, Circle } from '@phosphor-icons/react';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -57,7 +56,7 @@ const EMPTY_PROJECT_FORM: ProjectFormData = {
 
 type TodoFormData = {
   title: string;
-  status: 'today' | 'done' | 'someday';
+  status: 'today' | 'done';
   dueAt: string;
   priority: 1 | 2 | 3 | 4 | 5;
   projectId: string;
@@ -219,7 +218,7 @@ export function TodosView() {
   const [goals, setGoals] = useState<Goal[]>([]);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isProjectDialogOpen, setIsProjectDialogOpen] = useState(false);
-  const [currentTab, setCurrentTab] = useState<'today' | 'someday' | 'projects'>('today');
+  const [showCompleted, setShowCompleted] = useState(false);
   const [selectedProjectId, _setSelectedProjectId] = useState<string | null>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [todoToDelete, setTodoToDelete] = useState<string | null>(null);
@@ -249,6 +248,16 @@ export function TodosView() {
       getAllProjects(),
       getActiveGoals(),
     ]);
+
+    // Lazy migration: the 'someday' bucket has been retired. Quietly promote
+    // any legacy someday todos to 'today' so they show up alongside other
+    // active work and the user never sees a stale label.
+    const legacySomeday = allTodos.filter(t => t.status === 'someday');
+    if (legacySomeday.length > 0) {
+      await Promise.all(legacySomeday.map(t => updateTodo(t.id, { status: 'today' })));
+      for (const t of legacySomeday) t.status = 'today';
+    }
+
     setTodos(allTodos);
     setProjects(allProjects);
     setGoals(activeGoals);
@@ -271,7 +280,7 @@ export function TodosView() {
   function resetForm() {
     setFormData({
       title: '',
-      status: currentTab === 'projects' ? 'today' : currentTab,
+      status: 'today',
       dueAt: '',
       priority: 3,
       projectId: selectedProjectId || 'none',
@@ -295,9 +304,10 @@ export function TodosView() {
     setEditingTodoId(todo.id);
     setFormData({
       title: todo.title,
-      // 'inbox' falls back to 'today' for the editor since the dialog only
-      // exposes user-facing buckets (today / someday / done).
-      status: todo.status === 'inbox' ? 'today' : todo.status,
+      // The dialog only exposes today/done now. Anything else (legacy 'inbox'
+      // or 'someday') maps to 'today' so the editor can round-trip it
+      // without surfacing retired buckets.
+      status: todo.status === 'done' ? 'done' : 'today',
       dueAt: isoToLocalInputValue(todo.dueAt),
       priority: todo.priority,
       projectId: todo.projectId ?? 'none',
@@ -489,22 +499,42 @@ export function TodosView() {
     }
   }
 
-  const todayTodos = todos
-    .filter(t => t.status === 'today' || t.status === 'inbox')
-    .sort((a, b) => {
-      const aOv = isOverdue(a) ? 0 : 1;
-      const bOv = isOverdue(b) ? 0 : 1;
-      return aOv - bOv;
-    });
-  const doneTodos = todos.filter(t => t.status === 'done');
-  const someDayTodos = todos.filter(t => t.status === 'someday');
-
-  function getTodosByProject(projectId: string) {
-    return todos.filter(t => t.projectId === projectId && t.status !== 'done');
-  }
-
   function isOverdue(todo: Todo): boolean {
     return todo.status !== 'done' && !!todo.dueAt && new Date(todo.dueAt).getTime() < Date.now();
+  }
+
+  /** Sort active todos by overdue → priority desc → due date asc (no due last) → updatedAt desc. */
+  function sortActive(a: Todo, b: Todo): number {
+    const ao = isOverdue(a) ? 0 : 1;
+    const bo = isOverdue(b) ? 0 : 1;
+    if (ao !== bo) return ao - bo;
+    if (a.priority !== b.priority) return b.priority - a.priority;
+    const ad = a.dueAt ? new Date(a.dueAt).getTime() : Number.POSITIVE_INFINITY;
+    const bd = b.dueAt ? new Date(b.dueAt).getTime() : Number.POSITIVE_INFINITY;
+    if (ad !== bd) return ad - bd;
+    const au = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+    const bu = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+    return bu - au;
+  }
+
+  // Active = anything not done. Treat legacy 'inbox' and 'someday' as active
+  // alongside 'today' so existing data stays visible without an explicit
+  // schema migration step.
+  const activeTodos = todos.filter(t => t.status !== 'done');
+  const doneTodos = todos
+    .filter(t => t.status === 'done')
+    .sort((a, b) => {
+      const au = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+      const bu = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+      return bu - au;
+    });
+
+  const todosWithoutProject = activeTodos
+    .filter(t => !t.projectId)
+    .sort(sortActive);
+
+  function getActiveTodosByProject(projectId: string) {
+    return activeTodos.filter(t => t.projectId === projectId).sort(sortActive);
   }
 
   /** Render a TodoItem with the project lookup + handlers wired in.  This
@@ -529,521 +559,489 @@ export function TodosView() {
 
   return (
     <div className="max-w-4xl mx-auto">
-      <div className="mb-6">
-        <h2 className="text-3xl font-semibold mb-2">Todos</h2>
-        <p className="text-muted-foreground">Organize tasks by today, someday, and projects</p>
-      </div>
+      <div className="mb-6 flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <h2 className="text-3xl font-semibold mb-2">Todos</h2>
+          <p className="text-muted-foreground">
+            Active tasks grouped by project · {activeTodos.length} open
+          </p>
+        </div>
 
-      <Tabs value={currentTab} onValueChange={(v) => setCurrentTab(v as 'today' | 'someday' | 'projects')} className="space-y-6">
-        <div className="flex items-center justify-between">
-          <TabsList>
-            <TabsTrigger value="today" className="gap-2">
-              <CalendarCheck size={16} />
-              Today
-              {todayTodos.length > 0 && (
-                <Badge variant="secondary" className="ml-1 h-5 min-w-5 px-1">
-                  {todayTodos.length}
-                </Badge>
-              )}
-            </TabsTrigger>
-            <TabsTrigger value="someday" className="gap-2">
-              <Cloud size={16} />
-              Someday
-              {someDayTodos.length > 0 && (
-                <Badge variant="secondary" className="ml-1 h-5 min-w-5 px-1">
-                  {someDayTodos.length}
-                </Badge>
-              )}
-            </TabsTrigger>
-            <TabsTrigger value="projects" className="gap-2">
-              <Folder size={16} />
-              Projects
-              {projects.length > 0 && (
-                <Badge variant="secondary" className="ml-1 h-5 min-w-5 px-1">
-                  {projects.length}
-                </Badge>
-              )}
-            </TabsTrigger>
-          </TabsList>
-
-          <div className="flex gap-2">
-            {currentTab === 'projects' && (
-              <Dialog open={isProjectDialogOpen} onOpenChange={(open) => {
-                setIsProjectDialogOpen(open);
-                if (!open) {
-                  setEditingProjectId(null);
-                  setProjectFormData(EMPTY_PROJECT_FORM);
-                }
-              }}>
-                <DialogTrigger asChild>
-                  <Button variant="outline" size="sm" className="gap-2">
-                    <Plus size={14} weight="bold" />
-                    New Project
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="max-h-[90vh] overflow-y-auto">
-                  <DialogHeader>
-                    <DialogTitle>{editingProjectId ? 'Edit Project' : 'Create New Project'}</DialogTitle>
-                  </DialogHeader>
-                  <form onSubmit={handleProjectSubmit} className="space-y-4">
-                    <div className="grid grid-cols-[80px_1fr] gap-3">
-                      <div>
-                        <Label htmlFor="projectIcon">Icon</Label>
-                        <div className="mt-1">
-                          <IconPicker
-                            id="projectIcon"
-                            value={projectFormData.icon || null}
-                            onChange={(next) =>
-                              setProjectFormData({
-                                ...projectFormData,
-                                icon: next ?? '',
-                              })
-                            }
-                            ariaLabel="Project icon"
-                            placeholder="🚀"
-                          />
-                        </div>
-                      </div>
-                      <div>
-                        <Label htmlFor="projectName">Project Name</Label>
-                        <Input
-                          id="projectName"
-                          value={projectFormData.name}
-                          onChange={(e) => setProjectFormData({ ...projectFormData, name: e.target.value })}
-                          placeholder="Work, Personal, Side Project..."
-                          required
-                          autoFocus
-                        />
-                      </div>
-                    </div>
-
-                    <div>
-                      <Label htmlFor="projectDescription">Description (optional)</Label>
-                      <Textarea
-                        id="projectDescription"
-                        value={projectFormData.description}
-                        onChange={(e) => setProjectFormData({ ...projectFormData, description: e.target.value })}
-                        placeholder="What is this project about?"
-                        rows={3}
-                      />
-                    </div>
-
-                    <div>
-                      <Label htmlFor="projectStatus">Status</Label>
-                      <Select
-                        value={projectFormData.status}
-                        onValueChange={(val) =>
+        <div className="flex gap-2">
+          <Dialog open={isProjectDialogOpen} onOpenChange={(open) => {
+            setIsProjectDialogOpen(open);
+            if (!open) {
+              setEditingProjectId(null);
+              setProjectFormData(EMPTY_PROJECT_FORM);
+            }
+          }}>
+            <DialogTrigger asChild>
+              <Button variant="outline" size="sm" className="gap-2">
+                <Plus size={14} weight="bold" />
+                New Project
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>{editingProjectId ? 'Edit Project' : 'Create New Project'}</DialogTitle>
+              </DialogHeader>
+              <form onSubmit={handleProjectSubmit} className="space-y-4">
+                <div className="grid grid-cols-[80px_1fr] gap-3">
+                  <div>
+                    <Label htmlFor="projectIcon">Icon</Label>
+                    <div className="mt-1">
+                      <IconPicker
+                        id="projectIcon"
+                        value={projectFormData.icon || null}
+                        onChange={(next) =>
                           setProjectFormData({
                             ...projectFormData,
-                            status: val as 'active' | 'paused' | 'archived',
+                            icon: next ?? '',
                           })
                         }
-                      >
-                        <SelectTrigger id="projectStatus">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="active">Active</SelectItem>
-                          <SelectItem value="paused">Paused</SelectItem>
-                          <SelectItem value="archived">Archived</SelectItem>
-                        </SelectContent>
-                      </Select>
+                        ariaLabel="Project icon"
+                        placeholder="🚀"
+                      />
                     </div>
-
-                    <div>
-                      <Label htmlFor="projectColor">Color</Label>
-                      <div className="grid grid-cols-6 gap-2 mt-2">
-                        {PROJECT_COLOR_PALETTE.map((color) => (
-                          <button
-                            key={color}
-                            type="button"
-                            onClick={() => setProjectFormData({ ...projectFormData, color })}
-                            className={cn(
-                              "w-10 h-10 rounded-lg border-2 transition-all",
-                              projectFormData.color === color ? "border-foreground scale-110" : "border-transparent"
-                            )}
-                            style={{ backgroundColor: color }}
-                            aria-label={`Pick color ${color}`}
-                            aria-pressed={projectFormData.color === color}
-                          />
-                        ))}
-                      </div>
-                      <div className="flex items-center gap-2 mt-3">
-                        <Label
-                          htmlFor="projectCustomColor"
-                          className="text-xs text-muted-foreground cursor-pointer"
-                        >
-                          Custom color
-                        </Label>
-                        <input
-                          id="projectCustomColor"
-                          type="color"
-                          value={oklchToHexFallback(projectFormData.color)}
-                          onChange={(e) =>
-                            setProjectFormData({ ...projectFormData, color: e.target.value })
-                          }
-                          className="h-8 w-12 rounded border border-border bg-transparent cursor-pointer"
-                          aria-label="Pick a custom color"
-                        />
-                        <span
-                          className="inline-block w-5 h-5 rounded-full border"
-                          style={{ backgroundColor: projectFormData.color }}
-                          aria-hidden
-                        />
-                        <code className="text-[10px] text-muted-foreground truncate">
-                          {projectFormData.color}
-                        </code>
-                      </div>
-                    </div>
-
-                    <div className="flex justify-end gap-2 pt-4">
-                      <Button type="button" variant="outline" onClick={closeProjectDialog}>
-                        Cancel
-                      </Button>
-                      <Button type="submit">
-                        {editingProjectId ? 'Save Changes' : 'Create Project'}
-                      </Button>
-                    </div>
-                  </form>
-                </DialogContent>
-              </Dialog>
-            )}
-
-            <Dialog open={isDialogOpen} onOpenChange={(open) => {
-              setIsDialogOpen(open);
-              if (!open) resetForm();
-            }}>
-              <DialogTrigger asChild>
-                <Button size="sm" className="gap-2">
-                  <Plus size={14} weight="bold" />
-                  New Todo
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="max-h-[90vh] overflow-y-auto">
-                <DialogHeader>
-                  <DialogTitle>{editingTodoId ? 'Edit Todo' : 'Create New Todo'}</DialogTitle>
-                </DialogHeader>
-                <form onSubmit={handleSubmit} className="space-y-4">
+                  </div>
                   <div>
-                    <Label htmlFor="title">Task Title</Label>
+                    <Label htmlFor="projectName">Project Name</Label>
                     <Input
-                      id="title"
-                      value={formData.title}
-                      onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                      placeholder="What needs to be done?"
+                      id="projectName"
+                      value={projectFormData.name}
+                      onChange={(e) => setProjectFormData({ ...projectFormData, name: e.target.value })}
+                      placeholder="Work, Personal, Side Project..."
                       required
                       autoFocus
                     />
                   </div>
+                </div>
 
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <Label htmlFor="status">Status</Label>
-                      <Select
-                        value={formData.status}
-                        onValueChange={(val) => setFormData({ ...formData, status: val as 'today' | 'done' | 'someday' })}
-                      >
-                        <SelectTrigger id="status">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="today">Today</SelectItem>
-                          <SelectItem value="someday">Someday</SelectItem>
-                          {editingTodoId && <SelectItem value="done">Done</SelectItem>}
-                        </SelectContent>
-                      </Select>
-                    </div>
+                <div>
+                  <Label htmlFor="projectDescription">Description (optional)</Label>
+                  <Textarea
+                    id="projectDescription"
+                    value={projectFormData.description}
+                    onChange={(e) => setProjectFormData({ ...projectFormData, description: e.target.value })}
+                    placeholder="What is this project about?"
+                    rows={3}
+                  />
+                </div>
 
-                    <div>
-                      <Label htmlFor="priority">Priority</Label>
-                      <Select
-                        value={formData.priority.toString()}
-                        onValueChange={(val) => setFormData({ ...formData, priority: parseInt(val) as 1 | 2 | 3 | 4 | 5 })}
-                      >
-                        <SelectTrigger id="priority">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="5">5 - Critical</SelectItem>
-                          <SelectItem value="4">4 - High</SelectItem>
-                          <SelectItem value="3">3 - Medium</SelectItem>
-                          <SelectItem value="2">2 - Low</SelectItem>
-                          <SelectItem value="1">1 - Minimal</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
+                <div>
+                  <Label htmlFor="projectStatus">Status</Label>
+                  <Select
+                    value={projectFormData.status}
+                    onValueChange={(val) =>
+                      setProjectFormData({
+                        ...projectFormData,
+                        status: val as 'active' | 'paused' | 'archived',
+                      })
+                    }
+                  >
+                    <SelectTrigger id="projectStatus">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="active">Active</SelectItem>
+                      <SelectItem value="paused">Paused</SelectItem>
+                      <SelectItem value="archived">Archived</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <Label htmlFor="projectColor">Color</Label>
+                  <div className="grid grid-cols-6 gap-2 mt-2">
+                    {PROJECT_COLOR_PALETTE.map((color) => (
+                      <button
+                        key={color}
+                        type="button"
+                        onClick={() => setProjectFormData({ ...projectFormData, color })}
+                        className={cn(
+                          "w-10 h-10 rounded-lg border-2 transition-all",
+                          projectFormData.color === color ? "border-foreground scale-110" : "border-transparent"
+                        )}
+                        style={{ backgroundColor: color }}
+                        aria-label={`Pick color ${color}`}
+                        aria-pressed={projectFormData.color === color}
+                      />
+                    ))}
+                  </div>
+                  <div className="flex items-center gap-2 mt-3">
+                    <Label
+                      htmlFor="projectCustomColor"
+                      className="text-xs text-muted-foreground cursor-pointer"
+                    >
+                      Custom color
+                    </Label>
+                    <input
+                      id="projectCustomColor"
+                      type="color"
+                      value={oklchToHexFallback(projectFormData.color)}
+                      onChange={(e) =>
+                        setProjectFormData({ ...projectFormData, color: e.target.value })
+                      }
+                      className="h-8 w-12 rounded border border-border bg-transparent cursor-pointer"
+                      aria-label="Pick a custom color"
+                    />
+                    <span
+                      className="inline-block w-5 h-5 rounded-full border"
+                      style={{ backgroundColor: projectFormData.color }}
+                      aria-hidden
+                    />
+                    <code className="text-[10px] text-muted-foreground truncate">
+                      {projectFormData.color}
+                    </code>
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-4">
+                  <Button type="button" variant="outline" onClick={closeProjectDialog}>
+                    Cancel
+                  </Button>
+                  <Button type="submit">
+                    {editingProjectId ? 'Save Changes' : 'Create Project'}
+                  </Button>
+                </div>
+              </form>
+            </DialogContent>
+          </Dialog>
+
+          <Dialog open={isDialogOpen} onOpenChange={(open) => {
+            setIsDialogOpen(open);
+            if (!open) resetForm();
+          }}>
+            <DialogTrigger asChild>
+              <Button size="sm" className="gap-2">
+                <Plus size={14} weight="bold" />
+                New Todo
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>{editingTodoId ? 'Edit Todo' : 'Create New Todo'}</DialogTitle>
+              </DialogHeader>
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div>
+                  <Label htmlFor="title">Task Title</Label>
+                  <Input
+                    id="title"
+                    value={formData.title}
+                    onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                    placeholder="What needs to be done?"
+                    required
+                    autoFocus
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="status">Status</Label>
+                    <Select
+                      value={formData.status}
+                      onValueChange={(val) => setFormData({ ...formData, status: val as 'today' | 'done' })}
+                    >
+                      <SelectTrigger id="status">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="today">Active</SelectItem>
+                        {editingTodoId && <SelectItem value="done">Done</SelectItem>}
+                      </SelectContent>
+                    </Select>
                   </div>
 
                   <div>
-                    <Label htmlFor="project">Project (optional)</Label>
+                    <Label htmlFor="priority">Priority</Label>
                     <Select
-                      value={formData.projectId}
-                      onValueChange={(val) => setFormData({ ...formData, projectId: val })}
+                      value={formData.priority.toString()}
+                      onValueChange={(val) => setFormData({ ...formData, priority: parseInt(val) as 1 | 2 | 3 | 4 | 5 })}
                     >
-                      <SelectTrigger id="project">
-                        <SelectValue placeholder="None" />
+                      <SelectTrigger id="priority">
+                        <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="none">None</SelectItem>
-                        {projects.map((project) => (
-                          <SelectItem key={project.id} value={project.id}>
-                            <span className="flex items-center gap-2">
-                              <span
-                                className="w-2.5 h-2.5 rounded-full inline-block"
-                                style={{ backgroundColor: project.color }}
-                                aria-hidden
-                              />
-                              {project.icon && <span>{project.icon}</span>}
-                              {project.name}
-                              {project.status && project.status !== 'active' && (
-                                <span className="text-[10px] text-muted-foreground ml-1">
-                                  ({project.status})
-                                </span>
-                              )}
-                            </span>
+                        <SelectItem value="5">5 - Critical</SelectItem>
+                        <SelectItem value="4">4 - High</SelectItem>
+                        <SelectItem value="3">3 - Medium</SelectItem>
+                        <SelectItem value="2">2 - Low</SelectItem>
+                        <SelectItem value="1">1 - Minimal</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <div>
+                  <Label htmlFor="project">Project (optional)</Label>
+                  <Select
+                    value={formData.projectId}
+                    onValueChange={(val) => setFormData({ ...formData, projectId: val })}
+                  >
+                    <SelectTrigger id="project">
+                      <SelectValue placeholder="None" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">None</SelectItem>
+                      {projects.map((project) => (
+                        <SelectItem key={project.id} value={project.id}>
+                          <span className="flex items-center gap-2">
+                            <span
+                              className="w-2.5 h-2.5 rounded-full inline-block"
+                              style={{ backgroundColor: project.color }}
+                              aria-hidden
+                            />
+                            {project.icon && <span>{project.icon}</span>}
+                            {project.name}
+                            {project.status && project.status !== 'active' && (
+                              <span className="text-[10px] text-muted-foreground ml-1">
+                                ({project.status})
+                              </span>
+                            )}
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {goals.length > 0 && (
+                  <div>
+                    <Label htmlFor="goalId">Contributes to (optional)</Label>
+                    <Select
+                      value={formData.goalId}
+                      onValueChange={(val) => setFormData({ ...formData, goalId: val })}
+                    >
+                      <SelectTrigger id="goalId">
+                        <SelectValue placeholder="No goal" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">No goal</SelectItem>
+                        {goals.filter(g => g.status === 'active').map((goal) => (
+                          <SelectItem key={goal.id} value={goal.id}>
+                            {goal.title}
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                   </div>
+                )}
 
-                  {goals.length > 0 && (
-                    <div>
-                      <Label htmlFor="goalId">Contributes to (optional)</Label>
-                      <Select
-                        value={formData.goalId}
-                        onValueChange={(val) => setFormData({ ...formData, goalId: val })}
-                      >
-                        <SelectTrigger id="goalId">
-                          <SelectValue placeholder="No goal" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="none">No goal</SelectItem>
-                          {goals.filter(g => g.status === 'active').map((goal) => (
-                            <SelectItem key={goal.id} value={goal.id}>
-                              {goal.title}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  )}
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <Label htmlFor="dueAt">Due Date (optional)</Label>
-                      <Input
-                        id="dueAt"
-                        type="datetime-local"
-                        value={formData.dueAt}
-                        onChange={(e) => setFormData({ ...formData, dueAt: e.target.value })}
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="estimatedMinutes">Estimate (minutes)</Label>
-                      <Input
-                        id="estimatedMinutes"
-                        type="number"
-                        min={0}
-                        step={5}
-                        value={formData.estimatedMinutes}
-                        onChange={(e) =>
-                          setFormData({ ...formData, estimatedMinutes: e.target.value })
-                        }
-                        placeholder="e.g. 30"
-                      />
-                    </div>
-                  </div>
-
+                <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <Label>Mental effort (optional)</Label>
-                    <div className="flex gap-2 mt-2">
-                      {([
-                        { value: 'low', label: 'Easy', color: 'oklch(0.65 0.17 145)' },
-                        { value: 'medium', label: 'Medium', color: 'oklch(0.75 0.18 75)' },
-                        { value: 'high', label: 'Deep work', color: 'oklch(0.58 0.20 20)' },
-                      ] as const).map(({ value, label, color }) => (
-                        <button
-                          key={value}
-                          type="button"
-                          onClick={() =>
-                            setFormData({
-                              ...formData,
-                              cognitiveLoad: formData.cognitiveLoad === value ? null : value,
-                            })
-                          }
-                          className={cn(
-                            'flex-1 rounded-full border px-3 py-1.5 text-sm font-medium transition-all',
-                            formData.cognitiveLoad === value
-                              ? 'border-transparent text-white scale-105'
-                              : 'border-border text-foreground hover:scale-105'
-                          )}
-                          style={
-                            formData.cognitiveLoad === value
-                              ? { backgroundColor: color }
-                              : {}
-                          }
-                        >
-                          {label}
-                        </button>
-                      ))}
-                    </div>
+                    <Label htmlFor="dueAt">Due Date (optional)</Label>
+                    <Input
+                      id="dueAt"
+                      type="datetime-local"
+                      value={formData.dueAt}
+                      onChange={(e) => setFormData({ ...formData, dueAt: e.target.value })}
+                    />
                   </div>
+                  <div>
+                    <Label htmlFor="estimatedMinutes">Estimate (minutes)</Label>
+                    <Input
+                      id="estimatedMinutes"
+                      type="number"
+                      min={0}
+                      step={5}
+                      value={formData.estimatedMinutes}
+                      onChange={(e) =>
+                        setFormData({ ...formData, estimatedMinutes: e.target.value })
+                      }
+                      placeholder="e.g. 30"
+                    />
+                  </div>
+                </div>
 
-                  <div className="flex justify-end gap-2 pt-4">
-                    <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
-                      Cancel
-                    </Button>
-                    <Button type="submit">{editingTodoId ? 'Save Changes' : 'Create Todo'}</Button>
+                <div>
+                  <Label>Mental effort (optional)</Label>
+                  <div className="flex gap-2 mt-2">
+                    {([
+                      { value: 'low', label: 'Easy', color: 'oklch(0.65 0.17 145)' },
+                      { value: 'medium', label: 'Medium', color: 'oklch(0.75 0.18 75)' },
+                      { value: 'high', label: 'Deep work', color: 'oklch(0.58 0.20 20)' },
+                    ] as const).map(({ value, label, color }) => (
+                      <button
+                        key={value}
+                        type="button"
+                        onClick={() =>
+                          setFormData({
+                            ...formData,
+                            cognitiveLoad: formData.cognitiveLoad === value ? null : value,
+                          })
+                        }
+                        className={cn(
+                          'flex-1 rounded-full border px-3 py-1.5 text-sm font-medium transition-all',
+                          formData.cognitiveLoad === value
+                            ? 'border-transparent text-white scale-105'
+                            : 'border-border text-foreground hover:scale-105'
+                        )}
+                        style={
+                          formData.cognitiveLoad === value
+                            ? { backgroundColor: color }
+                            : {}
+                        }
+                      >
+                        {label}
+                      </button>
+                    ))}
                   </div>
-                </form>
-              </DialogContent>
-            </Dialog>
-          </div>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-4">
+                  <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
+                    Cancel
+                  </Button>
+                  <Button type="submit">{editingTodoId ? 'Save Changes' : 'Create Todo'}</Button>
+                </div>
+              </form>
+            </DialogContent>
+          </Dialog>
         </div>
+      </div>
 
-        <TabsContent value="today" className="space-y-3 mt-0">
-          {todayTodos.length === 0 ? (
-            <Card className="p-12 text-center">
-              <CalendarCheck weight="thin" size={48} className="mx-auto mb-4 text-muted-foreground" />
-              <h3 className="text-lg font-semibold mb-2">Nothing planned</h3>
-              <p className="text-sm text-muted-foreground">Move tasks here to focus</p>
-            </Card>
-          ) : (
-            <AnimatePresence initial={false} mode="popLayout">
-              {todayTodos.map((todo) => (
-                renderTodoItem(todo, true)
-              ))}
-            </AnimatePresence>
-          )}
-        </TabsContent>
-
-        <TabsContent value="someday" className="space-y-3 mt-0">
-          {someDayTodos.length === 0 ? (
-            <Card className="p-12 text-center">
-              <Cloud weight="thin" size={48} className="mx-auto mb-4 text-muted-foreground" />
-              <h3 className="text-lg font-semibold mb-2">Your idea list is empty</h3>
-              <p className="text-sm text-muted-foreground">Capture ideas without committing</p>
-            </Card>
-          ) : (
-            <AnimatePresence initial={false} mode="popLayout">
-              {someDayTodos.map((todo) => (
-                renderTodoItem(todo, true)
-              ))}
-            </AnimatePresence>
-          )}
-        </TabsContent>
-
-        <TabsContent value="projects" className="space-y-4 mt-0">
-          {projects.length === 0 ? (
-            <Card className="p-12 text-center">
-              <Folder weight="thin" size={48} className="mx-auto mb-4 text-muted-foreground" />
-              <h3 className="text-lg font-semibold mb-2">No projects yet</h3>
-              <p className="text-sm text-muted-foreground mb-4">Create projects to organize your todos</p>
-              <Button onClick={() => setIsProjectDialogOpen(true)} className="gap-2">
-                <Plus size={16} weight="bold" />
-                Create Your First Project
-              </Button>
-            </Card>
-          ) : (
-            <div className="space-y-4">
-              {projects.map((project) => {
-                const projectTodos = getTodosByProject(project.id);
-                return (
-                  <Card key={project.id} className="p-4">
-                    <div className="flex items-start justify-between mb-3 gap-3">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <div
-                            className="w-3 h-3 rounded-full flex-shrink-0"
-                            style={{ backgroundColor: project.color }}
-                          />
-                          {project.icon && (
-                            <span className="text-lg leading-none" aria-hidden>
-                              {project.icon}
-                            </span>
-                          )}
-                          <h3 className="font-semibold text-lg truncate">{project.name}</h3>
-                          <Badge variant="secondary" className="h-5">
-                            {projectTodos.length}
+      {/* Unified groups: each project with active todos, then "No Project". */}
+      <div className="space-y-4">
+        {activeTodos.length === 0 && projects.length === 0 ? (
+          <Card className="p-12 text-center">
+            <CalendarCheck weight="thin" size={48} className="mx-auto mb-4 text-muted-foreground" />
+            <h3 className="text-lg font-semibold mb-2">Nothing here yet</h3>
+            <p className="text-sm text-muted-foreground mb-4">
+              Add a todo or create a project to get started.
+            </p>
+          </Card>
+        ) : (
+          <>
+            {projects.map((project) => {
+              const projectTodos = getActiveTodosByProject(project.id);
+              return (
+                <Card key={project.id} className="p-4">
+                  <div className="flex items-start justify-between mb-3 gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <div
+                          className="w-3 h-3 rounded-full flex-shrink-0"
+                          style={{ backgroundColor: project.color }}
+                        />
+                        {project.icon && (
+                          <span className="text-lg leading-none" aria-hidden>
+                            {project.icon}
+                          </span>
+                        )}
+                        <h3 className="font-semibold text-lg truncate">{project.name}</h3>
+                        <Badge variant="secondary" className="h-5">
+                          {projectTodos.length}
+                        </Badge>
+                        {project.status && project.status !== 'active' && (
+                          <Badge
+                            variant="outline"
+                            className={cn(
+                              'h-5 text-[10px] uppercase tracking-wider',
+                              project.status === 'paused' && 'text-amber-600 border-amber-500/40',
+                              project.status === 'archived' && 'text-muted-foreground'
+                            )}
+                          >
+                            {project.status}
                           </Badge>
-                          {project.status && project.status !== 'active' && (
-                            <Badge
-                              variant="outline"
-                              className={cn(
-                                'h-5 text-[10px] uppercase tracking-wider',
-                                project.status === 'paused' && 'text-amber-600 border-amber-500/40',
-                                project.status === 'archived' && 'text-muted-foreground'
-                              )}
-                            >
-                              {project.status}
-                            </Badge>
-                          )}
-                        </div>
-                        {project.description && (
-                          <p className="text-sm text-muted-foreground mt-1 whitespace-pre-wrap">
-                            {project.description}
-                          </p>
                         )}
                       </div>
-                      <div className="flex gap-1 flex-shrink-0">
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          onClick={() => openEditProject(project)}
-                          className="h-8 w-8 text-muted-foreground hover:text-foreground hover:scale-110 active:scale-95 transition-transform"
-                          aria-label="Edit project"
-                          title="Edit project"
-                        >
-                          <PencilSimple size={16} />
-                        </Button>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          onClick={() => handleDeleteProject(project.id)}
-                          className="h-8 w-8 text-destructive hover:text-destructive hover:scale-110 active:scale-95 transition-transform"
-                          aria-label="Delete project"
-                        >
-                          <Trash size={16} />
-                        </Button>
-                      </div>
+                      {project.description && (
+                        <p className="text-sm text-muted-foreground mt-1 whitespace-pre-wrap">
+                          {project.description}
+                        </p>
+                      )}
                     </div>
-                    
-                    <div className="space-y-2">
-                      <AnimatePresence initial={false} mode="popLayout">
-                        {projectTodos.length === 0 ? (
-                          <p className="text-sm text-muted-foreground text-center py-4">
-                            No todos in this project
-                          </p>
-                        ) : (
-                          projectTodos.map((todo) => (
-                            renderTodoItem(todo)
-                          ))
-                        )}
-                      </AnimatePresence>
+                    <div className="flex gap-1 flex-shrink-0">
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        onClick={() => openEditProject(project)}
+                        className="h-8 w-8 text-muted-foreground hover:text-foreground hover:scale-110 active:scale-95 transition-transform"
+                        aria-label="Edit project"
+                        title="Edit project"
+                      >
+                        <PencilSimple size={16} />
+                      </Button>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        onClick={() => handleDeleteProject(project.id)}
+                        className="h-8 w-8 text-destructive hover:text-destructive hover:scale-110 active:scale-95 transition-transform"
+                        aria-label="Delete project"
+                      >
+                        <Trash size={16} />
+                      </Button>
                     </div>
-                  </Card>
-                );
-              })}
-            </div>
-          )}
-        </TabsContent>
-      </Tabs>
+                  </div>
+
+                  <div className="space-y-2">
+                    <AnimatePresence initial={false} mode="popLayout">
+                      {projectTodos.length === 0 ? (
+                        <p className="text-sm text-muted-foreground text-center py-4">
+                          No active todos in this project
+                        </p>
+                      ) : (
+                        projectTodos.map((todo) => (
+                          renderTodoItem(todo)
+                        ))
+                      )}
+                    </AnimatePresence>
+                  </div>
+                </Card>
+              );
+            })}
+
+            {/* Individual / "No Project" group — only render when it has todos
+                so an empty section doesn't add visual noise. */}
+            {todosWithoutProject.length > 0 && (
+              <Card className="p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <Circle size={14} className="text-muted-foreground" />
+                  <h3 className="font-semibold text-lg">Individual Todos</h3>
+                  <Badge variant="secondary" className="h-5">
+                    {todosWithoutProject.length}
+                  </Badge>
+                </div>
+                <div className="space-y-2">
+                  <AnimatePresence initial={false} mode="popLayout">
+                    {todosWithoutProject.map((todo) => (
+                      renderTodoItem(todo)
+                    ))}
+                  </AnimatePresence>
+                </div>
+              </Card>
+            )}
+          </>
+        )}
+      </div>
 
       {doneTodos.length > 0 && (
         <div className="mt-8">
-          <div className="flex items-center gap-2 mb-3">
+          <button
+            type="button"
+            onClick={() => setShowCompleted(v => !v)}
+            className="flex items-center gap-2 mb-3 group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded"
+            aria-expanded={showCompleted}
+            aria-controls="completed-todos"
+          >
+            {showCompleted
+              ? <CaretDown size={14} className="text-muted-foreground" />
+              : <CaretRight size={14} className="text-muted-foreground" />}
             <CheckCircle size={20} className="text-muted-foreground" />
-            <h3 className="text-lg font-semibold text-muted-foreground">Completed</h3>
+            <h3 className="text-lg font-semibold text-muted-foreground group-hover:text-foreground transition-colors">
+              Completed
+            </h3>
             <Badge variant="outline">{doneTodos.length}</Badge>
-          </div>
-          <div className="space-y-2">
-            <AnimatePresence initial={false} mode="popLayout">
-              {doneTodos.slice(0, 5).map((todo) => (
-                renderTodoItem(todo, true)
-              ))}
-            </AnimatePresence>
-          </div>
+          </button>
+          {showCompleted && (
+            <div id="completed-todos" className="space-y-2">
+              <AnimatePresence initial={false} mode="popLayout">
+                {doneTodos.slice(0, 50).map((todo) => (
+                  renderTodoItem(todo, true)
+                ))}
+              </AnimatePresence>
+            </div>
+          )}
         </div>
       )}
 

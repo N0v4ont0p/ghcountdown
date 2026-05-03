@@ -259,7 +259,7 @@ Fields for CREATE_TODO: TITLE (required), PRIORITY 1-5 (default 3), STATUS today
 Fields for CREATE_EVENT: TITLE (required), STARTS_AT full ISO datetime with timezone offset (required), PRIORITY 1-5 (default 3), ALL_DAY true/false (default false), NOTES (optional)
 Fields for CREATE_TIMEBLOCK: TITLE (required), DATE YYYY-MM-DD (required), START_TIME HH:mm (required), END_TIME HH:mm (required), PRIORITY 1-5 (default 3), COGNITIVE_LOAD high/medium/low
 
-Priority scale: 5=critical, 4=high, 3=normal, 2=low, 1=someday.
+Priority scale: 5=critical, 4=high, 3=normal, 2=low, 1=minimal.
 Cognitive load: "high" (coding, writing, deep analysis), "medium" (reading, planning, reviewing), "low" (admin, replies, errands).
 
 --- EXAMPLE 1: Creating a todo ---

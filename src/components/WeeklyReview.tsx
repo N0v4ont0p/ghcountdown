@@ -12,7 +12,7 @@ import {
   differenceInMinutes,
 } from 'date-fns';
 import { getAllTimeEntries } from '@/db/repositories/timeRepo';
-import { getAllTodos, updateTodo, deleteTodo } from '@/db/repositories/todosRepo';
+import { getAllTodos, deleteTodo } from '@/db/repositories/todosRepo';
 import { getActiveGoals } from '@/db/repositories/goalsRepo';
 import { Todo, Goal } from '@/db/schema';
 import { Clock, CheckCircle, CalendarBlank, Target, ArrowRight } from '@phosphor-icons/react';
@@ -146,11 +146,6 @@ export function WeeklyReview({ onDismiss }: Props) {
     setDismissedIds(prev => new Set(prev).add(id));
   }
 
-  async function handleSomeday(id: string) {
-    await updateTodo(id, { status: 'someday' });
-    setDismissedIds(prev => new Set(prev).add(id));
-  }
-
   async function handleDelete(id: string) {
     await deleteTodo(id);
     setDismissedIds(prev => new Set(prev).add(id));
@@ -262,14 +257,6 @@ export function WeeklyReview({ onDismiss }: Props) {
                           onClick={() => void handleKeep(todo.id)}
                         >
                           Keep
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="text-xs h-7 px-2 shrink-0"
-                          onClick={() => void handleSomeday(todo.id)}
-                        >
-                          Someday
                         </Button>
                         <Button
                           variant="ghost"
