@@ -56,6 +56,11 @@ export interface Project {
 export interface Todo {
   id: string;
   title: string;
+  /**
+   * Lifecycle status. The legacy 'someday' value is retained in the type for
+   * backward compatibility with existing IndexedDB data; it is no longer
+   * surfaced in the UI and is lazily migrated to 'today' on load.
+   */
   status: 'inbox' | 'today' | 'done' | 'someday';
   dueAt: string | null;
   priority: 1 | 2 | 3 | 4 | 5;

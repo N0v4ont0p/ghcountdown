@@ -3,10 +3,12 @@
  * (in-app modal).
  *
  * Keeps behavior identical so users learn one set of conventions:
- *   - "urgent" / "!!" / "asap"        → priority 5
- *   - "important" / "!"                → priority 4
- *   - "someday" / "maybe" / "eventually" → priority 1, status 'someday'
- *   - "~30m" / "1h" / "45 min"          → estimatedMinutes (stripped from title)
+ *   - "urgent" / "!!" / "asap"           → priority 5
+ *   - "important" / "!"                  → priority 4
+ *   - "someday" / "maybe" / "eventually" → priority 1 (no separate status —
+ *                                          the "someday" bucket has been
+ *                                          retired; the todo is still active)
+ *   - "~30m" / "1h" / "45 min"           → estimatedMinutes (stripped from title)
  *
  * The duration token is removed from the resulting title; priority keywords
  * are intentionally left in (they're often part of the user's phrasing,
@@ -15,7 +17,7 @@
 
 export interface ParsedTodo {
   title: string;
-  status: 'today' | 'someday';
+  status: 'today';
   priority: 1 | 2 | 3 | 4 | 5;
   estimatedMinutes: number | null;
 }
@@ -27,15 +29,16 @@ export function parseTodoInput(raw: string): ParsedTodo {
   const text = raw.trim();
 
   let priority: ParsedTodo['priority'] = 3;
-  let status: ParsedTodo['status'] = 'today';
+  const status: ParsedTodo['status'] = 'today';
 
   if (/\burgent\b|!!|\basap\b/i.test(text)) {
     priority = 5;
   } else if (/\bimportant\b|!/.test(text)) {
     priority = 4;
   } else if (/\bsomeday\b|\bmaybe\b|\beventually\b/i.test(text)) {
+    // No more 'someday' status — keep the todo active but mark it low
+    // priority so it sorts to the bottom of the list.
     priority = 1;
-    status = 'someday';
   }
 
   const durationMatch = text.match(DURATION_RE);

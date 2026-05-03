@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { Plus, Play, Stop, Trash, Clock, CalendarBlank, CheckSquare, Lightning, Warning, CalendarDots, CaretLeft, CaretRight, MapPin, MagnifyingGlassPlus, MagnifyingGlassMinus } from '@phosphor-icons/react';
 import { format } from 'date-fns';
@@ -908,37 +909,6 @@ export function TimelineView() {
               Routine
             </Button>
 
-            {/* Day status selector — controls whether routine / auto-fill / suggestions apply. */}
-            <Select
-              value={dayStatus}
-              onValueChange={(v) => void handleStatusChange(v as DayStatusKind)}
-              disabled={isUpdatingStatus}
-            >
-              <SelectTrigger
-                className={cn(
-                  'h-9 rounded-xl gap-1.5 px-3 text-xs font-semibold border min-w-[120px]',
-                  STATUS_META[dayStatus].pill,
-                )}
-                aria-label={`Day status (currently ${STATUS_META[dayStatus].label})`}
-                title={STATUS_META[dayStatus].description}
-              >
-                <span className="w-1.5 h-1.5 rounded-full bg-current opacity-80" aria-hidden />
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {ALL_DAY_STATUSES.map((s) => (
-                  <SelectItem key={s} value={s}>
-                    <span className="flex flex-col items-start gap-0.5 py-0.5">
-                      <span className="font-medium">{STATUS_META[s].label}</span>
-                      <span className="text-[10.5px] text-muted-foreground leading-tight">
-                        {STATUS_META[s].description}
-                      </span>
-                    </span>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
             {unscheduledTodayTodos.length > 0 && (
               <Button
                 variant="secondary"
@@ -959,39 +929,88 @@ export function TimelineView() {
           </div>
         </div>
 
-        {/* Status banners */}
-        <AnimatePresence>
-          {dayStatus !== 'active' && (
+        {/* Day status banner — single, always-rendered control + explanation. */}
+        {(() => {
+          const meta = STATUS_META[dayStatus];
+          const StatusIcon = meta.icon;
+          return (
             <motion.div
-              key="day-status-banner"
-              initial={{ opacity: 0, y: -6, height: 0 }}
-              animate={{ opacity: 1, y: 0, height: 'auto' }}
-              exit={{ opacity: 0, y: -6, height: 0 }}
+              key={`day-status-${dayStatus}`}
+              layout
+              initial={false}
+              animate={{ opacity: 1 }}
               className={cn(
-                'flex items-start gap-2 rounded-xl px-3 py-2 border',
-                STATUS_META[dayStatus].banner,
+                'relative flex flex-col gap-3 rounded-xl border pl-4 pr-3 py-3 overflow-hidden',
+                'sm:flex-row sm:items-center sm:justify-between sm:gap-4',
+                meta.banner,
               )}
-              role="status"
+              role="region"
+              aria-label="Day status"
             >
+              {/* Colored accent strip on the left edge */}
               <span
-                className="w-2 h-2 mt-1.5 rounded-full bg-current shrink-0"
                 aria-hidden
+                className={cn('absolute left-0 top-0 bottom-0 w-1', meta.accent)}
               />
-              <div className="text-xs min-w-0 flex-1">
-                <span className="font-semibold">{STATUS_META[dayStatus].label} day.</span>{' '}
-                <span className="opacity-90">{STATUS_META[dayStatus].description}</span>
+
+              {/* Left: icon + label + description */}
+              <div className="flex items-start gap-3 min-w-0 flex-1">
+                <span
+                  className={cn(
+                    'flex items-center justify-center w-9 h-9 rounded-lg shrink-0',
+                    meta.iconBg,
+                  )}
+                  aria-hidden
+                >
+                  <StatusIcon size={18} weight="bold" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className={cn('text-sm font-semibold leading-tight', meta.text)}>
+                    {meta.label} day
+                  </div>
+                  <div className="text-xs text-muted-foreground leading-snug mt-0.5">
+                    {meta.description}
+                  </div>
+                </div>
               </div>
-              <button
-                type="button"
-                onClick={() => void handleStatusChange('active')}
+
+              {/* Right: segmented control */}
+              <ToggleGroup
+                type="single"
+                value={dayStatus}
+                onValueChange={(v) => {
+                  if (v && v !== dayStatus) void handleStatusChange(v as DayStatusKind);
+                }}
                 disabled={isUpdatingStatus}
-                className="text-[11px] font-medium underline-offset-2 hover:underline opacity-90 hover:opacity-100 disabled:opacity-50 shrink-0"
+                aria-label="Set day status"
+                className={cn(
+                  'w-full sm:w-auto rounded-lg border border-border/60 bg-background/70 backdrop-blur p-0.5 shadow-sm',
+                )}
               >
-                Resume normal
-              </button>
+                {ALL_DAY_STATUSES.map((s) => {
+                  const itemMeta = STATUS_META[s];
+                  const ItemIcon = itemMeta.icon;
+                  return (
+                    <ToggleGroupItem
+                      key={s}
+                      value={s}
+                      aria-label={`${itemMeta.label} — ${itemMeta.description}`}
+                      title={itemMeta.description}
+                      className={cn(
+                        'h-8 px-2.5 gap-1.5 text-xs font-medium rounded-md transition-colors',
+                        'text-muted-foreground hover:text-foreground',
+                        itemMeta.segmentSelected,
+                      )}
+                    >
+                      <ItemIcon size={13} weight="bold" />
+                      <span className="sr-only md:not-sr-only">{itemMeta.label}</span>
+                    </ToggleGroupItem>
+                  );
+                })}
+              </ToggleGroup>
             </motion.div>
-          )}
-        </AnimatePresence>
+          );
+        })()}
 
         <AnimatePresence>
           {warningMessage && (

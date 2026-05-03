@@ -32,7 +32,7 @@ The app will automatically open in your browser at `http://localhost:4173`
 
 ✅ **Countdown Hero** - Big, beautiful countdown to your next important event  
 ✅ **Events Management** - Create, edit, and organize all your events  
-✅ **Todo System** - Inbox, Today, and Project-based task management  
+✅ **Todo System** - Unified todo list grouped by project, with priority, due dates, and a collapsible completed section  
 ✅ **Timeline View** - Visual in-day planning with drag-and-drop time blocks  
 ✅ **Weekly Calendar** - See your week at a glance  
 ✅ **Time Tracking** - Automatic and manual time tracking for tasks  
