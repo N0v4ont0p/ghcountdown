@@ -2072,7 +2072,11 @@ function ScheduleWeekDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md max-h-[80vh] overflow-y-auto">
+      {/* Override DialogContent's default `overflow-y-auto` with a flex column
+       *  so the footer stays pinned at the bottom while only the middle body
+       *  scrolls.  Without this, long previews push the Apply / Cancel
+       *  buttons below the viewport and users can't find them. */}
+      <DialogContent className="max-w-md max-h-[80vh] overflow-hidden flex flex-col gap-4">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <CalendarCheck size={18} weight="bold" />
@@ -2085,6 +2089,7 @@ function ScheduleWeekDialog({
           </DialogDescription>
         </DialogHeader>
 
+        <div className="flex-1 min-h-0 overflow-y-auto -mx-1 px-1">
         {step === 'select' ? (
           !hasCandidates ? (
             <div className="px-3 py-6 text-center space-y-1.5">
@@ -2232,8 +2237,9 @@ function ScheduleWeekDialog({
             )}
           </div>
         )}
+        </div>
 
-        <div className="flex items-center justify-between gap-2 pt-2">
+        <div className="flex items-center justify-between gap-2 pt-3 border-t border-border/50 shrink-0">
           {step === 'preview' ? (
             <Button
               variant="ghost"
@@ -2249,7 +2255,7 @@ function ScheduleWeekDialog({
           )}
           <div className="flex items-center gap-2">
             <Button
-              variant="ghost"
+              variant="outline"
               size="sm"
               onClick={() => onOpenChange(false)}
               disabled={isGenerating || isApplying}
@@ -2274,7 +2280,9 @@ function ScheduleWeekDialog({
                 className="gap-1.5"
               >
                 <Lightning size={14} weight="bold" />
-                {isApplying ? 'Applying…' : `Apply${totalProposed > 0 ? ` (${totalProposed})` : ''}`}
+                {isApplying
+                  ? 'Applying…'
+                  : `Apply Week Schedule${totalProposed > 0 ? ` (${totalProposed})` : ''}`}
               </Button>
             )}
           </div>
