@@ -907,7 +907,7 @@ export function TodosView() {
         </div>
       </div>
 
-      {/* Unified groups: each project with active todos, then "No Project". */}
+      {/* Unified groups: "No Project" / Individual todos first, then each project. */}
       <div className="space-y-4">
         {activeTodos.length === 0 && projects.length === 0 ? (
           <Card className="p-12 text-center">
@@ -919,6 +919,26 @@ export function TodosView() {
           </Card>
         ) : (
           <>
+            {/* Individual / "No Project" group — shown first, only when it has todos. */}
+            {todosWithoutProject.length > 0 && (
+              <Card className="p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <Circle size={14} className="text-muted-foreground" />
+                  <h3 className="font-semibold text-lg">Individual Todos</h3>
+                  <Badge variant="secondary" className="h-5">
+                    {todosWithoutProject.length}
+                  </Badge>
+                </div>
+                <div className="space-y-2">
+                  <AnimatePresence initial={false} mode="popLayout">
+                    {todosWithoutProject.map((todo) => (
+                      renderTodoItem(todo)
+                    ))}
+                  </AnimatePresence>
+                </div>
+              </Card>
+            )}
+
             {projects.map((project) => {
               const projectTodos = getActiveTodosByProject(project.id);
               return (
@@ -997,27 +1017,6 @@ export function TodosView() {
                 </Card>
               );
             })}
-
-            {/* Individual / "No Project" group — only render when it has todos
-                so an empty section doesn't add visual noise. */}
-            {todosWithoutProject.length > 0 && (
-              <Card className="p-4">
-                <div className="flex items-center gap-2 mb-3">
-                  <Circle size={14} className="text-muted-foreground" />
-                  <h3 className="font-semibold text-lg">Individual Todos</h3>
-                  <Badge variant="secondary" className="h-5">
-                    {todosWithoutProject.length}
-                  </Badge>
-                </div>
-                <div className="space-y-2">
-                  <AnimatePresence initial={false} mode="popLayout">
-                    {todosWithoutProject.map((todo) => (
-                      renderTodoItem(todo)
-                    ))}
-                  </AnimatePresence>
-                </div>
-              </Card>
-            )}
           </>
         )}
       </div>
