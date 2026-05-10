@@ -939,8 +939,15 @@ export function TodosView() {
               </Card>
             )}
 
-            {projects.map((project) => {
-              const projectTodos = getActiveTodosByProject(project.id);
+            {(() => {
+              const countMap = new Map(projects.map(p => [p.id, getActiveTodosByProject(p.id)]));
+              return [...projects].sort((a, b) => {
+                const aEmpty = countMap.get(a.id)!.length === 0;
+                const bEmpty = countMap.get(b.id)!.length === 0;
+                if (aEmpty === bEmpty) return 0;
+                return aEmpty ? 1 : -1;
+              }).map((project) => {
+              const projectTodos = countMap.get(project.id)!;
               return (
                 <Card key={project.id} className="p-4">
                   <div className="flex items-start justify-between mb-3 gap-3">
@@ -1016,7 +1023,8 @@ export function TodosView() {
                   </div>
                 </Card>
               );
-            })}
+            });
+          })()}
           </>
         )}
       </div>
